@@ -22,6 +22,7 @@
     "@react-router/node": "^8.3.1",
     "@react-router/serve": "^8.3.1",
     "@tailwindcss/vite": "^4.3.3",
+    "better-auth": "^1.7.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.2.6",
@@ -29,6 +30,7 @@
     "drizzle-orm": "^0.45.2",
     "isbot": "^5",
     "lucide-react": "^1.43.0",
+    "nodemailer": "^10.0.1",
     "pg": "^8.23.0",
     "radix-ui": "^1.6.7",
     "react": "^19.2.4",
@@ -42,6 +44,7 @@
   "devDependencies": {
     "@react-router/dev": "^8.3.1",
     "@types/node": "^24.10.1",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -50,6 +53,6 @@
     "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
-    "vitest": "^5.0.0"
+    "vitest": "^4.1.11"
   }
 }

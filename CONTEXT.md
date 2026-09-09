@@ -5,7 +5,7 @@ Easy Quote helps small artisan businesses prepare customer-ready quotes with les
 ## Language
 
 **Artisan Business**:
-A sole artisan or very small company that performs skilled trade work for customers and prepares quotes for that work.
+A sole artisan or very small company that performs skilled trade work for customers and prepares quotes for that work. Customers and Quotes belong to the Artisan Business, not to an individual Artisan.
 _Avoid_: Vendor, contractor, account
 
 **Artisan**:
@@ -17,7 +17,7 @@ A reusable record of the person or organization for whom an Artisan Business pro
 _Avoid_: Client, buyer, account
 
 **Quote**:
-An editable commercial record describing proposed work for a Customer, including quantities and prices.
+An editable commercial record belonging to an Artisan Business that describes proposed work for a Customer, including quantities and prices. Its customer-facing language is independent of the Artisan's interface language.
 _Avoid_: Estimate, invoice, proposal
 
 **Quote Line**:

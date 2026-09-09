@@ -22,7 +22,16 @@ The application must provide these scripts:
 
 `start` must listen on `0.0.0.0:3000`. The image provides `HOST=0.0.0.0` and `PORT=3000`. It exposes port 3000 and uses `/health/ready` for its Docker health check. The application must also provide `/health/live`. `/health/live` only reports that the process can answer HTTP. `/health/ready` must check PostgreSQL connectivity and that the required schema exists.
 
-The image contains no `DATABASE_URL`. Set it only in Dokploy's application environment. Do not add it as a Docker build argument, GitHub Actions secret used during the build, or checked-in environment file.
+The image contains no runtime secrets. Set the following only in Dokploy's application environment, as runtime secrets or configuration. Do not add them as Docker build arguments, GitHub Actions secrets used during the build, or checked-in environment files:
+
+- `DATABASE_URL`: PostgreSQL connection string.
+- `BETTER_AUTH_SECRET`: at least 32 random characters.
+- `BETTER_AUTH_URL`: the canonical HTTPS application URL; it is used for origin checks and verification/reset links.
+- `AUTH_ALLOWED_EMAILS`: space, comma or newline separated normalized tester addresses. An empty value denies all new registrations and protected access.
+- `AUTH_TRUSTED_ORIGINS`: optional additional HTTPS origins, space separated.
+- `EMAIL_DELIVERY=smtp`, `SMTP_HOST=mail.infomaniak.com`, `SMTP_PORT=587`, `SMTP_USER=auth@voidstation.ch`, `SMTP_PASSWORD` (dedicated device/app password), and `SMTP_FROM=auth@voidstation.ch`.
+
+For local development, `EMAIL_DELIVERY=fake` captures messages in memory and never sends mail. Do not use `AUTH_ALLOWED_EMAILS=*` outside disposable local development.
 
 This first slice runs one application replica. The container migrates before it serves traffic, so two replicas can race on migrations. Before scaling, move migrations into a one-shot release step or add a migration lock, and set the service to start only after that step succeeds.
 
@@ -49,10 +58,10 @@ Do these steps in Dokploy and GitHub before the first release. They are human se
 
 1. Create a PostgreSQL service in the Easy Quote Dokploy project.
 2. Add a Docker-managed volume to PostgreSQL at its image's data directory. For the standard Postgres image this is `/var/lib/postgresql/data`.
-3. Put PostgreSQL and the Easy Quote application on the same private Dokploy network. Do not publish PostgreSQL's port. The application `DATABASE_URL` must use the database's private hostname and port on that network.
+3. Put PostgreSQL and the Easy Quote application on the same private Dokploy network. Do not publish PostgreSQL's port. The application `DATABASE_URL` must use the database's private hostname and port on that network. Keep PostgreSQL private.
 4. Create an application with the Docker provider. Give Dokploy credentials that can pull the private GHCR package, if the package is private. Do not enable a Git or Docker webhook or Dokploy auto-deploy for this application.
 5. Configure the application to target port 3000 and route its domain through Dokploy. Configure its health check to request `/health/ready` on port 3000 if the Dokploy version exposes that setting.
-6. Set only `DATABASE_URL` in the application's Dokploy environment. Set it as a runtime secret, not in the repository or image build.
+6. Set the runtime contract above in the application's Dokploy environment. Keep `DATABASE_URL`, `BETTER_AUTH_SECRET`, and `SMTP_PASSWORD` as runtime secrets, not in the repository or image build. Start with `EMAIL_DELIVERY=fake` while validating the deployment; switch to authenticated Infomaniak SMTP only after the mailbox, DNS and sending allowance checks are complete.
 7. Create a Dokploy API key with access limited to this application. It needs to read the application and deployments, update the application Docker provider, and create deployments.
 8. In the GitHub `production` environment, add `DOKPLOY_URL`, `DOKPLOY_TOKEN`, and `DOKPLOY_APPLICATION_ID` as secrets. `DOKPLOY_URL` must be an HTTPS base URL with no `/api` suffix. Protect the environment with the intended reviewer policy.
 9. Give the repository Actions package write access and configure the GHCR package so Dokploy can pull it.
