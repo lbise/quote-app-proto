@@ -26,10 +26,19 @@ The image contains no runtime secrets. Set the following only in Dokploy's appli
 
 - `DATABASE_URL`: PostgreSQL connection string.
 - `BETTER_AUTH_SECRET`: at least 32 random characters.
-- `BETTER_AUTH_URL`: the canonical HTTPS application URL; it is used for origin checks and verification/reset links.
+- `BETTER_AUTH_URL`: the canonical HTTPS application URL (`https://easy-quote.voidstation.ch` in production); it is used for origin checks and verification/reset links.
 - `AUTH_ALLOWED_EMAILS`: space, comma or newline separated normalized tester addresses. An empty value denies all new registrations and protected access.
 - `AUTH_TRUSTED_ORIGINS`: optional additional HTTPS origins, space separated.
 - `EMAIL_DELIVERY=smtp`, `SMTP_HOST=mail.infomaniak.com`, `SMTP_PORT=587`, `SMTP_USER=auth@voidstation.ch`, `SMTP_PASSWORD` (dedicated device/app password), and `SMTP_FROM=auth@voidstation.ch`.
+
+For the current production deployment, use:
+
+```env
+BETTER_AUTH_URL=https://easy-quote.voidstation.ch
+AUTH_TRUSTED_ORIGINS=https://easy-quote.voidstation.ch
+SMTP_USER=auth@voidstation.ch
+SMTP_FROM=auth@voidstation.ch
+```
 
 For local development, `EMAIL_DELIVERY=fake` captures messages in memory and never sends mail. Do not use `AUTH_ALLOWED_EMAILS=*` outside disposable local development.
 
