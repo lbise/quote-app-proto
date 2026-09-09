@@ -6,6 +6,12 @@ if (!keyPath || !certificatePath || !expectedImage) process.exit(2);
 
 let savedImage;
 let deployed = false;
+// Runtime-only fixture: no real credential and no committed password literal.
+const registry = {
+  username: "test-user",
+  password: crypto.randomUUID(),
+  registryUrl: "ghcr.io",
+};
 
 const server = createServer(
   {
@@ -27,6 +33,7 @@ const server = createServer(
     const url = new URL(request.url, "https://127.0.0.1");
     if (request.method === "GET" && url.pathname === "/api/application.one") {
       reply(200, {
+        ...registry,
         sourceType: savedImage ? "docker" : "git",
         dockerImage: savedImage ?? "ghcr.io/example/old@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       });
@@ -45,6 +52,11 @@ const server = createServer(
     if (request.method === "POST" && url.pathname === "/api/application.saveDockerProvider") {
       if (body.applicationId !== "test-app" || body.dockerImage !== expectedImage) {
         reply(400, { error: "wrong Docker provider payload" });
+        return;
+      }
+      // All three registry properties are required, even for public images.
+      if (Object.keys(registry).some((key) => body[key] !== registry[key])) {
+        reply(400, { error: "registry fields missing or changed" });
         return;
       }
       savedImage = body.dockerImage;

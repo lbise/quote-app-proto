@@ -60,7 +60,7 @@ Do these steps in Dokploy and GitHub before the first release. They are human se
 The release script requires Dokploy v0.19+ and sends the personal API key in the `x-api-key` header. Set `DOKPLOY_TOKEN` to the raw key, without a `Bearer` prefix. It calls these Dokploy API operations:
 
 - `GET /api/application.one?applicationId=...` before and after the change;
-- `POST /api/application.saveDockerProvider` with `applicationId` and the immutable `dockerImage` digest;
+- `POST /api/application.saveDockerProvider` with `applicationId`, the immutable `dockerImage` digest, and the existing `username`, `password` and `registryUrl` from `application.one`. All registry fields are required, even when null. Preserve their values to avoid clearing private-registry credentials;
 - `POST /api/application.deploy` with `applicationId`;
 - `GET /api/deployment.all?applicationId=...` until the new record is `done`, `error`, or `cancelled`.
 
@@ -71,7 +71,7 @@ Dokploy sources used to verify the API and settings:
 - [Dokploy API guide](https://docs.dokploy.com/docs/api), which shows the `x-api-key` authentication header.
 - [Dokploy authentication implementation](https://github.com/Dokploy/dokploy/blob/canary/packages/server/src/lib/auth.ts), which reads and verifies `x-api-key`.
 - [Dokploy OpenAPI generator](https://github.com/Dokploy/dokploy/blob/canary/apps/dokploy/scripts/generate-openapi.ts), which defines the API-key header. Older examples using bearer authentication predate personal API keys.
-- [Dokploy application router](https://github.com/Dokploy/dokploy/blob/canary/apps/dokploy/server/api/routers/application.ts#L644-L667), which saves `dockerImage` and sets the Docker provider before deployment.
+- [Dokploy provider request schema](https://github.com/Dokploy/dokploy/blob/bda81242917e3bb7db4a755634fabd4fefc8c2c7/packages/server/src/db/schema/application.ts#L508-L516) and [handler](https://github.com/Dokploy/dokploy/blob/bda81242917e3bb7db4a755634fabd4fefc8c2c7/apps/dokploy/server/api/routers/application.ts#L644-L657), which require and overwrite all Docker provider fields.
 - [Dokploy deployment schema](https://github.com/Dokploy/dokploy/blob/canary/packages/server/src/db/schema/deployment.ts), which defines `running`, `done`, `error`, and `cancelled` deployment status values.
 - [Dokploy database guide](https://docs.dokploy.com/docs/core/databases/overview) and [application volume guide](https://docs.dokploy.com/docs/core/application/advanced), which document volume configuration and database backups.
 

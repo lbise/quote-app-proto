@@ -40,29 +40,43 @@ api_get() {
   curl --fail --silent --show-error \
     --header 'Accept: application/json' \
     --header "$AUTHORIZATION" \
-    "$BASE_URL/api/$1"
+    --connect-timeout 10 --max-time 30 \
+    "$BASE_URL/api/$1" || {
+      printf 'Dokploy GET %s failed; response body withheld.\n' "${1%%\?*}" >&2
+      return 1
+    }
 }
 
 api_post() {
-  curl --fail --silent --show-error \
+  printf '%s' "$2" | curl --fail --silent --show-error \
     --request POST \
     --header 'Accept: application/json' \
     --header 'Content-Type: application/json' \
     --header "$AUTHORIZATION" \
-    --data "$2" \
-    "$BASE_URL/api/$1" >/dev/null
+    --data-binary @- \
+    --connect-timeout 10 --max-time 30 \
+    "$BASE_URL/api/$1" >/dev/null || {
+      printf 'Dokploy POST %s failed; response body withheld.\n' "$1" >&2
+      return 1
+    }
 }
 
 # Read the application before changing it. Do not print this response: it can
 # include Dokploy configuration that does not belong in CI logs.
-api_get "application.one?applicationId=$DOKPLOY_APPLICATION_ID" >/dev/null
+application=$(api_get "application.one?applicationId=$DOKPLOY_APPLICATION_ID")
 before=$(api_get "deployment.all?applicationId=$DOKPLOY_APPLICATION_ID")
 before_ids=$(printf '%s' "$before" | jq -c '[.[].deploymentId]')
 
-provider_payload=$(jq -cn \
+# saveDockerProvider requires all registry fields and overwrites them. Preserve
+# the saved credentials, including nulls for public images. Never log this body.
+provider_payload=$(printf '%s' "$application" | jq -ce \
   --arg applicationId "$DOKPLOY_APPLICATION_ID" \
-  --arg dockerImage "$IMAGE" \
-  '{applicationId: $applicationId, dockerImage: $dockerImage}')
+  --arg dockerImage "$IMAGE" '
+  if has("username") and has("password") and has("registryUrl") then
+    {applicationId: $applicationId, dockerImage: $dockerImage,
+     username, password, registryUrl}
+  else error("Application response lacks registry fields; refusing to overwrite credentials")
+  end')
 api_post 'application.saveDockerProvider' "$provider_payload"
 
 configured=$(api_get "application.one?applicationId=$DOKPLOY_APPLICATION_ID")
