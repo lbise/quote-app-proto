@@ -18,7 +18,8 @@ const server = createServer(
       response.end(JSON.stringify(body));
     };
 
-    if (request.headers.authorization !== "Bearer test-token") {
+    // Dokploy v0.19+ authenticates personal API keys through x-api-key.
+    if (request.headers["x-api-key"] !== "test-token") {
       reply(401, { error: "unauthorized" });
       return;
     }

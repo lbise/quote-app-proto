@@ -57,7 +57,7 @@ Do these steps in Dokploy and GitHub before the first release. They are human se
 8. In the GitHub `production` environment, add `DOKPLOY_URL`, `DOKPLOY_TOKEN`, and `DOKPLOY_APPLICATION_ID` as secrets. `DOKPLOY_URL` must be an HTTPS base URL with no `/api` suffix. Protect the environment with the intended reviewer policy.
 9. Give the repository Actions package write access and configure the GHCR package so Dokploy can pull it.
 
-The release script calls these documented Dokploy API operations with bearer authentication:
+The release script requires Dokploy v0.19+ and sends the personal API key in the `x-api-key` header. Set `DOKPLOY_TOKEN` to the raw key, without a `Bearer` prefix. It calls these Dokploy API operations:
 
 - `GET /api/application.one?applicationId=...` before and after the change;
 - `POST /api/application.saveDockerProvider` with `applicationId` and the immutable `dockerImage` digest;
@@ -68,10 +68,11 @@ It does not use the mutable webhook. It does not print Dokploy API responses, be
 
 Dokploy sources used to verify the API and settings:
 
-- [Dokploy API OpenAPI document](https://github.com/Dokploy/docs/blob/main/api.json), which documents `application.one`, `application.saveDockerProvider`, `application.deploy`, and `deployment.all` with bearer authentication.
+- [Dokploy API guide](https://docs.dokploy.com/docs/api), which shows the `x-api-key` authentication header.
+- [Dokploy authentication implementation](https://github.com/Dokploy/dokploy/blob/canary/packages/server/src/lib/auth.ts), which reads and verifies `x-api-key`.
+- [Dokploy OpenAPI generator](https://github.com/Dokploy/dokploy/blob/canary/apps/dokploy/scripts/generate-openapi.ts), which defines the API-key header. Older examples using bearer authentication predate personal API keys.
 - [Dokploy application router](https://github.com/Dokploy/dokploy/blob/canary/apps/dokploy/server/api/routers/application.ts#L644-L667), which saves `dockerImage` and sets the Docker provider before deployment.
 - [Dokploy deployment schema](https://github.com/Dokploy/dokploy/blob/canary/packages/server/src/db/schema/deployment.ts), which defines `running`, `done`, `error`, and `cancelled` deployment status values.
-- [Dokploy auto-deploy API guide](https://docs.dokploy.com/docs/core/application/auto-deploy), which documents bearer-token API deployment.
 - [Dokploy database guide](https://docs.dokploy.com/docs/core/databases/overview) and [application volume guide](https://docs.dokploy.com/docs/core/application/advanced), which document volume configuration and database backups.
 
 ## Releasing and rollback
@@ -86,7 +87,7 @@ git tag -a v1.2.3 -m 'v1.2.3'
 git push origin v1.2.3
 ```
 
-Watch the Release workflow. A failed check leaves GHCR and Dokploy untouched. A failed publish leaves Dokploy untouched. A failed Dokploy status poll means inspect the Dokploy deployment logs before retrying. The tag remains immutable, so do not retry by moving it.
+Watch the Release workflow. A failed check leaves GHCR and Dokploy untouched. A failed publish leaves Dokploy untouched. A failed Dokploy status poll means inspect the Dokploy deployment logs before retrying. The tag remains immutable, so do not retry by moving it. If only a GitHub secret needs correcting, rerun the failed deploy job. If the deployment script needs a code fix, merge it into `main` and push the next version tag. Rerunning an old release still checks out its old script; rerunning all jobs also fails the existing-image check.
 
 To roll back, choose the recorded digest of a known-good release and save that digest in the Dokploy Docker provider, then deploy it. The release workflow prints that digest in the deploy job. An image rollback does not roll back PostgreSQL. Take a database backup before releases that include migrations, use backward-compatible expand and contract migrations, and write a separate database recovery plan before any destructive migration.
 

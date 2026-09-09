@@ -33,7 +33,8 @@ if ! printf '%s\n' "$IMAGE" | grep -Eq '^ghcr\.io/[a-z0-9][a-z0-9._/-]*@sha256:[
 fi
 
 BASE_URL=${DOKPLOY_URL%/}
-AUTHORIZATION="Authorization: Bearer $DOKPLOY_TOKEN"
+# Dokploy v0.19+ personal API keys use x-api-key, not legacy bearer auth.
+AUTHORIZATION="x-api-key: $DOKPLOY_TOKEN"
 
 api_get() {
   curl --fail --silent --show-error \
