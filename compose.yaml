@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: easy_quote_local
       POSTGRES_USER: easy_quote
-      POSTGRES_PASSWORD: easy_quote_local
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "127.0.0.1:55432:5432"
     volumes:

@@ -8,7 +8,7 @@ The current slice is an online status page for invited testers. It uses fake dat
 
 Use Node.js 24 and Docker Compose.
 
-Start the local PostgreSQL service, install dependencies and apply the migration:
+Start the local PostgreSQL service, install dependencies and apply the migration. Compose binds PostgreSQL to localhost only and uses trust authentication because this database is disposable local development data, not a production service:
 
 ```sh
 docker compose up -d postgres
@@ -32,7 +32,7 @@ The health endpoints are:
 - `GET /health/live` checks that the process answers HTTP.
 - `GET /health/ready` checks PostgreSQL and the initial migration.
 
-Stop the local database with `docker compose down`. Add `-v` only when you want to delete its local data.
+Stop the local database with `docker compose down`. Add `-v` only when you want to delete its local data. If the database volume was created with the old password-based configuration, run `docker compose down -v` once before starting it again.
 
 Run the checks and build with:
 
