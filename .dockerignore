@@ -1,0 +1,13 @@
+.git
+.github
+.agents
+node_modules
+build
+coverage
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.log
+tests
+docs

@@ -1,0 +1,23 @@
+{
+  "id": "easy-quote-initial-installation",
+  "prevId": "",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.app_installation": {
+      "name": "app_installation",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "integer", "primaryKey": true, "notNull": true, "default": null },
+        "created_at": { "name": "created_at", "type": "timestamp with time zone", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "policies": {},
+      "checkConstraints": { "single_installation": { "name": "single_installation", "value": "\"app_installation\".\"id\" = 1" } },
+      "isRLSEnabled": false
+    }
+  },
+  "schemas": {}, "sequences": {}, "roles": {}, "policies": {}, "views": {}, "_meta": { "schemas": {}, "tables": {}, "columns": {} }
+}

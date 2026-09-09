@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: easy_quote_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d easy_quote_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/easy_quote_test
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        run: sh scripts/validate-release.sh "$GITHUB_REF_NAME"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Apply test database migrations
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Test deployment scripts
+        run: sh tests/deployment/validate-release.test.sh
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.reference }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set image name
+        id: image-name
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Reject an existing release image tag
+        env:
+          IMAGE: ${{ steps.image-name.outputs.name }}
+          VERSION: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          repository="${IMAGE#ghcr.io/}"
+          token=$(curl --fail --silent --show-error \
+            --user "${GITHUB_ACTOR}:${GITHUB_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+            | jq -er '.token')
+          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${token}" \
+            --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+            "https://ghcr.io/v2/${repository}/manifests/${VERSION}")
+          case "$status" in
+            404) ;;
+            200) printf 'GHCR release image tag already exists: %s:%s\n' "$IMAGE" "$VERSION" >&2; exit 1 ;;
+            *) printf 'Unable to determine whether GHCR tag is available, got HTTP %s\n' "$status" >&2; exit 1 ;;
+          esac
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image-name.outputs.name }}:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Record immutable image reference
+        id: image
+        env:
+          IMAGE: ${{ steps.image-name.outputs.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -eu
+          case "$DIGEST" in sha256:*) ;; *) exit 1 ;; esac
+          echo "reference=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Check out release scripts
+        uses: actions/checkout@v5
+
+      - name: Save digest and deploy through Dokploy
+        env:
+          DOKPLOY_APPLICATION_ID: ${{ secrets.DOKPLOY_APPLICATION_ID }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          IMAGE: ${{ needs.publish.outputs.image }}
+        run: sh scripts/deploy-dokploy.sh "$IMAGE"
