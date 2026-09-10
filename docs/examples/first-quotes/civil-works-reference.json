@@ -1,0 +1,293 @@
+{
+  "fixtureFormat": "documentation-example/v1 (not a production schema)",
+  "currency": "CHF",
+  "language": "fr-CH",
+  "anonymization": "Exemple anonymisé et adapté conservant des chiffres commerciaux; aucune garantie de confidentialité statistique n’est revendiquée.",
+  "title": "Fouille et conduites. Exemple adapté",
+  "provenance": {
+    "sourceAlias": "civil-works-reference",
+    "historicalSourceDate": "2023-03-20",
+    "extraction": "Texte PDF local lu sur les pages de positions et de total.",
+    "termsAdaptation": "Les conditions lisibles ont été reprises dans quoteSnapshot.terms sous forme de paraphrases anonymisées, non de citations. Elles sont distinguées des métadonnées synthétiques du Quote.",
+    "adaptedVatTreatment": "Le taux standard 8,1 % est une hypothèse de calcul synthétique. Ce scénario ne classe pas juridiquement les plantes ou matériaux et ne couvre pas les ventes à taux réduit.",
+    "sourcePrintedTotals": {
+      "subtotal": "9311.50",
+      "vatRate": "0.077",
+      "vat": "717.00",
+      "total": "10028.50"
+    },
+    "unpricedSourcePosition": {
+      "printedNumber": "3.4",
+      "printedDescription": "Fourniture et mise en place d’un sac coupe vent",
+      "printedUnit": "pce",
+      "printedQuantity": "par",
+      "printedUnitPrice": "340.00",
+      "printedAmount": null,
+      "treatment": "Exclue: aucune quantité numérique ni montant final n’est imprimé; aucun montant n’a été inventé."
+    }
+  },
+  "quoteSnapshot": {
+    "reference": "EX-2026-092",
+    "issueDate": "2026-08-15",
+    "serviceDate": "2026-09-01",
+    "serviceDateFixtureNote": "Date de prestation illustrative dans cette fixture, pas une exigence de champ produit.",
+    "issuer": {
+      "name": "Terrassement Exemple Sàrl",
+      "address": "Rue Exemple 2, 1000 Exemple",
+      "email": "bureau@example.test",
+      "vatIdentifier": "CHE-000.000.000 TVA (identifiant fictif d’exemple)"
+    },
+    "customer": {
+      "name": "Atelier Exemple SA",
+      "address": "Rue Exemple 9, 1000 Exemple"
+    },
+    "terms": [
+      "Une variation de prix après la date du devis peut modifier les prix unitaires au moment de l’adjudication.",
+      "Les délais de livraison des matériaux seront confirmés au moment de l’adjudication.",
+      "Les travaux demandés en sus des positions du devis font l’objet d’une plus-value.",
+      "En cas d’acceptation, retourner un exemplaire daté et signé du devis.",
+      "Au-delà de CHF 30’000 TTC, un acompte de 40 % est demandé à la commande pour réserver les matériaux."
+    ],
+    "tax": {
+      "mode": "vat",
+      "rate": "0.081",
+      "label": "TVA 8,1 %"
+    }
+  },
+  "sections": [
+    {
+      "name": "Installation",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "fixed",
+          "description": "Installation de chantier comprenant le déplacement du personnel, des machines et outils nécessaires à l’exécution des travaux",
+          "amount": "800.00",
+          "sourceEvidence": {
+            "printedNumber": "1.1",
+            "printedUnit": "gl",
+            "printedAmount": "800.00",
+            "adaptation": "gl est traité comme un montant fixe, sans quantité ni unité inventée."
+          }
+        },
+        {
+          "number": 2,
+          "kind": "fixed",
+          "description": "Demande d’autorisation pour travaux sur le domaine communal, y compris taxe de fouille",
+          "amount": "240.00",
+          "sourceEvidence": {
+            "printedNumber": "1.2",
+            "printedUnit": "gl",
+            "printedAmount": "240.00",
+            "adaptation": "gl est traité comme un montant fixe, sans quantité ni unité inventée."
+          }
+        }
+      ],
+      "subtotal": "1040.00"
+    },
+    {
+      "name": "Travaux de fouille eaux usées",
+      "lines": [
+        {
+          "number": 3,
+          "kind": "quantity-priced",
+          "description": "Creuse à la petite machine et à la main, jusqu’à 1,5 m",
+          "quantity": "9.500",
+          "unit": "m3",
+          "unitPrice": "114.00",
+          "amount": "1083.00",
+          "sourceEvidence": {
+            "printedNumber": "2.1"
+          }
+        },
+        {
+          "number": 4,
+          "kind": "quantity-priced",
+          "description": "Transport intermédiaire au petit dumper des matériaux fournis ou évacués (vol. foisonné)",
+          "quantity": "4.000",
+          "unit": "m3",
+          "unitPrice": "20.00",
+          "amount": "80.00",
+          "sourceEvidence": {
+            "printedNumber": "2.2"
+          }
+        },
+        {
+          "number": 5,
+          "kind": "quantity-priced",
+          "description": "Fourniture et mise en place d’un PVC diam. 125 mm",
+          "quantity": "20.000",
+          "unit": "m",
+          "unitPrice": "24.80",
+          "amount": "496.00",
+          "sourceEvidence": {
+            "printedNumber": "2.3"
+          }
+        },
+        {
+          "number": 6,
+          "kind": "quantity-priced",
+          "description": "Raccordement sur la canalisation communale existante",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "450.00",
+          "amount": "450.00",
+          "sourceEvidence": {
+            "printedNumber": "2.4"
+          }
+        },
+        {
+          "number": 7,
+          "kind": "quantity-priced",
+          "description": "Création d’une chambre de visite DN 50 cm en limite de parcelle, y compris couvercle en béton",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "1170.00",
+          "amount": "1170.00",
+          "sourceEvidence": {
+            "printedNumber": "2.5"
+          }
+        },
+        {
+          "number": 8,
+          "kind": "quantity-priced",
+          "description": "Fourniture et mise en place de sable de fouille",
+          "quantity": "2.000",
+          "unit": "m3",
+          "unitPrice": "110.00",
+          "amount": "220.00",
+          "sourceEvidence": {
+            "printedNumber": "2.6"
+          }
+        },
+        {
+          "number": 9,
+          "kind": "quantity-priced",
+          "description": "Remblayage à la petite machine et à la main avec les matériaux stockés latéralement",
+          "quantity": "10.000",
+          "unit": "m3",
+          "unitPrice": "78.00",
+          "amount": "780.00",
+          "sourceEvidence": {
+            "printedNumber": "2.7"
+          }
+        },
+        {
+          "number": 10,
+          "kind": "quantity-priced",
+          "description": "Chargement et évacuation des matériaux excédentaires",
+          "quantity": "2.000",
+          "unit": "m3",
+          "unitPrice": "85.00",
+          "amount": "170.00",
+          "sourceEvidence": {
+            "printedNumber": "2.8"
+          }
+        }
+      ],
+      "subtotal": "4449.00"
+    },
+    {
+      "name": "Travaux de fouille eaux claires",
+      "lines": [
+        {
+          "number": 11,
+          "kind": "quantity-priced",
+          "description": "Creuse à la petite machine et à la main, jusqu’à 1,5 m",
+          "quantity": "10.000",
+          "unit": "m3",
+          "unitPrice": "114.00",
+          "amount": "1140.00",
+          "sourceEvidence": {
+            "printedNumber": "3.1"
+          }
+        },
+        {
+          "number": 12,
+          "kind": "quantity-priced",
+          "description": "Transport intermédiaire au petit dumper des matériaux fournis ou évacués (vol. foisonné)",
+          "quantity": "5.000",
+          "unit": "m3",
+          "unitPrice": "20.00",
+          "amount": "100.00",
+          "sourceEvidence": {
+            "printedNumber": "3.2"
+          }
+        },
+        {
+          "number": 13,
+          "kind": "quantity-priced",
+          "description": "Fourniture et mise en place d’un PVC diam. 110 mm",
+          "quantity": "25.000",
+          "unit": "m",
+          "unitPrice": "22.60",
+          "amount": "565.00",
+          "sourceEvidence": {
+            "printedNumber": "3.3"
+          }
+        },
+        {
+          "number": 14,
+          "kind": "quantity-priced",
+          "description": "Création d’un puits perdu, comprenant la creuse, la fourniture et mise en place de galets 16/32, géotextile et remblayage",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "750.00",
+          "amount": "750.00",
+          "sourceEvidence": {
+            "printedNumber": "3.5"
+          }
+        },
+        {
+          "number": 15,
+          "kind": "quantity-priced",
+          "description": "Fourniture et mise en place de sable de fouille",
+          "quantity": "2.500",
+          "unit": "m3",
+          "unitPrice": "110.00",
+          "amount": "275.00",
+          "sourceEvidence": {
+            "printedNumber": "3.6"
+          }
+        },
+        {
+          "number": 16,
+          "kind": "quantity-priced",
+          "description": "Remblayage à la petite machine et à la main avec les matériaux stockés latéralement",
+          "quantity": "10.000",
+          "unit": "m3",
+          "unitPrice": "78.00",
+          "amount": "780.00",
+          "sourceEvidence": {
+            "printedNumber": "3.7"
+          }
+        },
+        {
+          "number": 17,
+          "kind": "quantity-priced",
+          "description": "Chargement et évacuation des matériaux excédentaires",
+          "quantity": "2.500",
+          "unit": "m3",
+          "unitPrice": "85.00",
+          "amount": "212.50",
+          "sourceEvidence": {
+            "printedNumber": "3.8"
+          }
+        }
+      ],
+      "subtotal": "3822.50"
+    }
+  ],
+  "discount": null,
+  "totals": {
+    "subtotalBeforeDiscount": "9311.50",
+    "discountAmount": "0.00",
+    "baseBeforeVat": "9311.50",
+    "vat": {
+      "rate": "0.081",
+      "amount": "754.23"
+    },
+    "total": "10065.73",
+    "rounding": "Chaque montant de ligne, la TVA et le total sont arrondis à 0.01, half-up; TVA calculée une fois sur la base."
+  }
+}

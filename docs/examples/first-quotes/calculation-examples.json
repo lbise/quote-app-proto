@@ -1,0 +1,279 @@
+{
+  "fixtureFormat": "documentation-example/v1 (not a production schema)",
+  "currency": "CHF",
+  "language": "fr-CH",
+  "anonymization": "Exemple anonymisé et adapté conservant des chiffres commerciaux; aucune garantie de confidentialité statistique n’est revendiquée.",
+  "title": "Cas synthétiques de calcul",
+  "context": {
+    "serviceDate": "2026-09-01",
+    "note": "Scénarios synthétiques; ils illustrent les étapes de calcul et ne constituent pas un mode de taxe historique."
+  },
+  "scenarios": [
+    {
+      "name": "pourcentage-avec-arrondi-de-ligne",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "quantity-priced",
+          "quantity": "0.125",
+          "unit": "h",
+          "unitPrice": "80.20",
+          "amount": "10.03"
+        },
+        {
+          "number": 2,
+          "kind": "quantity-priced",
+          "quantity": "2.000",
+          "unit": "pce",
+          "unitPrice": "45.50",
+          "amount": "91.00"
+        },
+        {
+          "number": 3,
+          "kind": "fixed",
+          "amount": "25.00"
+        }
+      ],
+      "discount": {
+        "kind": "percentage",
+        "rate": "0.10",
+        "amount": "12.60"
+      },
+      "totals": {
+        "subtotalBeforeDiscount": "126.03",
+        "baseBeforeVat": "113.43",
+        "vat": {
+          "rate": "0.081",
+          "amount": "9.19"
+        },
+        "total": "122.62"
+      }
+    },
+    {
+      "name": "sans-tva",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "quantity-priced",
+          "quantity": "0.125",
+          "unit": "h",
+          "unitPrice": "80.20",
+          "amount": "10.03"
+        },
+        {
+          "number": 2,
+          "kind": "quantity-priced",
+          "quantity": "2.000",
+          "unit": "pce",
+          "unitPrice": "45.50",
+          "amount": "91.00"
+        },
+        {
+          "number": 3,
+          "kind": "fixed",
+          "amount": "25.00"
+        }
+      ],
+      "discount": {
+        "kind": "percentage",
+        "rate": "0.10",
+        "amount": "12.60"
+      },
+      "totals": {
+        "subtotalBeforeDiscount": "126.03",
+        "baseBeforeVat": "113.43",
+        "taxRows": [],
+        "total": "113.43"
+      },
+      "note": "Variante d’entreprise sans TVA: aucune ligne TVA, ce qui est distinct d’un taux 0 %."
+    },
+    {
+      "name": "remise-fixe-chf",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "quantity-priced",
+          "quantity": "3.000",
+          "unit": "h",
+          "unitPrice": "20.00",
+          "amount": "60.00"
+        }
+      ],
+      "discount": {
+        "kind": "fixed-chf",
+        "amount": "12.34"
+      },
+      "totals": {
+        "subtotalBeforeDiscount": "60.00",
+        "baseBeforeVat": "47.66",
+        "vat": {
+          "rate": "0.081",
+          "amount": "3.86"
+        },
+        "total": "51.52"
+      }
+    },
+    {
+      "name": "total-zero",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "quantity-priced",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "0.00",
+          "amount": "0.00"
+        },
+        {
+          "number": 2,
+          "kind": "fixed",
+          "amount": "0.00"
+        }
+      ],
+      "discount": null,
+      "totals": {
+        "subtotalBeforeDiscount": "0.00",
+        "baseBeforeVat": "0.00",
+        "vat": {
+          "rate": "0.081",
+          "amount": "0.00"
+        },
+        "total": "0.00"
+      }
+    },
+    {
+      "name": "remise-pourcentage-100",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "quantity-priced",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "12.34",
+          "amount": "12.34"
+        }
+      ],
+      "discount": {
+        "kind": "percentage",
+        "rate": "1.00",
+        "amount": "12.34"
+      },
+      "totals": {
+        "subtotalBeforeDiscount": "12.34",
+        "baseBeforeVat": "0.00",
+        "vat": {
+          "rate": "0.081",
+          "amount": "0.00"
+        },
+        "total": "0.00"
+      }
+    },
+    {
+      "name": "remise-fixe-egale-au-sous-total",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "fixed",
+          "amount": "40.00"
+        },
+        {
+          "number": 2,
+          "kind": "fixed",
+          "amount": "20.00"
+        }
+      ],
+      "discount": {
+        "kind": "fixed-chf",
+        "amount": "60.00"
+      },
+      "totals": {
+        "subtotalBeforeDiscount": "60.00",
+        "baseBeforeVat": "0.00",
+        "vat": {
+          "rate": "0.081",
+          "amount": "0.00"
+        },
+        "total": "0.00"
+      }
+    },
+    {
+      "name": "discriminateur-arrondi-des-lignes",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "quantity-priced",
+          "quantity": "0.125",
+          "unit": "h",
+          "unitPrice": "80.20",
+          "amount": "10.03"
+        },
+        {
+          "number": 2,
+          "kind": "quantity-priced",
+          "quantity": "0.125",
+          "unit": "h",
+          "unitPrice": "80.20",
+          "amount": "10.03"
+        }
+      ],
+      "discount": null,
+      "totals": {
+        "subtotalBeforeDiscount": "20.06",
+        "baseBeforeVat": "20.06",
+        "vat": {
+          "rate": "0.081",
+          "amount": "1.62"
+        },
+        "total": "21.68"
+      },
+      "counterexampleNotExpected": {
+        "method": "Additionner les produits non arrondis avant d’arrondir le sous-total",
+        "rawLineProducts": "10.025 + 10.025",
+        "rawSubtotal": "20.050",
+        "roundedSubtotal": "20.05",
+        "vatAmount": "1.62",
+        "total": "21.67"
+      }
+    },
+    {
+      "name": "discriminateur-arrondi-de-la-tva",
+      "currency": "CHF",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "fixed",
+          "amount": "0.06"
+        },
+        {
+          "number": 2,
+          "kind": "fixed",
+          "amount": "0.06"
+        }
+      ],
+      "discount": null,
+      "totals": {
+        "subtotalBeforeDiscount": "0.12",
+        "baseBeforeVat": "0.12",
+        "vat": {
+          "rate": "0.081",
+          "amount": "0.01"
+        },
+        "total": "0.13"
+      },
+      "counterexampleNotExpected": {
+        "method": "Calculer et arrondir la TVA sur chaque ligne",
+        "rawVatPerLine": "0.00486",
+        "roundedVatPerLine": "0.00",
+        "incorrectVatAmount": "0.00",
+        "incorrectTotal": "0.12"
+      }
+    }
+  ]
+}

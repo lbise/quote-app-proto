@@ -1,0 +1,303 @@
+{
+  "fixtureFormat": "documentation-example/v1 (not a production schema)",
+  "currency": "CHF",
+  "language": "fr-CH",
+  "anonymization": "Exemple anonymisé et adapté conservant des chiffres commerciaux; aucune garantie de confidentialité statistique n’est revendiquée.",
+  "title": "Aménagement extérieur. Exemple adapté",
+  "provenance": {
+    "sourceAlias": "landscape-reference",
+    "historicalSourceDate": "2023-03-18",
+    "extraction": "Texte PDF local lu; les unités absentes de l’impression sont signalées ci-dessous.",
+    "termsAdaptation": "Aucune condition commerciale n’a été trouvée dans la référence. quoteSnapshot.terms est volontairement vide.",
+    "adaptedVatTreatment": "Le taux standard 8,1 % est une hypothèse de calcul synthétique. Ce scénario ne classe pas juridiquement les plantes ou matériaux et ne couvre pas les ventes à taux réduit.",
+    "sourcePrintedTotals": {
+      "subtotal": "13232.00",
+      "vatRate": "0.077",
+      "vat": "1018.85",
+      "total": "14250.85"
+    }
+  },
+  "quoteSnapshot": {
+    "reference": "EX-2026-091",
+    "issueDate": "2026-08-15",
+    "serviceDate": "2026-09-01",
+    "serviceDateFixtureNote": "Date de prestation illustrative dans cette fixture, pas une exigence de champ produit.",
+    "issuer": {
+      "name": "Jardin Exemple Sàrl",
+      "address": "Rue Exemple 1, 1000 Exemple",
+      "email": "contact@example.test",
+      "vatIdentifier": "CHE-000.000.000 TVA (identifiant fictif d’exemple)"
+    },
+    "customer": {
+      "name": "Maison Exemple SA",
+      "address": "Rue Exemple 8, 1000 Exemple"
+    },
+    "terms": [],
+    "tax": {
+      "mode": "vat",
+      "rate": "0.081",
+      "label": "TVA 8,1 %"
+    }
+  },
+  "sections": [
+    {
+      "name": "Terrasse",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "fixed",
+          "description": "Installation de chantier",
+          "amount": "200.00",
+          "sourceEvidence": {
+            "printedDescription": "Installation de chantier",
+            "printedQuantity": "1",
+            "printedUnit": null,
+            "printedUnitPrice": "200.00",
+            "printedAmount": "200.00",
+            "adaptation": "Montant fixe: l’impression avait une quantité mais aucune unité."
+          }
+        },
+        {
+          "number": 2,
+          "kind": "quantity-priced",
+          "description": "Dalle grès cérame",
+          "quantity": "66.000",
+          "unit": "pce",
+          "unitPrice": "80.00",
+          "amount": "5280.00",
+          "sourceEvidence": {
+            "printedDescription": "Dalle greserame",
+            "printedQuantity": "66",
+            "printedUnit": null,
+            "printedUnitPrice": "80.00",
+            "printedAmount": "5280.00",
+            "unitEvidence": "pce inféré de « dalle »; unité non imprimée."
+          }
+        },
+        {
+          "number": 3,
+          "kind": "quantity-priced",
+          "description": "Pose des dalles et réglage du lit de pose",
+          "quantity": "60.000",
+          "unit": "m2",
+          "unitPrice": "30.00",
+          "amount": "1800.00",
+          "sourceEvidence": {
+            "printedDescription": "Poses des dalles et réglage du lit de pose",
+            "printedQuantity": "60",
+            "printedUnit": null,
+            "printedUnitPrice": "30.00",
+            "printedAmount": "1800.00",
+            "unitEvidence": "m2 inféré du contexte « terrasse de 60 mètres carrés »; unité non imprimée."
+          }
+        },
+        {
+          "number": 4,
+          "kind": "quantity-priced",
+          "description": "Natte géotextile",
+          "quantity": "180.000",
+          "unit": "m2",
+          "unitPrice": "3.00",
+          "amount": "540.00",
+          "sourceEvidence": {
+            "printedDescription": "Nate geotextile",
+            "printedQuantity": "180",
+            "printedUnit": null,
+            "printedUnitPrice": "3.00",
+            "printedAmount": "540.00",
+            "unitEvidence": "m2 est une inférence de matériau surfacique; unité non imprimée."
+          }
+        },
+        {
+          "number": 5,
+          "kind": "quantity-priced",
+          "description": "Piquet de fixation",
+          "quantity": "16.000",
+          "unit": "pce",
+          "unitPrice": "7.00",
+          "amount": "112.00",
+          "sourceEvidence": {
+            "printedDescription": "Stein fixe",
+            "printedQuantity": "16",
+            "printedUnit": null,
+            "printedUnitPrice": "7.00",
+            "printedAmount": "112.00",
+            "unitEvidence": "pce inféré de l’élément de fixation; libellé source peu lisible et unité non imprimée."
+          }
+        },
+        {
+          "number": 6,
+          "kind": "quantity-priced",
+          "description": "Gravier 4/8",
+          "quantity": "3.000",
+          "unit": "m3",
+          "unitPrice": "110.00",
+          "amount": "330.00",
+          "sourceEvidence": {
+            "printedDescription": "Gravier 4/8",
+            "printedQuantity": "3",
+            "printedUnit": null,
+            "printedUnitPrice": "110.00",
+            "printedAmount": "330.00",
+            "unitEvidence": "m3 inféré pour un granulat; unité non imprimée."
+          }
+        },
+        {
+          "number": 7,
+          "kind": "quantity-priced",
+          "description": "Grave",
+          "quantity": "10.000",
+          "unit": "m3",
+          "unitPrice": "85.00",
+          "amount": "850.00",
+          "sourceEvidence": {
+            "printedDescription": "Grave",
+            "printedQuantity": "10",
+            "printedUnit": null,
+            "printedUnitPrice": "85.00",
+            "printedAmount": "850.00",
+            "unitEvidence": "m3 inféré pour un granulat; unité non imprimée."
+          }
+        },
+        {
+          "number": 8,
+          "kind": "quantity-priced",
+          "description": "Balaste",
+          "quantity": "30.000",
+          "unit": "m3",
+          "unitPrice": "85.00",
+          "amount": "2550.00",
+          "sourceEvidence": {
+            "printedDescription": "Balaste",
+            "printedQuantity": "30",
+            "printedUnit": null,
+            "printedUnitPrice": "85.00",
+            "printedAmount": "2550.00",
+            "unitEvidence": "m3 est une inférence incertaine de matériau en vrac; unité non imprimée."
+          }
+        },
+        {
+          "number": 9,
+          "kind": "quantity-priced",
+          "description": "Heures de travail",
+          "quantity": "20.000",
+          "unit": "h",
+          "unitPrice": "65.00",
+          "amount": "1300.00",
+          "sourceEvidence": {
+            "printedDescription": "Heures de travaille",
+            "printedQuantity": "20",
+            "printedUnit": null,
+            "printedUnitPrice": "65.00",
+            "printedAmount": "1300.00",
+            "unitEvidence": "h inféré explicitement de « Heures »; unité non imprimée."
+          }
+        }
+      ],
+      "subtotal": "12962.00"
+    },
+    {
+      "name": "Massif en galets",
+      "lines": [
+        {
+          "number": 10,
+          "kind": "quantity-priced",
+          "description": "Galets",
+          "quantity": "3.600",
+          "unit": "m3",
+          "unitPrice": "120.00",
+          "amount": "432.00",
+          "sourceEvidence": {
+            "printedDescription": "Galets",
+            "printedQuantity": "3,6",
+            "printedUnit": null,
+            "printedUnitPrice": "120.00",
+            "printedAmount": "432.00",
+            "unitEvidence": "m3 inféré pour un matériau en vrac; unité non imprimée."
+          }
+        },
+        {
+          "number": 11,
+          "kind": "quantity-priced",
+          "description": "Natte géotextile",
+          "quantity": "18.000",
+          "unit": "m2",
+          "unitPrice": "3.00",
+          "amount": "54.00",
+          "sourceEvidence": {
+            "printedDescription": "Nate géotextile",
+            "printedQuantity": "18",
+            "printedUnit": null,
+            "printedUnitPrice": "3.00",
+            "printedAmount": "54.00",
+            "unitEvidence": "m2 est une inférence de matériau surfacique; unité non imprimée."
+          }
+        },
+        {
+          "number": 12,
+          "kind": "quantity-priced",
+          "description": "Cortaderia selloana",
+          "quantity": "4.000",
+          "unit": "pce",
+          "unitPrice": "23.50",
+          "amount": "94.00",
+          "sourceEvidence": {
+            "printedDescription": "Cortaderia selloana",
+            "printedQuantity": "4",
+            "printedUnit": null,
+            "printedUnitPrice": "23.50",
+            "printedAmount": "94.00",
+            "unitEvidence": "pce inféré pour une plante; unité non imprimée."
+          }
+        },
+        {
+          "number": 13,
+          "kind": "quantity-priced",
+          "description": "Terre végétale",
+          "quantity": "5.000",
+          "unit": "m3",
+          "unitPrice": "90.00",
+          "amount": "450.00",
+          "sourceEvidence": {
+            "printedDescription": "Terre végétale",
+            "printedQuantity": "5",
+            "printedUnit": null,
+            "printedUnitPrice": "90.00",
+            "printedAmount": "450.00",
+            "unitEvidence": "m3 inféré pour un matériau en vrac; unité non imprimée."
+          }
+        },
+        {
+          "number": 14,
+          "kind": "quantity-priced",
+          "description": "Heure de travail",
+          "quantity": "16.000",
+          "unit": "h",
+          "unitPrice": "65.00",
+          "amount": "1040.00",
+          "sourceEvidence": {
+            "printedDescription": "heure de travaille",
+            "printedQuantity": "16",
+            "printedUnit": null,
+            "printedUnitPrice": "65.00",
+            "printedAmount": "1040.00",
+            "unitEvidence": "h inféré explicitement de « heure »; unité non imprimée."
+          }
+        }
+      ],
+      "subtotal": "2070.00"
+    }
+  ],
+  "discount": null,
+  "totals": {
+    "subtotalBeforeDiscount": "15032.00",
+    "discountAmount": "0.00",
+    "baseBeforeVat": "15032.00",
+    "vat": {
+      "rate": "0.081",
+      "amount": "1217.59"
+    },
+    "total": "16249.59",
+    "rounding": "Chaque montant de ligne, la TVA et le total sont arrondis à 0.01, half-up; TVA calculée une fois sur la base."
+  }
+}

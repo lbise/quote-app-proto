@@ -21,5 +21,13 @@ An editable commercial record belonging to an Artisan Business that describes pr
 _Avoid_: Estimate, invoice, proposal
 
 **Quote Line**:
-An independently editable part of a Quote that describes proposed work or material with a quantity, unit and price treatment.
+An independently editable part of a Quote that describes proposed work or material, numbered consecutively in the Quote's current line order. Its price is either calculated from a quantity and unit price or entered as a fixed amount.
 _Avoid_: Quote item, catalog entry
+
+**Quote Section**:
+An optional named group of Quote Lines within a Quote, used to organize work by room, trade or phase and show a subtotal.
+_Avoid_: Chapter, sub-quote
+
+**Quote Discount**:
+An unconditional reduction of a Quote's price before VAT, expressed as either a percentage or a fixed monetary amount.
+_Avoid_: Early-payment discount, negative Quote Line
