@@ -1,0 +1,13 @@
+{
+  "date": "2026-09-11",
+  "scope": "Issue #8 first layout exploration",
+  "framework": "React Router 8, React 19",
+  "styling": "Tailwind 4, shadcn radix-nova",
+  "existingFont": "Geist Variable, app/app.css:4",
+  "existingPalette": "Neutral OKLCH shadcn defaults, app/app.css:8",
+  "motion": "No motion framework; tw-animate-css available",
+  "spacing": "Tailwind default scale",
+  "userDirection": "Existing appearance is not a design base. Professional artisans at a desk; conversation prominent in every variant.",
+  "preserve": ["Auth routes and loaders", "Root locale handling", "Existing home workspace", "Existing global stylesheet"],
+  "introduce": ["Dev-only prototype route", "Scoped exploratory tokens", "Three layouts", "In-memory scripted behaviour"]
+}

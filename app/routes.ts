@@ -2,6 +2,7 @@ import { index, route, type RouteConfig } from "@react-router/dev/routes";
 
 export default [
   index("routes/home.tsx"),
+  ...(process.env.NODE_ENV !== "production" ? [route("quote-layout-prototype", "routes/quote-layout-prototype.tsx")] : []),
   route("sign-in", "routes/sign-in.tsx"),
   route("sign-up", "routes/sign-up.tsx"),
   route("verify", "routes/verify.tsx"),
