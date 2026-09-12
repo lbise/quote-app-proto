@@ -22,7 +22,7 @@ export function PrototypeSwitcher() {
   });
   if (import.meta.env.PROD) return null;
   return <nav className="qp-switcher" aria-label="Prototype layouts">
-    <span className="qp-switcher-tag">PROTOTYPE v0.1</span>
+    <span className="qp-switcher-tag">PROTOTYPE v0.4</span>
     <Button variant="ghost" size="icon" aria-label="Previous layout" onClick={() => cycle(-1)}><ArrowLeft /></Button>
     <span aria-live="polite">{prototypeVariants[index].key} <span className="qp-switcher-name">· {prototypeVariants[index].name}</span></span>
     <Button variant="ghost" size="icon" aria-label="Next layout" onClick={() => cycle(1)}><ArrowRight /></Button>

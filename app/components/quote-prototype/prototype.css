@@ -2,6 +2,9 @@
  * Pre-emit critique: Philosophy 4 · Hierarchy 4 · Execution 4 · Specificity 5 · Restraint 4 · Variety 4
  * THROWAWAY. Themes adapted for a working application, not their marketing-page recipes.
  * Nav A N9, B N3, C N1a. No marketing footer; commercial terms close the document.
+ * v0.2: user selected B; retain Cobalt and Workbench. Knobs: Quote/chat 58/42,
+ * conditional section rail, examples moved out of the conversation.
+ * v0.4: Sections heading without aggregate count; collapse to a single-icon rail.
  */
 @import '../../../tokens.css';
 @import '@fontsource-variable/space-grotesk';
@@ -141,6 +144,7 @@ html[data-quote-prototype], html[data-quote-prototype] body { overflow-x: clip; 
 .qp-document-bottom strong { font-size: var(--text-md); font-variant-numeric: tabular-nums; }
 .qp-outline { display: flex; flex-direction: column; gap: var(--space-2xs); }
 .qp-outline-heading { font-size: 11px; display: flex; flex-direction: column; gap: var(--space-2xs); color: var(--color-muted); padding: var(--space-md) var(--space-sm); }
+.qp-outline-title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); }
 .qp-outline-heading span:first-child { color: var(--color-ink); font-weight: 600; font-size: var(--text-sm); }
 .qp-outline > button:not([data-slot]) { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); min-height: 40px; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-control); color: var(--color-muted); font-size: 12px; text-align: left; }
 .qp-outline > button > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -149,8 +153,13 @@ html[data-quote-prototype], html[data-quote-prototype] body { overflow-x: clip; 
 .qp-outline > [data-slot='button'] { justify-content: start; margin-top: var(--space-sm); font-size: 12px; }
 .qp-layout-b { flex-direction: row; gap: var(--space-md); }
 .qp-review-rail { width: 176px; flex-shrink: 0; border-right: 1px solid var(--color-rule); padding-right: var(--space-md); padding-top: var(--space-lg); overflow: auto; }
+.qp-review-rail[hidden], .qp-outline-links[hidden] { display: none; }
+.qp-review-rail[data-collapsed='true'] { width: 52px; padding-right: var(--space-xs); }
+.qp-review-rail[data-collapsed='true'] .qp-outline-heading { padding-inline: 0; }
+.qp-review-rail[data-collapsed='true'] .qp-outline-title-row { justify-content: center; }
+.qp-review-rail[data-collapsed='true'] .qp-outline-title-row > span { display: none; }
 .qp-review-main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.qp-layout-b .qp-split { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--space-md); }
+.qp-layout-b .qp-split { grid-template-columns: minmax(0, 58fr) minmax(0, 42fr); gap: var(--space-md); }
 .qp-layout-b .qp-conversation, .qp-layout-b .qp-document-pane { border-radius: var(--radius-control); }
 .qp-layout-b .qp-paper { padding: var(--space-lg); }
 .qp-layout-b .qp-panel-heading { padding: var(--space-md); }
@@ -238,7 +247,6 @@ html[data-quote-prototype], html[data-quote-prototype] body { overflow-x: clip; 
   .qp-business-label { display: none; }
   .qp-project-heading { justify-content: start; }
   .qp-review-rail { width: 140px; padding-right: var(--space-xs); }
-  .qp-layout-b .qp-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .qp-layout-b .qp-document-status { gap: var(--space-xs); }
   .qp-work-toolbar { gap: var(--space-xs); }
   .qp-toolbar-actions { gap: var(--space-xs); }

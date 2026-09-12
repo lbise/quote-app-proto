@@ -1,12 +1,12 @@
-# Quote layout prototype v0.1
+# Quote layout prototype v0.4
 
-Throwaway work for [#8](https://github.com/lbise/quote-app-proto/issues/8), captured on `prototype/8-quote-layouts`. **No layout has user approval. Do not merge this prototype as the implementation of #7.**
+Throwaway work for [#8](https://github.com/lbise/quote-app-proto/issues/8), captured on `prototype/8-quote-layouts`. **The user approved layout B v0.4 and requested closure of #8. Do not merge this throwaway prototype as the implementation of #7.** See the [implementation handoff](handoff.md) and its remaining-work list.
 
 ## Question
 
 How should a professional artisan prepare a Quote through a prominent conversation while reviewing and manually correcting its French commercial content alongside it?
 
-The user confirmed the desk audience and the conversational preparation workflow. They specifically asked that conversation be prominent and the design professional. Those are confirmed constraints, not approval of the layouts below.
+The user confirmed the desk audience and the conversational preparation workflow. They specifically asked that conversation be prominent and the design professional. They subsequently selected B for refinement and requested a slightly wider Quote, more vertical conversation space and an alternative to an empty section sidebar on simple Quotes.
 
 ## Run
 
@@ -18,7 +18,7 @@ npm run prototype:quotes
 Open <http://localhost:5174/quote-layout-prototype?variant=A>. The command also requests that the browser open this URL. The dev server binds to the network for review from another device. No sign-in, database setup or AI credentials are needed for the prototype.
 
 - `?variant=A`: Desk. Conversation left, full Quote right, compact section selector.
-- `?variant=B`: Review. Persistent section index left, full Quote centre, substantial conversation right.
+- `?variant=B`: Review. Section index left, collapsible to a narrow single-icon rail; full Quote centre at 58% of the two-panel area, conversation right at 42%. Open **Scénarios et état / Scenarios & state** for scripted requests.
 - `?variant=C`: Focus. Wider conversation left, current-section review right. Use **Tout le devis / Full Quote** to review all commercial content.
 - Add `&lang=en` for English controls; commercial content stays French. French is the default.
 
@@ -42,11 +42,11 @@ The amount display uses scaled integers and half-up cent rounding. This is dispo
 
 | | A: Desk | B: Review | C: Focus |
 | --- | --- | --- | --- |
-| Conversation | About 44% of the working width | About 46% after the section rail | About 56% |
-| Review | Whole document | Whole document, persistent index | One work section by default |
+| Conversation | About 44% of the working width | 42% after the optional section rail | About 56% |
+| Review | Whole document | Whole document, conditional/collapsible index | One work section by default |
 | Type | Geist UI/document, Space Grotesk wordmark | Space Grotesk headings, Geist content | Newsreader headings/document, Geist conversation |
 | Palette | Warm near-white, restrained rust accent | Cool near-white, cobalt accent | Green-tinted neutrals, dark green accent |
-| Main trade-off | Easy comparison, less navigation | Faster long-Quote navigation, denser document | More room to converse, explicit step to inspect the whole Quote |
+| Main trade-off | Easy comparison, less navigation | Wider document; section navigation only when useful | More room to converse, explicit step to inspect the whole Quote |
 
 All three show customer-facing content separately from editor warnings and controls. Missing values display a dash, never zero. Deliberate zero prices show **Sans frais**. Incomplete pricing shows a partial subtotal and withholds the final total. Missing administrative details do not suppress valid calculations.
 
@@ -62,7 +62,36 @@ Line controls remain visible rather than appearing only on hover. Reordering use
 
 Radix dialogs trap focus, close on Escape and return focus to the opener. The composer supports Ctrl/Cmd+Enter. Visible focus outlines are immediate. Reduced motion disables spatial animation. Conversation scrolling uses shadcn MessageScroller, not a custom scroll-follow implementation.
 
+## v0.4 section rail
+
+The user clarified the intended change: keep the sidebar, call it **Sections**, remove its aggregate line count, and collapse it to an icon-only rail rather than hiding it completely.
+
+- The expanded sidebar retains its section links and organisation control.
+- The header icon collapses it to a 52px rail containing only the reopen icon. The same button stays mounted and focused, with a translated label and aria-expanded state.
+- There is no duplicate hide/restore control in the document toolbar. The rail icon restores the full sidebar.
+- Quotes without sections still omit the sidebar entirely. Narrow screens retain their existing section selector instead of a desktop rail.
+- The 58/42 split, document scroll position, editing and publication behaviour are unchanged.
+
+Screenshots: [expanded](screenshots/review-v04.png), [collapsed](screenshots/review-collapsed-v04.png). The user approved this version and requested no further layout changes.
+
+## Previous navigation proposals
+
+The v0.3 dropdown misunderstood the request and was withdrawn. The user first requested a rollback to v0.2, then specified the v0.4 behaviour above. Older screenshots and review notes remain as history, not the current design.
+
+## v0.2 refinement of B, historical
+
+- Try a 58/42 Quote/conversation split. The exact ratio is an experiment, not an approved constraint.
+- Remove the header subtitle, the request-example block and the simulation footnote from the conversation. Scripted requests and the full simulation disclosure remain in the scenario dialog, keeping the transcript area available for messages. A/C retain their original conversation chrome for comparison.
+- Hide the section rail completely when the Quote has no sections. For sectioned Quotes, the rail starts open and the collapse icon in the index header hides it. The labelled **Sections** button beside **Le devis / The Quote** restores it or toggles it closed. Closing from the index moves keyboard focus to that button. These controls do not change the Quote or its scroll position.
+- The organisation control remains in the document toolbar, including **Ajouter une section / Add a section** on a flat Quote. A new section can therefore be created without an existing sidebar.
+- Keep per-line editing and publication behaviour unchanged. The current controls launch the existing line editor; no new editing interaction is implied by this pass.
+- New/reopened samples reset document scrolling; collapsing the sidebar does not.
+
+Screenshots: [B with sections](screenshots/review-v02.png), [B with a flat Quote](screenshots/review-flat-v02.png). The original screenshots remain as v0.1 comparison artifacts.
+
 ## Walkthrough
+
+For B, run the example requests inside **Scénarios et état / Scenarios & state**; selecting one closes the dialog and starts the simulation. A/C still show them above the composer.
 
 1. Start at A with the incomplete 30-line example. Compare B and C without changing the content. Inspect the long descriptions, section subtotals, terms and whole-Quote totals.
 2. Open **Relire et publier / Review & publish**. Confirm publication is blocked by missing prices.
@@ -85,15 +114,15 @@ Radix dialogs trap focus, close on Escape and return focus to the opener. The co
 - Final responsive/accessibility results are recorded in `review-results.md`.
 - Desktop screenshots: [Desk](screenshots/desk.png), [Review](screenshots/review.png), [Focus](screenshots/focus.png).
 
-## Not finished for #8
+## Remaining implementation and design details
 
-This version is for choosing a layout, not final acceptance of the issue's full deliverable list.
+The user accepted the current layout and requested closure of #8. That approval does not make the following missing prototype coverage complete or remove #7's requirements. Carry these details into the implementation handoff.
 
 - No reusable Customer picker/creation flow or separate business-default editor. The metadata editor covers Quote snapshots only. Optional Customer contact-person editing still needs design.
 - The joinery fixture is synthetic. It does not claim source verification or cladding-reference coverage. A privacy-reviewed adaptation of the supplied source is still required.
 - Conversation examples are scripted, not comprehensive clarification or correction behaviour. Focused per-field clarification, explicit numeric multi-line corrections and richer before/after explanations need further design work.
 - Section renaming applies per keystroke in this prototype; undo grouping/focus after deletion and moving work across sections need a deliberate final design.
 - Reference suggestions and uniqueness are illustrative, not a business-scoped concurrent allocator. No recovery after refresh, no leave-warning guarantee and no real autosave protocol are implemented.
-- No approved screen specification, final bilingual copy review, assistive-technology review, print/PDF design, hosted-AI disclosure wording or implementation handoff yet.
+- The approved workspace is represented by v0.4 and its screenshots, not a complete specification for every screen. Final bilingual copy, assistive-technology review and hosted-AI disclosure wording still need attention. Print/PDF design remains outside this slice.
 
-After the user chooses a direction, revise the remaining screens and named states within that layout. Record explicit approval of an identified artifact version on #8, then transfer approved decisions to #7. Keep #8 open and #7 blocked until then.
+The [handoff](handoff.md) records the approved decisions and remaining details for #7. Production behaviour must follow #7 rather than copying the simulation.
