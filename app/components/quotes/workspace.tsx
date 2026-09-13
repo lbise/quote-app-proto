@@ -1,0 +1,237 @@
+import { useEffect, useRef, useState } from 'react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, CheckCheck, Copy, FileText, List, LockKeyhole, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Settings2, Trash2, TriangleAlert } from 'lucide-react';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Textarea } from '../ui/textarea';
+import { Message, MessageContent, MessageHeader } from '../ui/message';
+import { Bubble, BubbleContent } from '../ui/bubble';
+import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '../ui/message-scroller';
+import { calculateQuote, lineCents, money, type QuoteData, type QuoteLine } from '../../lib/quote';
+import { LineEditor, ManualEditor } from './manual-editor';
+import { RecordsEditor } from './records-editor';
+import { SectionsEditor } from './sections-editor';
+import { useQuote, type QuoteRecord } from './use-quote';
+import { QuoteHeader } from './quote-header';
+import { AssistantDisclosure } from './assistant-disclosure';
+import { problemLabel } from './problem-label';
+import { useBlocker } from 'react-router';
+
+const clone = <T,>(value: T): T => structuredClone(value);
+const formatMoney = (value: number | null) => value === null ? '—' : money(value).replace(/\u202f/g, '’').replace(/\u00a0CHF$/, '');
+
+export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: { initial: QuoteRecord; locale: 'en' | 'fr'; onList: () => void; onLanguage: (locale: 'en' | 'fr') => void }) {
+  const state = useQuote(initial);
+  const { record, save, ai, error, changed, busy, apply, flush, mutate, lastRequest } = state;
+  const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
+  const [input, setInput] = useState('');
+  const [aiDisclosed, setAiDisclosed] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [editLine, setEditLine] = useState<QuoteLine | null>(null);
+  const [modal, setModal] = useState<'details' | 'publish' | 'sections' | 'records' | 'privacy' | null>(null);
+  const [sectionId, setSectionId] = useState('');
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
+  const [narrowPanel, setNarrowPanel] = useState<'chat' | 'quote'>('chat');
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const quote = readRevision === null ? state.quote : record.revisions[readRevision].quote;
+  const revisions = record.revisions, messages = record.messages, recordId = record.id;
+  const readOnly = readRevision !== null;
+  const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
+  const calculation = calculateQuote(quote);
+  const sum = { ...calculation, missing: calculation.lines.filter(l => l.amount === null).length, validDiscount: !calculation.errors.some(e => e.path.startsWith('discount')) && !calculation.missing.some(e => e.path.startsWith('discount')) };
+  const missingAdmin = calculation.missing.some(e => !e.path.startsWith('lines')) || calculation.errors.length > 0;
+  const blocked = !calculation.complete || save !== 'saved' || ai === 'processing' || busy;
+  const showOutline = quote.sections.length > 0 && !outlineCollapsed;
+  const activeSection = quote.sections.some(s => s.id === sectionId) ? sectionId : quote.sections[0]?.id || '';
+  const missingLines = quote.lines.filter(l => lineCents(l) === null);
+  const blocker = useBlocker(save !== 'saved');
+
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      if (window.confirm(t('Des modifications ne sont pas enregistrées. Quitter quand même ?', 'Changes are not saved. Leave anyway?'))) blocker.proceed();
+      else blocker.reset();
+    }
+  }, [blocker, locale]);
+
+  function closeModal() {
+    setModal(null); setEditLine(null);
+    setTimeout(() => {
+      const target = returnFocus.current;
+      if (target?.isConnected) target.focus({ preventScroll: true });
+      else document.querySelector<HTMLElement>('.qp-document-scroll')?.focus({ preventScroll: true });
+    }, 0);
+  }
+  function openModal(name: typeof modal) { returnFocus.current = document.activeElement as HTMLElement; setModal(name); }
+  function edit(line: QuoteLine) { returnFocus.current = document.activeElement as HTMLElement; setEditLine(clone(line)); }
+  function reveal(id: string) {
+    const line = quote.lines.find(l => l.id === id);
+    if (line) setSectionId(line.sectionId);
+    setNarrowPanel('quote');
+    setTimeout(() => document.getElementById(`line-${id}`)?.scrollIntoView({ block: 'center' }), 0);
+  }
+  function moveLine(line: QuoteLine, delta: number) {
+    const next = clone(quote), i = next.lines.findIndex(l => l.id === line.id), j = i + delta;
+    if (j < 0 || j >= next.lines.length) return;
+    next.lines[i].sectionId = next.lines[j].sectionId;
+    [next.lines[i], next.lines[j]] = [next.lines[j], next.lines[i]];
+    apply(next, [line.id]);
+    setTimeout(() => document.getElementById(`line-${line.id}`)?.querySelector<HTMLButtonElement>('button')?.focus(), 0);
+  }
+  function deleteLine(line: QuoteLine) {
+    const index = quote.lines.indexOf(line);
+    const remaining = quote.lines.filter(l => l.id !== line.id);
+    apply({ ...quote, lines: remaining });
+    setTimeout(() => {
+      const next = remaining[Math.min(index, remaining.length - 1)];
+      const target = next ? document.getElementById(`line-${next.id}`)?.querySelector<HTMLButtonElement>('button') : document.querySelector<HTMLButtonElement>('.qp-add-line button');
+      target?.focus();
+    }, 0);
+  }
+  async function sendMessage(text: string, retry = false) {
+    if (!aiDisclosed) { setPendingMessage(text); openModal('privacy'); return; }
+    setInput('');
+    const next = await state.runAssistant(text, locale, retry);
+    showAssistantResult(next);
+  }
+  function showAssistantResult(next: QuoteRecord | null) {
+    if (next?.reviewPublication) openModal('publish');
+    const id = next?.messages.at(-1)?.changed?.[0];
+    if (id) reveal(id);
+  }
+  async function publish() {
+    if (blocked) return;
+    const next = await mutate('publish');
+    if (next) { setReadRevision(next.revisions.length - 1); closeModal(); }
+  }
+  async function newRevision() {
+    if (record.draft) { setReadRevision(null); return; }
+    if (await mutate('new-draft')) setReadRevision(null);
+  }
+  const status = <span className={`qp-save qp-save-${save}`} role="status">{save === 'saved' ? <CheckCheck /> : save === 'error' ? <TriangleAlert /> : <span className="qp-spinner" />}{save === 'saved' ? t('Enregistré', 'Saved') : save === 'saving' ? t('Enregistrement…', 'Saving…') : t('Non enregistré', 'Not saved')}{save === 'error' && <Button size="sm" variant="ghost" onClick={() => void flush()}>{t('Réessayer', 'Retry')}</Button>}</span>;
+  const toolbar = <div className="qp-work-toolbar">
+    <div className="qp-document-status"><Badge variant={readOnly ? 'secondary' : 'outline'}>{readOnly ? <LockKeyhole data-icon="inline-start" /> : <Pencil data-icon="inline-start" />}{readOnly ? t(`Révision publiée ${readRevision + 1}`, `Published revision ${readRevision + 1}`) : t('Brouillon de travail', 'Working draft')}</Badge>{!readOnly && status}</div>
+    <div className="qp-toolbar-actions">
+      {revisions.length > 0 && <select aria-label={t('Version du devis', 'Quote version')} value={readRevision === null ? 'draft' : String(readRevision)} onChange={e => setReadRevision(e.target.value === 'draft' ? null : Number(e.target.value))} disabled={save !== 'saved' || ai === 'processing' || busy}>{record.draft && <option value="draft">{t('Brouillon', 'Draft')}</option>}{revisions.map((r, i) => <option key={r.number} value={i}>{t('Révision', 'Revision')} {r.number}</option>)}</select>}
+      {!readOnly && <Button variant="ghost" disabled={!record.canUndo || save !== 'saved' || busy || ai === 'processing'} onClick={() => void mutate('undo')}><RotateCcw data-icon="inline-start" />{t('Annuler', 'Undo')}</Button>}
+      {readOnly ? <Button disabled={busy} onClick={() => void newRevision()}><Pencil data-icon="inline-start" />{record.draft ? t('Reprendre', 'Resume draft') : t('Nouvelle révision', 'New revision')}</Button> : <Button onClick={() => openModal('publish')}><Check data-icon="inline-start" />{t('Relire et publier', 'Review & publish')}</Button>}
+    </div>
+  </div>;
+  const outlineLinks = <>
+    {quote.sections.map((section) => { const lines = quote.lines.filter(l => l.sectionId === section.id), missing = lines.some(l => lineCents(l) === null); return <button key={section.id} className={activeSection === section.id ? 'is-current' : ''} aria-current={activeSection === section.id ? 'true' : undefined} onClick={() => { setSectionId(section.id); setNarrowPanel('quote'); setTimeout(() => document.getElementById(`section-${section.id}`)?.scrollIntoView({ block: 'start' }), 0); }}><span>{section.title}</span>{missing ? <TriangleAlert aria-label={t('À compléter', 'Incomplete')} /> : <span>{lines.length}</span>}</button>; })}
+    {!readOnly && <Button variant="ghost" onClick={() => openModal('sections')}><Settings2 data-icon="inline-start" />{t('Organiser', 'Organise')}</Button>}
+  </>;
+  const outline = <nav className="qp-outline" aria-label={t('Sections du devis', 'Quote sections')}>
+    <div className="qp-outline-heading"><div className="qp-outline-title-row"><span>Sections</span>{<Button variant="ghost" size="icon-sm" aria-label={showOutline ? t('Réduire les sections', 'Collapse sections') : t('Développer les sections', 'Expand sections')} title={showOutline ? t('Réduire les sections', 'Collapse sections') : t('Développer les sections', 'Expand sections')} aria-controls="qp-section-links" aria-expanded={showOutline} onClick={() => setOutlineCollapsed(x => !x)}>{showOutline ? <PanelLeftClose /> : <PanelLeftOpen />}</Button>}</div></div>
+    {<div id="qp-section-links" className="qp-outline qp-outline-links" hidden={!showOutline}>{outlineLinks}</div>}
+  </nav>;
+
+  const chat = <section className="qp-conversation" aria-label={t('Conversation avec l’assistant', 'Conversation with assistant')}>
+    <header className="qp-panel-heading"><div className="qp-assistant-heading"><MessageSquare /><div><h2>{t('Préparons votre devis', 'Prepare your Quote')}</h2></div></div></header>
+    <MessageScrollerProvider key={recordId} autoScroll defaultScrollPosition="last-anchor" scrollPreviousItemPeek={0}><MessageScroller className="qp-chat-scroller">
+      <MessageScrollerViewport><MessageScrollerContent className="qp-chat-content">
+        
+        {messages.map((message, i) => <MessageScrollerItem key={i} messageId={`message-${i}`} scrollAnchor={message.role === 'artisan'}>
+          <Message align={message.role === 'artisan' ? 'end' : 'start'} className={message.role === 'note' ? 'qp-note-message' : ''}><MessageContent>
+            <MessageHeader>{message.role === 'artisan' ? t('Vous', 'You') : message.role === 'note' ? t('Historique', 'History') : 'Easy Quote'}</MessageHeader>
+            <Bubble variant={message.role === 'artisan' ? 'secondary' : 'ghost'}><BubbleContent>{message[locale]}</BubbleContent></Bubble>
+            {!!message.changed?.length && <div className="qp-change-links"><span><Check />{message.changed.length} {t('lignes modifiées', 'lines changed')}</span>{message.changed?.some(id => quote.lines.some(line => line.id === id)) && <Button variant="link" size="sm" onClick={() => reveal(message.changed!.find(id => quote.lines.some(line => line.id === id))!)}>{t('Voir dans le devis', 'View in Quote')}<ArrowRight data-icon="inline-end" /></Button>}</div>}
+          </MessageContent></Message>
+        </MessageScrollerItem>)}
+        {ai === 'processing' && <MessageScrollerItem><p className="qp-processing" role="status"><span className="qp-spinner" />{t('Je prépare la modification. Vous pouvez continuer à éditer.', 'Preparing the change. You can keep editing.')}</p></MessageScrollerItem>}
+        {(ai === 'error' || ai === 'stale') && <MessageScrollerItem><Alert variant="destructive"><TriangleAlert /><AlertTitle>{ai === 'stale' ? t('Votre correction est conservée', 'Your edit is preserved') : t('L’assistant n’a pas répondu', 'The assistant did not respond')}</AlertTitle><AlertDescription><p>{ai === 'stale' ? t('La réponse est devenue obsolète pendant votre modification. Elle n’a pas été appliquée.', 'The response became stale while you edited. It was not applied.') : t('Le devis n’a pas changé. Réessayez ou continuez manuellement.', 'The Quote is unchanged. Retry or continue manually.')}</p><Button variant="outline" onClick={() => { void sendMessage(lastRequest.current?.text ?? '', true); }}>{t('Réessayer', 'Retry')}</Button></AlertDescription></Alert></MessageScrollerItem>}
+      </MessageScrollerContent></MessageScrollerViewport>
+      <MessageScrollerButton aria-label={t('Dernier message', 'Latest message')} />
+    </MessageScroller></MessageScrollerProvider>
+    <div className="qp-compose-area">
+      {readOnly ? <div className="qp-chat-locked"><LockKeyhole /><p>{t('Cette révision est figée. Créez un brouillon pour poursuivre.', 'This revision is frozen. Create a draft to continue.')}</p></div> : <>
+        <form className="qp-composer" onSubmit={e => { e.preventDefault(); void sendMessage(input); }}>
+          <label htmlFor="assistant-message">{t('Votre message', 'Your message')}</label>
+          <Textarea id="assistant-message" placeholder={t('Ajoutez une précision, un prix, une correction…', 'Add a detail, a price, a correction…')} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void sendMessage(input); } }} />
+          <div className="qp-composer-footer"><span>{t('Texte uniquement · Ctrl + Entrée', 'Text only · Ctrl + Enter')}</span><Button type="submit" disabled={!input.trim() || ai === 'processing'} aria-label={t('Envoyer le message', 'Send message')}><ArrowUp /></Button></div>
+        </form>
+      </>}
+    </div>
+  </section>;
+
+  function renderLine(line: QuoteLine) {
+    const index = quote.lines.findIndex(l => l.id === line.id), cents = lineCents(line);
+    return <div className={`qp-line ${changed.includes(line.id) ? 'qp-line-changed' : ''}`} id={`line-${line.id}`} key={line.id}>
+      <div className="qp-line-content" lang="fr"><span className="qp-line-number">{String(index + 1).padStart(2, '0')}</span><div className="qp-line-description">{line.description || <span className="qp-missing">Description à compléter</span>}{changed.includes(line.id) && <span className="qp-changed-label" lang={locale}><Check />{t('Modifié', 'Changed')}</span>}</div>
+        <div className="qp-line-pricing">{line.mode === 'fixed' ? <span>Forfait</span> : <><span>{line.quantity || '—'} {line.unit || '—'}</span><span>× {line.unitPrice || '—'}</span></>}<strong>{formatMoney(cents)}</strong>{cents === null && <span className="qp-missing">À compléter</span>}{cents === 0 && <span>Sans frais</span>}</div>
+      </div>
+      {!readOnly && <div className="qp-line-actions" lang={locale}>
+        <Button variant="ghost" size="sm" onClick={() => edit(line)} aria-label={`${t('Modifier la ligne', 'Edit line')} ${index + 1}`}><Pencil data-icon="inline-start" />{t('Modifier', 'Edit')}</Button>
+        <Button variant="ghost" size="icon-sm" aria-label={`${t('Dupliquer la ligne', 'Duplicate line')} ${index + 1}`} onClick={() => { const next = clone(quote), copy = { ...line, id: `copy-${Date.now()}` }; next.lines.splice(index + 1, 0, copy); apply(next, [copy.id]); }}><Copy /></Button>
+        <Button variant="ghost" size="icon-sm" disabled={index === 0} aria-label={`${t('Monter la ligne', 'Move up line')} ${index + 1}`} onClick={() => moveLine(line, -1)}><ArrowUp /></Button>
+        <Button variant="ghost" size="icon-sm" disabled={index === quote.lines.length - 1} aria-label={`${t('Descendre la ligne', 'Move down line')} ${index + 1}`} onClick={() => moveLine(line, 1)}><ArrowDown /></Button>
+        <Button variant="ghost" size="icon-sm" aria-label={`${t('Supprimer la ligne', 'Delete line')} ${index + 1}`} onClick={() => deleteLine(line)}><Trash2 /></Button>
+      </div>}
+    </div>;
+  }
+  const quoteDocument = <section className="qp-document-pane" aria-label={t('Devis destiné au client', 'Customer-facing Quote')}>
+    <div className="qp-document-tools"><span><FileText />{t('Le devis', 'The Quote')}<span className="qp-french-label">FR · CHF</span></span><div>{!readOnly && <Button variant="ghost" size="sm" onClick={() => openModal('details')}><Settings2 data-icon="inline-start" />{t('Coordonnées et conditions', 'Details & terms')}</Button>}{!readOnly && <Button variant="ghost" size="icon-sm" aria-label={quote.sections.length ? t('Organiser les sections', 'Organise sections') : t('Ajouter une section', 'Add a section')} onClick={() => openModal('sections')}><List /></Button>}</div></div>
+    {quote.sections.length > 0 && <div className="qp-jump qp-jump-narrow"><label htmlFor="section-jump">{t('Aller à', 'Jump to')}</label><select id="section-jump" value={activeSection} onChange={e => { setSectionId(e.target.value); document.getElementById(`section-${e.target.value}`)?.scrollIntoView({ block: 'start' }); }}>{quote.sections.map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</select><Button variant="ghost" size="icon-sm" aria-label={t('Organiser les sections', 'Organise sections')} onClick={() => openModal('sections')} disabled={readOnly}><List /></Button></div>}
+    <div key={recordId} className="qp-document-scroll" role="region" tabIndex={0} aria-label={t('Contenu du devis, défilant', 'Scrollable Quote content')}>
+      {!readOnly && (sum.missing > 0 || missingAdmin) && <div className="qp-editor-guidance"><TriangleAlert /><div><strong>{sum.missing > 0 ? t(`${sum.missing} lignes à compléter`, `${sum.missing} lines need details`) : t('Coordonnées à compléter', 'Details need completing')}</strong><p>{sum.missing > 0 ? t('Le total définitif attend les valeurs manquantes.', 'The final total is withheld until values are complete.') : t('Les montants sont calculés, mais les coordonnées restent à renseigner.', 'Amounts are calculated, but contact details are still missing.')}</p></div><Button variant="ghost" size="sm" onClick={() => missingLines[0] ? reveal(missingLines[0].id) : openModal('details')}>{t('Voir', 'View')}</Button></div>}
+      {readOnly && <div className="qp-editor-guidance qp-published-note"><LockKeyhole /><p>{t('Révision figée. Publication sans envoi au destinataire.', 'Frozen revision. Publication did not send this Quote.')}</p></div>}
+      <article className="qp-paper" lang="fr">
+        <header className="qp-paper-header"><div className="qp-business-name">{quote.businessName || 'Entreprise à renseigner'}</div><div className="qp-paper-meta"><span>Devis {quote.reference}</span><span>{quote.issueDate}</span></div></header>
+        <div className="qp-document-title"><h2>{quote.title || 'Nouveau devis'}</h2><p>{quote.siteAddress}</p></div>
+        {<div className="qp-addresses"><div><span>Proposé par</span><strong>{quote.businessName}</strong><p>{quote.businessAddress}</p><p>{quote.businessContact}</p></div><div><span>À l’attention de</span><strong>{quote.customerName || 'Destinataire à renseigner'}</strong><p>{quote.customerAddress || 'Adresse à renseigner'}</p><p>{quote.customerContact}</p></div></div>}
+        {!quote.lines.length && <div className="qp-empty-document"><FileText /><h2>Les travaux apparaîtront ici.</h2><p>Commencez par une description dans la conversation, ou ajoutez une ligne manuellement.</p></div>}
+        {quote.lines.filter(l => !l.sectionId).map(renderLine)}
+        {quote.sections.map(section => {
+          const lines = quote.lines.filter(l => l.sectionId === section.id), incomplete = lines.some(l => lineCents(l) === null);
+          const subtotal = lines.reduce((n, l) => n + (lineCents(l) ?? 0), 0);
+          return <section className="qp-quote-section" id={`section-${section.id}`} key={section.id}>
+            <div className="qp-section-title"><h3>{section.title}</h3><span>CHF</span></div>
+            {lines.map(renderLine)}
+            <div className="qp-section-subtotal"><span>{incomplete ? 'Sous-total partiel' : 'Sous-total'}</span><strong>{formatMoney(subtotal)}</strong></div>
+          </section>;
+        })}
+        {!readOnly && <div className="qp-add-line"><Button variant="outline" onClick={() => edit({ id: `new-${Date.now()}`, sectionId: activeSection, description: '', mode: 'quantity', quantity: '', unit: 'm²', unitPrice: '', amount: '' })}><Plus data-icon="inline-start" />{t('Ajouter une ligne', 'Add a line')}</Button></div>}
+        <div className="qp-totals">
+          <div><span>{sum.missing ? 'Sous-total partiel HT' : 'Sous-total HT'}</span><span>{formatMoney(sum.subtotal)}</span></div>
+          {quote.discountMode !== 'none' && <div><span>Remise {quote.discountMode === 'percent' ? `${quote.discount} %` : 'CHF'}</span><span>{sum.missing || !sum.validDiscount ? '—' : `− ${formatMoney(sum.discount)}`}</span></div>}
+          {quote.vatRegistered && <div><span>TVA 8,1 %</span><span>{sum.total === null ? '—' : formatMoney(sum.vat)}</span></div>}
+          <div className="qp-total"><strong>{sum.total === null ? 'Total à compléter' : 'Total CHF'}</strong><strong>{formatMoney(sum.total)}</strong></div>
+          {!sum.validDiscount && <p className="qp-missing">La remise doit être comprise entre zéro et le sous-total.</p>}
+        </div>
+        <footer className="qp-terms"><h3>Conditions</h3><p>{quote.terms || 'Conditions à renseigner'}</p>{quote.validUntil && <p>Offre valable jusqu’au {quote.validUntil}.</p>}{quote.vatRegistered && <p>{quote.vatId}</p>}</footer>
+      </article>
+      <p className="qp-document-caption">{t('Contenu commercial en français, quelle que soit la langue de l’interface.', 'Commercial content stays in French, independently of the interface language.')}</p>
+    </div>
+    <div className="qp-document-bottom"><span>{sum.total === null ? t('Chiffrage partiel', 'Partially priced') : t('Total du devis', 'Quote total')}</span><strong>CHF {formatMoney(sum.total ?? sum.subtotal)}</strong></div>
+  </section>;
+
+
+  return <div className="qp-app qp-variant-b" data-narrow-panel={narrowPanel} lang={locale}>
+    <QuoteHeader locale={locale} onLanguage={onLanguage} onList={onList} quote={quote} onRecords={() => openModal('records')} onPrivacy={() => openModal('privacy')} />
+    {error && <Alert variant="destructive" className="qp-request-error"><TriangleAlert /><AlertTitle>{t('Action non enregistrée', 'Action not saved')}</AlertTitle><AlertDescription>{error === 'reference_in_use' ? t('Cette référence appartient déjà à un autre devis. Modifiez-la dans les coordonnées du devis.', 'Another Quote already uses this reference. Change it in Details & terms.') : error.includes('conflict') || error.includes('stale') ? t('Ce devis a changé dans une autre fenêtre. Vos modifications restent visibles. Copiez-les avant de recharger.', 'This Quote changed in another window. Your edits remain visible. Copy them before reloading.') : t('Vos modifications restent visibles. Vérifiez les valeurs et votre connexion, puis réessayez.', 'Your edits remain visible. Check the values and your connection, then retry.')}</AlertDescription></Alert>}
+    <main className="qp-workspace"><h1 className="sr-only">{t('Préparer un devis', 'Prepare a Quote')}</h1>
+      <div className="qp-narrow-tabs"><Button variant={narrowPanel === 'chat' ? 'secondary' : 'ghost'} onClick={() => setNarrowPanel('chat')} aria-pressed={narrowPanel === 'chat'}><MessageSquare data-icon="inline-start" />{t('Conversation', 'Conversation')}</Button><Button variant={narrowPanel === 'quote' ? 'secondary' : 'ghost'} onClick={() => setNarrowPanel('quote')} aria-pressed={narrowPanel === 'quote'}><FileText data-icon="inline-start" />{t('Devis', 'Quote')}</Button></div>
+      <div className="qp-layout qp-layout-b"><div id="qp-review-outline" className="qp-review-rail" hidden={!quote.sections.length} data-collapsed={!showOutline}>{outline}</div><div className="qp-review-main">{toolbar}<div className="qp-split">{quoteDocument}{chat}</div></div></div>
+    </main>
+    {editLine && <LineEditor line={editLine} sections={quote.sections} locale={locale} onClose={closeModal} onApply={line => {
+      const exists = quote.lines.some(l => l.id === line.id);
+      const next = { ...quote, lines: exists ? quote.lines.map(l => l.id === line.id ? line : l) : [...quote.lines, line] };
+      next.lines.sort((a, b) => quote.sections.findIndex(s => s.id === a.sectionId) - quote.sections.findIndex(s => s.id === b.sectionId));
+      apply(next, [line.id]); closeModal();
+    }} />}
+    {modal === 'details' && <ManualEditor quote={quote} locale={locale} lockedReference={revisions.length > 0} onClose={closeModal} onApply={q => { apply(q); closeModal(); }} />}
+    {modal === 'sections' && !readOnly && <SectionsEditor quote={quote} locale={locale} onApply={q => { apply(q); closeModal(); }} onClose={closeModal} />}
+    {modal === 'records' && <RecordsEditor quote={readOnly ? null : quote} locale={locale} onApply={q => { apply(q); closeModal(); }} onClose={closeModal} />}
+    {modal === 'privacy' && <AssistantDisclosure locale={locale} onClose={() => { setPendingMessage(null); closeModal(); }} onContinue={pendingMessage ? () => {
+      const text = pendingMessage;
+      setAiDisclosed(true); setPendingMessage(null); setInput(''); closeModal();
+      void state.runAssistant(text, locale).then(showAssistantResult);
+    } : undefined} />}
+    {modal === 'publish' && <Dialog open onOpenChange={open => { if (!open) closeModal(); }}><DialogContent className="qp-modal" showCloseButton={false}><DialogHeader><DialogTitle>{t('Relire avant publication', 'Review before publication')}</DialogTitle><DialogDescription>{t('La publication fige le contenu. Elle n’envoie pas le devis.', 'Publication freezes the content. It does not send the Quote.')}</DialogDescription></DialogHeader>
+      <div className="qp-publication-summary"><FileText /><h2>{quote.title}</h2><p>{quote.customerName || t('Destinataire manquant', 'Missing Customer')}</p><strong>CHF {formatMoney(sum.total)}</strong><p>{quote.reference} · {t('Révision', 'Revision')} {revisions.length + 1}</p></div>
+      <ul className="qp-publication-checks"><li>{sum.total !== null ? <Check /> : <TriangleAlert />}{t('Toutes les lignes sont chiffrées', 'Every line is priced')}</li><li>{!missingAdmin ? <Check /> : <TriangleAlert />}{t('Coordonnées et informations requises', 'Contact details and required information')}</li><li>{save === 'saved' ? <Check /> : <TriangleAlert />}{t('Modifications enregistrées', 'Changes saved')}</li><li>{ai !== 'processing' ? <Check /> : <TriangleAlert />}{t('Aucune modification IA en attente', 'No AI change pending')}</li></ul>
+      {blocked ? <Alert><TriangleAlert /><AlertTitle>{t('Publication indisponible', 'Publication unavailable')}</AlertTitle><AlertDescription>{t('Complétez les points signalés puis revenez à cette relecture.', 'Complete the flagged points, then return to this review.')}<ul>{[...calculation.errors, ...calculation.missing].map((problem, i) => <li key={i}>{problemLabel(problem, locale)}</li>)}</ul></AlertDescription></Alert> : <p>{t('Cette révision ne pourra être ni modifiée ni annulée. Une correction nécessitera une nouvelle révision.', 'This revision cannot be edited or undone. A correction requires a new revision.')}</p>}
+      <div className="qp-modal-actions"><Button variant="outline" onClick={closeModal}>{t('Retour au devis', 'Back to Quote')}</Button><Button disabled={blocked} onClick={() => void publish()}><LockKeyhole data-icon="inline-start" />{t('Confirmer la publication', 'Confirm publication')}</Button></div>
+    </DialogContent></Dialog>}
+  </div>;
+}

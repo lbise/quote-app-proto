@@ -1,0 +1,55 @@
+# Quote workspace
+
+Issue #7 implements the desk workflow approved in #8, layout B v0.4 at `84874fb`. Open **My Quotes** from the authenticated home page, or visit `/quotes`.
+
+## Design reference
+
+The production workspace copies layout B's styles, font files, spacing and document markup. It keeps the 176px section rail, the 52px collapsed rail, the 16px gap and the 58/42 Quote/conversation split. The rail shrinks to 140px at intermediate widths. Below 1000px, panel buttons and a section selector replace the desktop arrangement. Below 600px, the document uses page scrolling and the transcript has a bounded height.
+
+The prototype notice, scenario controls, layout switcher, scripted assistant and demonstration data are not part of the production route. Removing the notice and switcher gives the panels more vertical space. Customer/default-record management and hosted-AI disclosure use the same dialog components as the approved editors.
+
+The design source remains under `app/components/quote-prototype/` for comparison. Its route is development-only. Production Quote modules do not import its fixtures, calculations or simulation.
+
+## Responsibilities
+
+- `app/lib/quote.ts` validates and calculates complete or incomplete Quotes. Integer CHF cents and scaled `bigint` intermediates implement half-up rounding. Missing values are separate from invalid inputs. Published content uses the same calculation boundary as manual and assistant changes.
+- `app/lib/quotes.server.ts` handles authenticated requests for Quotes, reusable Customers and business defaults. The Artisan Business comes from the approved session. Request keys, optimistic versions and database locks protect publication and retry behavior.
+- `app/lib/quote-assistant.server.ts` sends only selected work fields and bounded conversation to OpenAI. It does not grant publication authority. See [hosted AI configuration](quote-ai.md).
+- `app/components/quotes/use-quote.ts` queues saves, retains failed local edits and coordinates visible assistant status. The document, dialogs and section controls use the approved layout.
+
+`GET /api/quotes` lists the authenticated business's Quotes, Customers and defaults. `GET /api/quotes?id=…` reads a Working Draft and its Published Revisions and conversation. `POST /api/quotes` accepts the explicit `create`, `save`, `undo`, `assistant`, `publish`, `new-draft`, `customer-save` and `defaults-save` operations.
+
+Publication freezes commercial content and calculated amounts together. It removes the Working Draft, assigns the next revision number and does not send anything. New revision drafts copy the latest publication's dates, identity snapshots, terms and tax settings unchanged. Editing reusable records never refreshes existing Quotes. Section-editor changes apply as one undoable action when the Artisan chooses Done.
+
+Local edits do not survive a browser crash or closure unless the server accepted them. The browser warns before leaving with unsaved work where supported. A conflict with another window retains local edits for inspection; it does not silently overwrite the newer server version.
+
+## Run and test
+
+Apply migrations to the configured local PostgreSQL database, then start the app:
+
+```sh
+npm run db:migrate
+npm run dev
+```
+
+Focused tests:
+
+```sh
+npx vitest run app/lib/quote.test.ts
+TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quotes.server.test.ts
+npm run test:browser
+```
+
+Browser tests use an isolated database whose name ends in `_browser`, unless `BROWSER_TEST_DATABASE_URL` is supplied. The setup creates that database and applies migrations. Its PostgreSQL role needs permission to create a database. Browser authentication goes through Better Auth; only test-user email verification uses direct fixture setup. Never point these tests at production. Browser traces contain authenticated test traffic and should not be published without review.
+
+The default browser suite uses Chromium on port 5180. Install it with `npx playwright install chromium`. PostgreSQL-backed server tests are skipped unless `TEST_DATABASE_URL` is set. A passing run with skips does not verify persistence. CI runs the database-backed tests and the browser suite.
+
+Routine tests use a controllable provider or browser network interception, not a live model. Before an Artisan rehearsal, configure the hosted provider, verify its no-training setting and check representative free-form requests. No provider credentials are bundled with this change.
+
+## Migration and rollback
+
+`0002_quotes.sql` adds Quote, revision, conversation, request, Customer and defaults storage. `0003_quote_request_leases.sql` adds request payload hashes and AI lease expiry. Both migrations are additive and leave authentication tables unchanged.
+
+Take a database backup before deployment. The previous application can run against the expanded schema, but cannot expose the new Quote workflow. Roll back the application image without dropping the new tables or columns. Preserve them so drafts and publications remain available after rolling forward. A database restore is a separate recovery operation and can lose changes made after the backup.
+
+AI processing uses a bounded lease. If a server stops during a request, a later authenticated request expires the lease without applying the abandoned response. The Artisan can retry. Publication stays blocked while an unexpired AI change is pending.

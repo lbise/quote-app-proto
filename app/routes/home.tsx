@@ -1,4 +1,4 @@
-import { Form, redirect, useLoaderData, useRouteLoaderData } from "react-router";
+import { Form, Link, redirect, useLoaderData, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/home";
 
 import { LanguageSwitch } from "../components/language-switch";
@@ -40,7 +40,7 @@ export default function Home() {
         <LanguageSwitch locale={locale} />
       </header>
       <section className="flex flex-col gap-3">
-        <p className="text-muted-foreground">{text.intro}</p>
+        <Link to="/quotes" className="font-medium underline underline-offset-4">{locale === "fr" ? "Mes devis" : "My Quotes"}</Link>
         <p className="text-sm"><span className="font-medium">{text.signedInAs}:</span> {email}</p>
       </section>
       <Form method="post">

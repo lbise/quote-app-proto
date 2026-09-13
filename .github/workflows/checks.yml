@@ -55,5 +55,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Test Quote workspace
+        run: npm run test:browser
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          QUOTE_AI_ENABLED: "false"
+
       - name: Test deployment scripts
         run: sh tests/deployment/validate-release.test.sh

@@ -15,6 +15,20 @@
       "when": 1770000001000,
       "tag": "0001_auth_and_artisan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770000002000,
+      "tag": "0002_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1770000003000,
+      "tag": "0003_quote_request_leases",
+      "breakpoints": true
     }
   ]
 }

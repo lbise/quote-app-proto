@@ -1,0 +1,427 @@
+{
+  "fixtureFormat": "documentation-example/v1 (not a production schema)",
+  "currency": "CHF",
+  "language": "fr-CH",
+  "anonymization": "Exemple anonymisé et adapté conservant des chiffres commerciaux; aucune garantie de confidentialité statistique n'est revendiquée.",
+  "title": "Bardage et menuiserie. Exemple adapté",
+  "provenance": {
+    "sourceAlias": "joinery-cladding-reference",
+    "extraction": "Référence PDF lue localement. Elle compte quatre pages, 30 lignes chiffrées et sept groupes de zones de travail.",
+    "scope": "Les deux préparations générales et les 30 montants positifs de travaux sont adaptés en contenu de Quote. Les déductions de paiements antérieurs et le cadrage de solde dû de la facture source sont exclus.",
+    "descriptionAdaptation": "Les noms de zones, les identités et les descriptions sont des remplacements fictifs. Les descriptions gardent les éléments lisibles utiles à la répétition: dépose d'aluminium, ossature bois, bardage, fenêtres, panneaux et dimensions internes 30/60 mm, 40/80 mm et 50 mm.",
+    "unitAdaptation": "Les unités de plusieurs lignes n'étaient pas suffisamment certaines dans l'extraction locale. Les montants fixes ne prétendent donc ni quantité ni unité. Pour permettre le test de calcul, pce, ml et m2 sont des adaptations documentées: comptes de fenêtres et de dépose en pce, longueurs de bardage en ml, poses de panneaux en m2. Une unité adaptée n'est pas un fait sur la source.",
+    "adaptedVatTreatment": "La fixture applique la TVA standard de 8,1 % au sous-total entier. Ce calcul ne donne pas de qualification fiscale aux travaux.",
+    "calculationVerification": "Les montants attendus ont été recalculés séparément avec Python Decimal, arrondi half-up par ligne puis TVA unique sur le sous-total."
+  },
+  "quoteSnapshot": {
+    "reference": "JNR-2026-014",
+    "issueDate": "2026-08-15",
+    "serviceDate": "2026-09-01",
+    "serviceDateFixtureNote": "Date de prestation illustrative dans cette fixture, pas une exigence de champ produit.",
+    "issuer": {
+      "name": "Atelier Exemple Sàrl",
+      "address": "Rue du Modele 14, 1000 Exemple",
+      "email": "contact@atelier-exemple.test",
+      "vatIdentifier": "CHE-000.000.000 TVA (identifiant fictif d'exemple)"
+    },
+    "customer": {
+      "name": "Habitat Echantillon SA",
+      "address": "Chemin des Maquettes 7, 1000 Exemple"
+    },
+    "terms": [],
+    "tax": {
+      "mode": "vat",
+      "rate": "0.081",
+      "label": "TVA 8,1 %"
+    }
+  },
+  "sections": [
+    {
+      "name": "Zone de travail A, preparation generale incluse",
+      "lines": [
+        {
+          "number": 1,
+          "kind": "fixed",
+          "description": "Preparation generale du chantier de bardage et menuiserie, coordination des interventions et protection des ouvrages existants.",
+          "amount": "1200.00",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu. Aucune quantité ou unité n'est affirmée."
+          }
+        },
+        {
+          "number": 2,
+          "kind": "fixed",
+          "description": "Mise en place generale et pose preparatoire pour les assemblages repetes de facade.",
+          "amount": "4800.00",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu. Aucune quantité ou unité n'est affirmée."
+          }
+        },
+        {
+          "number": 3,
+          "kind": "quantity-priced",
+          "description": "Depose des elements de facade en aluminium existants et evacuation des elements deposes.",
+          "quantity": "5.000",
+          "unit": "pce",
+          "unitPrice": "380.00",
+          "amount": "1900.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 4,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose d'une ossature bois pour bardage de facade.",
+          "quantity": "17.500",
+          "unit": "ml",
+          "unitPrice": "40.00",
+          "amount": "700.00",
+          "sourceEvidence": {
+            "unitStatus": "ml est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 5,
+          "kind": "fixed",
+          "description": "Fourniture et pose d'un ensemble de bardage bois comprenant les elements internes de 30/60 mm, 40/80 mm et 50 mm, les ajustages et les finitions.",
+          "amount": "1899.00",
+          "sourceEvidence": {
+            "adaptation": "Description composite adaptee. Le montant reste fixe car la quantite et l'unite ne sont pas assez certaines."
+          }
+        },
+        {
+          "number": 6,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose de fenetres dans l'assemblage de facade.",
+          "quantity": "5.000",
+          "unit": "pce",
+          "unitPrice": "240.00",
+          "amount": "1200.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 7,
+          "kind": "quantity-priced",
+          "description": "Pose de panneaux de facade, reglages compris.",
+          "quantity": "42.200",
+          "unit": "m2",
+          "unitPrice": "79.00",
+          "amount": "3333.80",
+          "sourceEvidence": {
+            "unitStatus": "m2 est une adaptation documentee, pas une unite source affirmee."
+          }
+        }
+      ],
+      "subtotal": "15032.80"
+    },
+    {
+      "name": "Zone de travail B",
+      "lines": [
+        {
+          "number": 8,
+          "kind": "fixed",
+          "description": "Fourniture et pose d'un petit ensemble de bardage en MDF, avec decoupes et raccords de finition.",
+          "amount": "332.80",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu. Aucune quantité ou unité n'est affirmée."
+          }
+        },
+        {
+          "number": 9,
+          "kind": "quantity-priced",
+          "description": "Pose de panneaux de facade dans la zone B, reglages compris.",
+          "quantity": "8.000",
+          "unit": "m2",
+          "unitPrice": "79.00",
+          "amount": "632.00",
+          "sourceEvidence": {
+            "unitStatus": "m2 est une adaptation documentee, pas une unite source affirmee."
+          }
+        }
+      ],
+      "subtotal": "964.80"
+    },
+    {
+      "name": "Zone de travail C",
+      "lines": [
+        {
+          "number": 10,
+          "kind": "quantity-priced",
+          "description": "Depose d'un element de facade en aluminium existant.",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "380.00",
+          "amount": "380.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 11,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose d'une ossature bois pour bardage de facade.",
+          "quantity": "4.500",
+          "unit": "ml",
+          "unitPrice": "40.00",
+          "amount": "180.00",
+          "sourceEvidence": {
+            "unitStatus": "ml est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 12,
+          "kind": "fixed",
+          "description": "Fourniture et pose d'un ensemble de bardage bois avec elements internes de 30/60 mm, 40/80 mm et 50 mm.",
+          "amount": "757.70",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu car la quantite et l'unite ne sont pas assez certaines."
+          }
+        },
+        {
+          "number": 13,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose d'une fenetre dans l'assemblage de facade.",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "240.00",
+          "amount": "240.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 14,
+          "kind": "quantity-priced",
+          "description": "Pose de panneaux de facade dans la zone C, reglages compris.",
+          "quantity": "17.500",
+          "unit": "m2",
+          "unitPrice": "79.00",
+          "amount": "1382.50",
+          "sourceEvidence": {
+            "unitStatus": "m2 est une adaptation documentee, pas une unite source affirmee."
+          }
+        }
+      ],
+      "subtotal": "2940.20"
+    },
+    {
+      "name": "Zone de travail D",
+      "lines": [
+        {
+          "number": 15,
+          "kind": "quantity-priced",
+          "description": "Depose d'un element de facade en aluminium existant.",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "380.00",
+          "amount": "380.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 16,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose d'une ossature bois pour bardage de facade.",
+          "quantity": "2.800",
+          "unit": "ml",
+          "unitPrice": "40.00",
+          "amount": "112.00",
+          "sourceEvidence": {
+            "unitStatus": "ml est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 17,
+          "kind": "fixed",
+          "description": "Fourniture et pose d'un ensemble de bardage bois avec elements internes de 30/60 mm, 40/80 mm et 50 mm.",
+          "amount": "237.10",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu car la quantite et l'unite ne sont pas assez certaines."
+          }
+        },
+        {
+          "number": 18,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose d'une fenetre dans l'assemblage de facade.",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "240.00",
+          "amount": "240.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 19,
+          "kind": "quantity-priced",
+          "description": "Pose de panneaux de facade dans la zone D, reglages compris.",
+          "quantity": "4.700",
+          "unit": "m2",
+          "unitPrice": "79.00",
+          "amount": "371.30",
+          "sourceEvidence": {
+            "unitStatus": "m2 est une adaptation documentee, pas une unite source affirmee."
+          }
+        }
+      ],
+      "subtotal": "1340.40"
+    },
+    {
+      "name": "Zone de travail E",
+      "lines": [
+        {
+          "number": 20,
+          "kind": "quantity-priced",
+          "description": "Depose de deux elements de facade en aluminium existants.",
+          "quantity": "2.000",
+          "unit": "pce",
+          "unitPrice": "380.00",
+          "amount": "760.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 21,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose d'une ossature bois pour bardage de facade.",
+          "quantity": "3.200",
+          "unit": "ml",
+          "unitPrice": "40.00",
+          "amount": "128.00",
+          "sourceEvidence": {
+            "unitStatus": "ml est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 22,
+          "kind": "fixed",
+          "description": "Fourniture et pose d'un ensemble de bardage bois avec elements internes de 30/60 mm, 40/80 mm et 50 mm, raccords et finitions.",
+          "amount": "1312.80",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu car la quantite et l'unite ne sont pas assez certaines."
+          }
+        },
+        {
+          "number": 23,
+          "kind": "quantity-priced",
+          "description": "Fourniture et pose de deux fenetres dans l'assemblage de facade.",
+          "quantity": "2.000",
+          "unit": "pce",
+          "unitPrice": "240.00",
+          "amount": "480.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 24,
+          "kind": "quantity-priced",
+          "description": "Pose de panneaux de facade dans la zone E, reglages compris.",
+          "quantity": "30.700",
+          "unit": "m2",
+          "unitPrice": "79.00",
+          "amount": "2425.30",
+          "sourceEvidence": {
+            "unitStatus": "m2 est une adaptation documentee, pas une unite source affirmee."
+          }
+        }
+      ],
+      "subtotal": "5106.10"
+    },
+    {
+      "name": "Zone de travail F",
+      "lines": [
+        {
+          "number": 25,
+          "kind": "quantity-priced",
+          "description": "Depose d'un petit element existant de facade.",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "150.00",
+          "amount": "150.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 26,
+          "kind": "fixed",
+          "description": "Fourniture et pose d'un ensemble de bardage avec elements internes de 30/60 mm, 40/80 mm et 50 mm.",
+          "amount": "256.90",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu car la quantite et l'unite ne sont pas assez certaines."
+          }
+        },
+        {
+          "number": 27,
+          "kind": "quantity-priced",
+          "description": "Pose de panneaux de facade dans la zone F, reglages compris.",
+          "quantity": "4.700",
+          "unit": "m2",
+          "unitPrice": "79.00",
+          "amount": "371.30",
+          "sourceEvidence": {
+            "unitStatus": "m2 est une adaptation documentee, pas une unite source affirmee."
+          }
+        }
+      ],
+      "subtotal": "778.20"
+    },
+    {
+      "name": "Zone de travail G",
+      "lines": [
+        {
+          "number": 28,
+          "kind": "quantity-priced",
+          "description": "Depose d'un petit element existant de facade.",
+          "quantity": "1.000",
+          "unit": "pce",
+          "unitPrice": "150.00",
+          "amount": "150.00",
+          "sourceEvidence": {
+            "unitStatus": "pce est une adaptation documentee, pas une unite source affirmee."
+          }
+        },
+        {
+          "number": 29,
+          "kind": "fixed",
+          "description": "Fourniture et pose d'un ensemble de bardage avec elements internes de 30/60 mm, 40/80 mm et 50 mm.",
+          "amount": "225.80",
+          "sourceEvidence": {
+            "adaptation": "Montant fixe retenu car la quantite et l'unite ne sont pas assez certaines."
+          }
+        },
+        {
+          "number": 30,
+          "kind": "quantity-priced",
+          "description": "Pose de panneaux de facade dans la zone G, reglages compris.",
+          "quantity": "4.000",
+          "unit": "m2",
+          "unitPrice": "79.00",
+          "amount": "316.00",
+          "sourceEvidence": {
+            "unitStatus": "m2 est une adaptation documentee, pas une unite source affirmee."
+          }
+        }
+      ],
+      "subtotal": "691.80"
+    }
+  ],
+  "discount": null,
+  "totals": {
+    "subtotalBeforeDiscount": "26854.30",
+    "discountAmount": "0.00",
+    "baseBeforeVat": "26854.30",
+    "vat": {
+      "rate": "0.081",
+      "amount": "2175.20"
+    },
+    "total": "29029.50",
+    "rounding": "Chaque montant de ligne, la TVA et le total sont arrondis a 0.01, half-up; TVA calculee une fois sur la base."
+  }
+}
