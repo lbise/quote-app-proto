@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { capturedEmailsForTests, clearCapturedEmails, sendAuthEmail } from "./mail.server";
+import { capturedAuthEmails, clearCapturedEmails, sendAuthEmail } from "./mail.server";
 
 afterEach(() => {
   clearCapturedEmails();
@@ -17,7 +17,7 @@ describe("captured auth mail", () => {
         kind: "verification",
         language: "en",
       });
-      expect(capturedEmailsForTests()[0]).toMatchObject({
+      expect(capturedAuthEmails()[0]).toMatchObject({
         to: "tester@example.com",
         subject: "Verify your Easy Quote email",
       });

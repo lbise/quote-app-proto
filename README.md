@@ -37,6 +37,8 @@ The command adds your email to `AUTH_ALLOWED_EMAILS`, sets `BETTER_AUTH_URL`, an
 
 This command refuses non-development `NODE_ENV` values, remote database hosts, database names not ending in `_local` or `_test`, and connection URLs with query parameters. It only accepts loopback PostgreSQL connections. Use it with disposable local data, never with a tunnel to production.
 
+Do not edit `.env` or run another setup command while this command is running. It checks for changes before saving, but cannot lock out unrelated editors. It replaces `.env` atomically with owner-only permissions to avoid partial writes and protect the generated secret.
+
 Restart the development server after setup, then sign in with the credentials you chose. Exported shell variables take precedence over `.env`; unset conflicting auth settings if your changes do not take effect.
 
 ### Open the app

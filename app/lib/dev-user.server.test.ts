@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ const password = 'local-command-test-password';
 
 async function runSetup(contents: string, answers: string[] = [], overrides: NodeJS.ProcessEnv = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'quote-dev-user-'));
-  await writeFile(join(directory, '.env'), contents, { mode: 0o600 });
+  await writeFile(join(directory, '.env'), contents, { mode: 0o644 });
   const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'development', ...overrides };
   for (const key of ['DATABASE_URL', 'AUTH_ALLOWED_EMAILS', 'BETTER_AUTH_URL', 'AUTH_TRUSTED_ORIGINS', 'EMAIL_DELIVERY', 'BETTER_AUTH_SECRET']) delete env[key];
   try {
@@ -35,7 +35,7 @@ async function runSetup(contents: string, answers: string[] = [], overrides: Nod
       child.on('error', error => { clearTimeout(timer); reject(error); });
       child.on('close', code => { clearTimeout(timer); resolve({ code, output }); });
     });
-    return { ...result, contents: await readFile(join(directory, '.env'), 'utf8') };
+    return { ...result, contents: await readFile(join(directory, '.env'), 'utf8'), mode: (await stat(join(directory, '.env'))).mode & 0o777 };
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -69,6 +69,7 @@ it.runIf(Boolean(process.env.TEST_DATABASE_URL))('creates a verified local Artis
     expect(result.output).toContain('Verified local account created');
     expect(result.output).not.toContain(password);
     expect(result.contents).not.toContain(password);
+    expect(result.mode).toBe(0o600);
     const config = parse(result.contents);
     expect(config.AUTH_ALLOWED_EMAILS).toContain('another@example.test');
     expect(config.AUTH_ALLOWED_EMAILS).toContain(email);

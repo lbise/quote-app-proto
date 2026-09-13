@@ -15,7 +15,7 @@ export function clearCapturedEmails(): void {
   capturedEmails.length = 0;
 }
 
-export function capturedEmailsForTests(): readonly CapturedEmail[] {
+export function capturedAuthEmails(): readonly CapturedEmail[] {
   return capturedEmails;
 }
 

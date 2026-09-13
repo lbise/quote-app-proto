@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
@@ -120,7 +120,7 @@ async function main() {
   Object.assign(process.env, settings, { EMAIL_DELIVERY: 'fake' });
   const { connectDatabase } = await import('../app/lib/db.server');
   const { createAuthForDatabase } = await import('../app/lib/auth.server');
-  const { capturedEmailsForTests } = await import('../app/lib/mail.server');
+  const { capturedAuthEmails } = await import('../app/lib/mail.server');
   const { user } = await import('../app/lib/db/schema');
   const { eq } = await import('drizzle-orm');
   const connection = connectDatabase(databaseUrl);
@@ -134,7 +134,7 @@ async function main() {
       body: JSON.stringify({ name: 'Local Artisan', email: input.email, password: input.password }),
     }));
     if (!response.ok) throw new SetupError('Account creation failed. Check the email and password requirements, then retry.');
-    const mail = capturedEmailsForTests().filter(message => message.to === input.email).at(-1);
+    const mail = capturedAuthEmails().filter(message => message.to === input.email).at(-1);
     const verificationUrl = mail?.text.split('\n').find(line => line.startsWith(`${input.origin}/api/auth/verify-email?`));
     if (!verificationUrl) throw new SetupError('Account created, but local email verification could not finish. No password was changed.');
     // Follow Better Auth's normal verification link in-process. Nothing is emailed or exposed over HTTP.
@@ -142,9 +142,18 @@ async function main() {
     verificationRequest.searchParams.delete('callbackURL');
     const verification = await auth.handler(new Request(verificationRequest));
     if (verification.status !== 200) throw new SetupError('Account created, but local email verification could not finish.');
-    if (await readFile(envPath, 'utf8') !== original) throw new SetupError('Account created and verified, but .env changed. Add your email to AUTH_ALLOWED_EMAILS before signing in.');
-    try { await writeFile(envPath, updatedEnv(original, settings), { mode: 0o600 }); }
-    catch { throw new SetupError('Account created and verified, but .env could not be written. Add your email to AUTH_ALLOWED_EMAILS before signing in.'); }
+    const temporaryEnv = `${envPath}.dev-user-${randomBytes(8).toString('hex')}.tmp`;
+    try {
+      // mode only applies when creating a file. Replace the old file so an
+      // existing 0644 .env cannot expose the newly generated auth secret.
+      await writeFile(temporaryEnv, updatedEnv(original, settings), { mode: 0o600, flag: 'wx' });
+      if (await readFile(envPath, 'utf8') !== original) throw new SetupError('Account created and verified, but .env changed. Add your email to AUTH_ALLOWED_EMAILS before signing in.');
+      // This protects against partial writes, not edits by unrelated processes.
+      await rename(temporaryEnv, envPath);
+    } catch (error) {
+      if (error instanceof SetupError) throw error;
+      throw new SetupError('Account created and verified, but .env could not be written. Add your email to AUTH_ALLOWED_EMAILS before signing in.');
+    } finally { await rm(temporaryEnv, { force: true }); }
     console.info(`\nVerified local account created for ${input.email}.`);
     console.info('Updated .env with the allowed email, app URL and trusted origins. No password was written to .env.');
     console.info(`Restart npm run dev:network, then sign in at ${input.origin}/sign-in with the password you chose.`);
