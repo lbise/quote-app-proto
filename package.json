@@ -11,6 +11,7 @@
     "dev": "react-router dev",
     "prototype:quotes": "react-router dev --host 0.0.0.0 --port 5174 --strictPort --open /quote-layout-prototype?variant=A",
     "dev:network": "react-router dev --host 0.0.0.0 --port 5173 --strictPort",
+    "dev:user": "tsx scripts/dev-user.ts",
     "build": "react-router build",
     "start": "react-router-serve ./build/server/index.js",
     "db:migrate": "tsx scripts/migrate.ts",

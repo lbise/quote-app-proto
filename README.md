@@ -2,7 +2,7 @@
 
 Easy Quote is a prototype for small artisan businesses preparing customer quotes.
 
-The current slice provides bilingual email/password authentication for selected testers and a protected starter page. Quote and Customer workflows are intentionally not included yet.
+The application provides bilingual email/password authentication, Customer records and a conversational Quote workspace with editable Working Drafts and frozen Published Revisions. See [the Quote workflow](docs/quote-workflow.md).
 
 ## Run locally
 
@@ -21,7 +21,27 @@ Start the development server on localhost with `npm run dev`, or bind it to the 
 
 The example environment uses captured mail (`EMAIL_DELIVERY=fake`) and `AUTH_ALLOWED_EMAILS=*`, so local development never sends real messages. Captured messages are held in the server process and are not exposed by an application endpoint. Use a specific address instead of `*` when testing the allowlist behavior.
 
-Open `http://localhost:5173` to sign in or register. For a headless machine, start the server on its private interfaces instead:
+### Create your local login
+
+Normal registration requires email verification, which you cannot complete through the browser when mail delivery is `fake`. After applying migrations, create a verified local account instead:
+
+```sh
+npm run dev:user
+```
+
+Enter your email, password twice, and the URL you will open. Password input is hidden and the password is never written to `.env` or printed. The command follows Better Auth's verification flow using the captured email inside the setup process. It sends no real email and adds no verification-bypass endpoint.
+
+For another device, enter the machine's LAN or Tailscale IPv4 URL, such as `http://192.168.1.11:5173`. The command suggests available private addresses. For this machine only, accept `http://localhost:5173`.
+
+The command adds your email to `AUTH_ALLOWED_EMAILS`, sets `BETTER_AUTH_URL`, and updates `AUTH_TRUSTED_ORIGINS` in `.env`. Existing allowlist entries and unrelated configuration are preserved. If the file has no auth secret or still contains the example placeholder, it generates one. Existing accounts, passwords and verification states are never overwritten; choose a fresh email if an earlier registration is still unverified.
+
+This command refuses non-development `NODE_ENV` values, remote database hosts, database names not ending in `_local` or `_test`, and connection URLs with query parameters. It only accepts loopback PostgreSQL connections. Use it with disposable local data, never with a tunnel to production.
+
+Restart the development server after setup, then sign in with the credentials you chose. Exported shell variables take precedence over `.env`; unset conflicting auth settings if your changes do not take effect.
+
+### Open the app
+
+For a headless machine, start the server on its private interfaces:
 
 ```sh
 npm run dev:network
