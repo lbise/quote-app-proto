@@ -130,6 +130,36 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(await reloaded.json()).toMatchObject({ draft: { title: "Titre manuel prioritaire" }, pending: false, assistantRequest: { requestId: "delayed-ai", text: "Renommer le projet", status: "stale", baseVersion: detail.version } });
   });
 
+  it("keeps the real undo target when an identical normalized save is retried", async () => {
+    const created = await request({ action: "create", requestId: crypto.randomUUID() });
+    let detail = await created.json();
+    const first = complete(detail.draft.reference);
+    const saved = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: first });
+    detail = await saved.json();
+    const changed = { ...first, title: "Titre réellement modifié" };
+    const changedSave = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: changed });
+    detail = await changedSave.json();
+    const noOp = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: { ...changed, lines: [...changed.lines] } });
+    const afterNoOp = await noOp.json();
+    expect(afterNoOp.version).toBe(detail.version);
+    const undone = await request({ action: "undo", id: detail.id, expectedVersion: afterNoOp.version, requestId: crypto.randomUUID() });
+    expect(await undone.json()).toMatchObject({ draft: { title: first.title } });
+  });
+
+  it("serializes duplicate customer creation keys and rejects changed payloads", async () => {
+    const requestId = crypto.randomUUID();
+    const customer = { name: "Maison Exemple", address: "Rue Exemple 1", contact: "Camille" };
+    const [first, second] = await Promise.all([
+      request({ action: "customer-save", requestId, customer }),
+      request({ action: "customer-save", requestId, customer }),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect((await first.json()).customers.filter((entry: { name: string }) => entry.name === customer.name)).toHaveLength(1);
+    const changed = await request({ action: "customer-save", requestId, customer: { ...customer, contact: "Autre" } });
+    expect(changed.status).toBe(409);
+  });
+
   it("serializes duplicate create keys and rejects a reused key with a different payload", async () => {
     const requestId = crypto.randomUUID();
     const [one, two] = await Promise.all([
@@ -159,6 +189,20 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(await retry.json()).toMatchObject({ draft: { title: "Titre assistant" } });
     const reused = await call({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId, text: "Autre instruction", locale: "fr" });
     expect(reused.status).toBe(409);
+  });
+
+  it("preserves non-line assistant change metadata in response messages and GET", async () => {
+    const created = await request({ action: "create", requestId: crypto.randomUUID() });
+    let detail = await created.json();
+    const source = { ...complete(detail.draft.reference), sections: [{ id: "kitchen", title: "Cuisine" }] };
+    const saved = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: source });
+    detail = await saved.json();
+    const provider = async (input: { quote: QuoteData }) => ({ quote: { ...input.quote, title: "Titre IA", discountMode: "percent" as const, discount: "5", sections: [{ id: "kitchen", title: "Cuisine révisée" }] }, message: "Mise à jour.", changed: [], changedFields: ["title", "discount", "section:kitchen"], reviewPublication: false });
+    const assisted = await createQuoteHandler({ database: connection.db, auth, provider })(new Request(`${origin}/api/quotes`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Réviser", locale: "fr" }) }));
+    const accepted = await assisted.json();
+    expect(accepted.messages.at(-1)).toMatchObject({ changed: [], changedFields: ["title", "discount", "section:kitchen"] });
+    const reloaded = await request(undefined, detail.id);
+    expect((await reloaded.json()).messages.at(-1)).toMatchObject({ changed: [], changedFields: ["title", "discount", "section:kitchen"] });
   });
 
   it("serializes concurrent Publication and later Working Draft retries", async () => {

@@ -1,4 +1,5 @@
 import type { QuoteData } from "./quote";
+import { readLimitedBody } from "./limited-body.server";
 
 export type QuoteAIInput = {
   quote: QuoteData;
@@ -15,6 +16,7 @@ export type QuoteAIResult = {
   quote: QuoteData | null;
   message: string;
   changed: string[];
+  changedFields?: string[];
   reviewPublication: boolean;
 };
 
@@ -343,7 +345,11 @@ function mergeWork(original: QuoteData, candidate: QuoteWork): QuoteData {
   } as QuoteData;
 }
 
-function changes(before: QuoteData, after: QuoteData): { applied: boolean; lineIds: string[] } {
+function changes(before: QuoteData, after: QuoteData): {
+  applied: boolean;
+  lineIds: string[];
+  changedFields: string[];
+} {
   const previous = workQuote(before);
   const next = workQuote(after);
   const previousLines = new Map(previous.lines.map((line) => [line.id, line]));
@@ -354,13 +360,29 @@ function changes(before: QuoteData, after: QuoteData): { applied: boolean; lineI
       .map((line) => line.id),
     ...previous.lines.filter((line) => !nextLineIds.has(line.id)).map((line) => line.id),
   ];
-  const applied = previous.title !== next.title
-    || JSON.stringify(previous.sections) !== JSON.stringify(next.sections)
-    || JSON.stringify(previous.lines) !== JSON.stringify(next.lines)
-    || previous.discountMode !== next.discountMode
-    || previous.discount !== next.discount;
 
-  return { applied, lineIds };
+  const previousSections = new Map(previous.sections.map((section, index) => [section.id, { section, index }]));
+  const nextSectionIds = new Set(next.sections.map((section) => section.id));
+  const changedSections = [
+    ...next.sections
+      .filter((section, index) => {
+        const previousSection = previousSections.get(section.id);
+        return !previousSection || previousSection.index !== index || previousSection.section.title !== section.title;
+      })
+      .map((section) => `section:${section.id}`),
+    ...previous.sections
+      .filter((section) => !nextSectionIds.has(section.id))
+      .map((section) => `section:${section.id}`),
+  ];
+
+  const changedFields = [
+    ...(previous.title !== next.title ? ["title"] : []),
+    ...(previous.discountMode !== next.discountMode || previous.discount !== next.discount ? ["discount"] : []),
+    ...changedSections,
+  ];
+  const applied = changedFields.length > 0 || lineIds.length > 0;
+
+  return { applied, lineIds, changedFields };
 }
 
 function modelResponse(value: unknown): ModelResponse {
@@ -401,7 +423,9 @@ function normalizeResult(original: QuoteData, result: QuoteAIResult): QuoteAIRes
 
   const merged = mergeWork(original, workQuote(result.quote));
   const changed = changes(original, merged);
-  return { quote: changed.applied ? merged : null, message, changed: changed.lineIds, reviewPublication };
+  return changed.applied
+    ? { quote: merged, message, changed: changed.lineIds, changedFields: changed.changedFields, reviewPublication }
+    : { quote: null, message, changed: [], reviewPublication };
 }
 
 function configuredOpenAI(): { apiKey: string; model: string; timeoutMs: number } {
@@ -432,39 +456,6 @@ function configuredOpenAI(): { apiKey: string; model: string; timeoutMs: number 
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
-}
-
-async function responseText(response: Response): Promise<string> {
-  const contentLength = response.headers.get("content-length");
-  if (contentLength !== null && (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_PROVIDER_RESPONSE_BYTES)) {
-    throw new Error("The Quote AI provider returned an oversized response.");
-  }
-
-  if (!response.body) {
-    throw new Error("The Quote AI provider returned an invalid response.");
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > MAX_PROVIDER_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new Error("The Quote AI provider returned an oversized response.");
-    }
-    chunks.push(value);
-  }
-
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
 }
 
 async function openAIProvider(input: QuoteAIInput): Promise<QuoteAIResult> {
@@ -517,7 +508,7 @@ async function openAIProvider(input: QuoteAIInput): Promise<QuoteAIResult> {
 
   let payload: unknown;
   try {
-    payload = JSON.parse(await responseText(response));
+    payload = JSON.parse(await readLimitedBody(response, MAX_PROVIDER_RESPONSE_BYTES));
   } catch {
     throw new Error("The Quote AI provider returned an invalid response.");
   }

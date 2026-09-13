@@ -51,9 +51,10 @@ This first slice runs one application replica. The container migrates before it 
 1. starts PostgreSQL 16;
 2. sets `TEST_DATABASE_URL` to its local connection string;
 3. runs `npm ci`, typecheck, test, and build;
-4. runs the deployment-script tests.
+4. installs Chromium and runs the Quote browser suite against a separate test database;
+5. runs the deployment-script tests.
 
-The database integration test uses `TEST_DATABASE_URL`. The workflow applies the committed migration to that database before running the test suite. Local runs without `TEST_DATABASE_URL` still cover the success and failure paths with injected database adapters.
+The database integration test uses `TEST_DATABASE_URL`. The workflow applies the committed migration to that database before running the test suite. Local runs without `TEST_DATABASE_URL` still cover health success/failure paths with injected adapters and pure Quote calculations. Authenticated Quote persistence tests require real PostgreSQL and are skipped without that variable.
 
 `.github/workflows/release.yml` runs only for pushed tags matching GitHub's broad `v*` filter. Its validator then rejects every value except `vX.Y.Z` with numeric X, Y, and Z. A full checkout fetches `origin/main` and rejects a tag whose target commit is not reachable from it. The release job repeats the same PostgreSQL-backed checks before publishing.
 

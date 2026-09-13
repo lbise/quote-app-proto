@@ -17,8 +17,8 @@ test("the long French Quote keeps approved section navigation, focus, and desk g
   expect(documentBox).not.toBeNull();
   expect(conversationBox).not.toBeNull();
   const quoteRatio = documentBox!.width / (documentBox!.width + conversationBox!.width);
-  expect(quoteRatio).toBeGreaterThan(0.56);
-  expect(quoteRatio).toBeLessThan(0.60);
+  expect(quoteRatio).toBeCloseTo(0.58, 3);
+  expect(conversationBox!.x - documentBox!.x - documentBox!.width).toBe(16);
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator(".qp-app")).toHaveScreenshot("long-quote-desk.png", { animations: "disabled" });
 
@@ -28,6 +28,7 @@ test("the long French Quote keeps approved section navigation, focus, and desk g
   const collapse = page.getByRole("button", { name: "Collapse sections" });
   await collapse.click();
   await expect(page.getByRole("button", { name: "Cuisine" })).toBeHidden();
+  expect((await rail.boundingBox())?.width).toBe(52);
 
   const expand = page.getByRole("button", { name: "Expand sections" });
   await expect(expand).toBeFocused();

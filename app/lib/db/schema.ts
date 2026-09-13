@@ -173,7 +173,7 @@ export const quoteMessage = pgTable("quote_message", {
   role: text("role").notNull(),
   fr: text("fr").notNull(),
   en: text("en").notNull(),
-  changed: jsonb("changed").$type<string[]>(),
+  changed: jsonb("changed").$type<string[] | { lines: string[]; fields: string[] }>(),
   requestId: text("request_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

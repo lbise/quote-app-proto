@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -46,6 +46,7 @@ export function RecordsEditor({
   const [selectedId, setSelectedId] = useState("")
   const [status, setStatus] = useState<Status>("loading")
   const [error, setError] = useState("")
+  const customerRequest = useRef<{ payload: string; id: string } | null>(null)
 
   async function load(signal?: AbortSignal) {
     setStatus("loading")
@@ -94,12 +95,15 @@ export function RecordsEditor({
     setStatus("saving")
     setError("")
     try {
+      const payload = JSON.stringify(customer)
+      if (customerRequest.current?.payload !== payload) customerRequest.current = { payload, id: crypto.randomUUID() }
       const response = await fetch("/api/quotes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "customer-save", customer }),
+        body: JSON.stringify({ action: "customer-save", customer, requestId: customerRequest.current.id }),
       })
       if (!response.ok) throw new Error("save")
+      customerRequest.current = null
       await load()
       setSelectedId("")
       setCustomer(emptyCustomer())

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { QuoteData } from "../../lib/quote";
+import type { QuoteCalculation, QuoteData } from "../../lib/quote";
 
-export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[] };
+export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
 export type QuoteRecord = {
   id: string;
   version: number;
   draft: QuoteData | null;
-  revisions: { number: number; publishedAt: string; quote: QuoteData }[];
+  revisions: { number: number; publishedAt: string; quote: QuoteData; calculation: QuoteCalculation }[];
   messages: ConversationMessage[];
   pending: boolean;
   canUndo: boolean;
@@ -37,6 +37,7 @@ export function useQuote(initial: QuoteRecord) {
   const [ai, setAi] = useState<"idle" | "processing" | "error" | "stale">(initial.pending ? "processing" : initial.assistantRequest?.status === 'failed' ? 'error' : initial.assistantRequest?.status === 'stale' ? 'stale' : 'idle');
   const [error, setError] = useState<string | null>(null);
   const [changed, setChanged] = useState<string[]>([]);
+  const [changedFields, setChangedFields] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const current = useRef(initial);
   const sequence = useRef(0);
@@ -110,7 +111,7 @@ export function useQuote(initial: QuoteRecord) {
 
   function apply(next: QuoteData, ids: string[] = []) {
     if (!current.current.draft || busy) return;
-    setQuote(next); setChanged(ids); setSave("saving");
+    setQuote(next); setChanged(ids); setChangedFields([]); setSave("saving");
     // A definite validation rejection was never saved. Replace it with the corrected snapshot.
     // An uncertain network failure must instead retry its original key first.
     if (rejectedSave.current) { queue.current = []; rejectedSave.current = false; }
@@ -128,7 +129,7 @@ export function useQuote(initial: QuoteRecord) {
       actionRetry.current = request;
       const next = await quoteRequest<QuoteRecord>({ action, id: initial.id, expectedVersion: request.version, requestId: request.requestId });
       actionRetry.current = null;
-      accept(next, true); setChanged([]);
+      accept(next, true); setChanged([]); setChangedFields([]);
       return next;
     } catch (failure) {
       setError(failure instanceof RequestError ? failure.code : "connection_failed");
@@ -156,7 +157,7 @@ export function useQuote(initial: QuoteRecord) {
         if (next.version > current.current.version) accept(next, false);
         setAi("stale"); return null;
       }
-      accept(next, true); setChanged(next.messages.at(-1)?.changed ?? []); setAi("idle");
+      accept(next, true); setChanged(next.messages.at(-1)?.changed ?? []); setChangedFields(next.messages.at(-1)?.changedFields ?? []); setAi("idle");
       return next;
     } catch (failure) {
       const stale = failure instanceof RequestError && failure.status === 409;
@@ -170,5 +171,5 @@ export function useQuote(initial: QuoteRecord) {
     }
   }
 
-  return { record, quote, save, ai, error, changed, busy, apply, flush, mutate, runAssistant, lastRequest };
+  return { record, quote, save, ai, error, changed, changedFields, busy, apply, flush, mutate, runAssistant, lastRequest };
 }

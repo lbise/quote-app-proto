@@ -224,37 +224,6 @@ export function calculateQuote(input: unknown): QuoteCalculation {
   return result;
 }
 
-export function lineCents(line: QuoteLine): number | null {
-  if (!line.description.trim()) return null;
-  const errors: QuoteProblem[] = [];
-  const missing: QuoteProblem[] = [];
-  return calculatedLineCents(line, "line", (path, code) => addProblem(errors, path, code), (path) => addProblem(missing, path, "required"));
-}
-
-export function totals(quote: QuoteData): {
-  subtotal: number;
-  discount: number | null;
-  net: number | null;
-  vat: number | null;
-  total: number | null;
-  incomplete: number;
-} {
-  const result = calculateQuote(quote);
-  return {
-    subtotal: result.subtotal,
-    discount: result.discount,
-    net: result.net,
-    vat: result.vat,
-    total: result.total,
-    incomplete: result.lines.filter((line) => line.amount === null).length,
-  };
-}
-
-export function publicationMissing(quote: QuoteData): boolean {
-  const result = calculateQuote(quote);
-  return result.errors.length > 0 || result.missing.length > 0 || !result.complete;
-}
-
 export function money(cents: number): string {
   if (!Number.isSafeInteger(cents)) throw new RangeError("cents must be a safe integer");
   const negative = cents < 0;

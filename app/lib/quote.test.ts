@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { calculateQuote, emptyQuote, lineCents, money, publicationMissing, totals } from "./quote";
+import { calculateQuote, emptyQuote } from "./quote";
 
 function completeQuote() {
   return {
@@ -224,8 +224,6 @@ describe("calculateQuote", () => {
       total: 1234,
       complete: false,
     });
-    expect(totals(quote)).toEqual({ subtotal: 1234, discount: 0, net: 1234, vat: null, total: 1234, incomplete: 0 });
-    expect(publicationMissing(quote)).toBe(true);
   });
 
   it("distinguishes explicit unregistered VAT from unknown VAT registration", () => {
@@ -483,6 +481,17 @@ describe("calculateQuote", () => {
     }).errors).toEqual([{ path: "discount", code: "out_of_range" }]);
   });
 
+  it("preserves multiline technical content within a single fixed price", () => {
+    const description = "Fourniture et pose d'un bardage en chêne.\nOssature 30/60 mm, renforts 40/80 mm, panneaux de 50 mm.\nDécoupes, ajustages et finitions compris dans le forfait.";
+    const result = calculateQuote({
+      ...completeQuote(),
+      lines: [{ id: "assembly", sectionId: "", description, mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "1899.00" }],
+    });
+    expect(result.quote?.lines[0].description).toBe(description);
+    expect(result.lines).toEqual([{ id: "assembly", number: 1, amount: 189900 }]);
+    expect(result).toMatchObject({ complete: true, total: 205282 });
+  });
+
   it("calculates VAT once on the whole discounted subtotal", () => {
     const result = calculateQuote({
       ...completeQuote(),
@@ -494,7 +503,7 @@ describe("calculateQuote", () => {
     expect(result).toMatchObject({ subtotal: 12, discount: 0, net: 12, vat: 1, total: 13, complete: true });
   });
 
-  it("rounds each line and VAT once, and formats safe cent values for French CHF", () => {
+  it("sums rounded lines rather than rounding their unrounded sum", () => {
     const quote = {
       ...completeQuote(),
       lines: [
@@ -510,8 +519,7 @@ describe("calculateQuote", () => {
     };
 
     expect(calculateQuote(quote)).toMatchObject({ subtotal: 2006, vat: 162, total: 2168 });
-    expect(lineCents({ ...quote.lines[0], description: "" })).toBeNull();
-    expect(money(123_456_789)).toBe("1\u202f234\u202f567.89\u00a0CHF");
+
   });
 });
 

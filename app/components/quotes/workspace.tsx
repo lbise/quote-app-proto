@@ -8,7 +8,7 @@ import { Textarea } from '../ui/textarea';
 import { Message, MessageContent, MessageHeader } from '../ui/message';
 import { Bubble, BubbleContent } from '../ui/bubble';
 import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '../ui/message-scroller';
-import { calculateQuote, lineCents, money, type QuoteData, type QuoteLine } from '../../lib/quote';
+import { calculateQuote, money, type QuoteLine } from '../../lib/quote';
 import { LineEditor, ManualEditor } from './manual-editor';
 import { RecordsEditor } from './records-editor';
 import { SectionsEditor } from './sections-editor';
@@ -23,7 +23,7 @@ const formatMoney = (value: number | null) => value === null ? '—' : money(val
 
 export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: { initial: QuoteRecord; locale: 'en' | 'fr'; onList: () => void; onLanguage: (locale: 'en' | 'fr') => void }) {
   const state = useQuote(initial);
-  const { record, save, ai, error, changed, busy, apply, flush, mutate, lastRequest } = state;
+  const { record, save, ai, error, changed, changedFields, busy, apply, flush, mutate, lastRequest } = state;
   const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
   const [input, setInput] = useState('');
   const [aiDisclosed, setAiDisclosed] = useState(false);
@@ -38,13 +38,15 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   const revisions = record.revisions, messages = record.messages, recordId = record.id;
   const readOnly = readRevision !== null;
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
-  const calculation = calculateQuote(quote);
+  const calculation = readRevision === null ? calculateQuote(quote) : record.revisions[readRevision].calculation;
+  const lineAmounts = new Map(calculation.lines.map(line => [line.id, line.amount]));
+  const amountFor = (line: QuoteLine) => lineAmounts.get(line.id) ?? null;
   const sum = { ...calculation, missing: calculation.lines.filter(l => l.amount === null).length, validDiscount: !calculation.errors.some(e => e.path.startsWith('discount')) && !calculation.missing.some(e => e.path.startsWith('discount')) };
   const missingAdmin = calculation.missing.some(e => !e.path.startsWith('lines')) || calculation.errors.length > 0;
   const blocked = !calculation.complete || save !== 'saved' || ai === 'processing' || busy;
   const showOutline = quote.sections.length > 0 && !outlineCollapsed;
   const activeSection = quote.sections.some(s => s.id === sectionId) ? sectionId : quote.sections[0]?.id || '';
-  const missingLines = quote.lines.filter(l => lineCents(l) === null);
+  const missingLines = quote.lines.filter(l => amountFor(l) === null);
   const blocker = useBlocker(save !== 'saved');
 
   useEffect(() => {
@@ -69,6 +71,11 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     if (line) setSectionId(line.sectionId);
     setNarrowPanel('quote');
     setTimeout(() => document.getElementById(`line-${id}`)?.scrollIntoView({ block: 'center' }), 0);
+  }
+  function revealField(field: string) {
+    setNarrowPanel('quote');
+    const id = field === 'discount' ? 'quote-totals' : field.startsWith('section:') ? `section-${field.slice(8)}` : 'quote-title';
+    setTimeout(() => (document.getElementById(id) ?? document.getElementById('quote-title'))?.scrollIntoView({ block: 'center' }), 0);
   }
   function moveLine(line: QuoteLine, delta: number) {
     const next = clone(quote), i = next.lines.findIndex(l => l.id === line.id), j = i + delta;
@@ -98,6 +105,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     if (next?.reviewPublication) openModal('publish');
     const id = next?.messages.at(-1)?.changed?.[0];
     if (id) reveal(id);
+    else if (next?.messages.at(-1)?.changedFields?.[0]) revealField(next.messages.at(-1)!.changedFields![0]);
   }
   async function publish() {
     if (blocked) return;
@@ -118,7 +126,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     </div>
   </div>;
   const outlineLinks = <>
-    {quote.sections.map((section) => { const lines = quote.lines.filter(l => l.sectionId === section.id), missing = lines.some(l => lineCents(l) === null); return <button key={section.id} className={activeSection === section.id ? 'is-current' : ''} aria-current={activeSection === section.id ? 'true' : undefined} onClick={() => { setSectionId(section.id); setNarrowPanel('quote'); setTimeout(() => document.getElementById(`section-${section.id}`)?.scrollIntoView({ block: 'start' }), 0); }}><span>{section.title}</span>{missing ? <TriangleAlert aria-label={t('À compléter', 'Incomplete')} /> : <span>{lines.length}</span>}</button>; })}
+    {quote.sections.map((section) => { const lines = quote.lines.filter(l => l.sectionId === section.id), missing = lines.some(l => amountFor(l) === null); return <button key={section.id} className={activeSection === section.id ? 'is-current' : ''} aria-current={activeSection === section.id ? 'true' : undefined} onClick={() => { setSectionId(section.id); setNarrowPanel('quote'); setTimeout(() => document.getElementById(`section-${section.id}`)?.scrollIntoView({ block: 'start' }), 0); }}><span>{section.title}</span>{missing ? <TriangleAlert aria-label={t('À compléter', 'Incomplete')} /> : <span>{lines.length}</span>}</button>; })}
     {!readOnly && <Button variant="ghost" onClick={() => openModal('sections')}><Settings2 data-icon="inline-start" />{t('Organiser', 'Organise')}</Button>}
   </>;
   const outline = <nav className="qp-outline" aria-label={t('Sections du devis', 'Quote sections')}>
@@ -136,6 +144,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
             <MessageHeader>{message.role === 'artisan' ? t('Vous', 'You') : message.role === 'note' ? t('Historique', 'History') : 'Easy Quote'}</MessageHeader>
             <Bubble variant={message.role === 'artisan' ? 'secondary' : 'ghost'}><BubbleContent>{message[locale]}</BubbleContent></Bubble>
             {!!message.changed?.length && <div className="qp-change-links"><span><Check />{message.changed.length} {t('lignes modifiées', 'lines changed')}</span>{message.changed?.some(id => quote.lines.some(line => line.id === id)) && <Button variant="link" size="sm" onClick={() => reveal(message.changed!.find(id => quote.lines.some(line => line.id === id))!)}>{t('Voir dans le devis', 'View in Quote')}<ArrowRight data-icon="inline-end" /></Button>}</div>}
+            {!!message.changedFields?.length && <div className="qp-change-links"><span><Check />{t('Détails du devis modifiés', 'Quote details changed')}</span><Button variant="link" size="sm" onClick={() => revealField(message.changedFields![0])}>{t('Voir les détails modifiés', 'View changed details')}<ArrowRight data-icon="inline-end" /></Button></div>}
           </MessageContent></Message>
         </MessageScrollerItem>)}
         {ai === 'processing' && <MessageScrollerItem><p className="qp-processing" role="status"><span className="qp-spinner" />{t('Je prépare la modification. Vous pouvez continuer à éditer.', 'Preparing the change. You can keep editing.')}</p></MessageScrollerItem>}
@@ -155,7 +164,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   </section>;
 
   function renderLine(line: QuoteLine) {
-    const index = quote.lines.findIndex(l => l.id === line.id), cents = lineCents(line);
+    const index = quote.lines.findIndex(l => l.id === line.id), cents = amountFor(line);
     return <div className={`qp-line ${changed.includes(line.id) ? 'qp-line-changed' : ''}`} id={`line-${line.id}`} key={line.id}>
       <div className="qp-line-content" lang="fr"><span className="qp-line-number">{String(index + 1).padStart(2, '0')}</span><div className="qp-line-description">{line.description || <span className="qp-missing">Description à compléter</span>}{changed.includes(line.id) && <span className="qp-changed-label" lang={locale}><Check />{t('Modifié', 'Changed')}</span>}</div>
         <div className="qp-line-pricing">{line.mode === 'fixed' ? <span>Forfait</span> : <><span>{line.quantity || '—'} {line.unit || '—'}</span><span>× {line.unitPrice || '—'}</span></>}<strong>{formatMoney(cents)}</strong>{cents === null && <span className="qp-missing">À compléter</span>}{cents === 0 && <span>Sans frais</span>}</div>
@@ -177,21 +186,24 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
       {readOnly && <div className="qp-editor-guidance qp-published-note"><LockKeyhole /><p>{t('Révision figée. Publication sans envoi au destinataire.', 'Frozen revision. Publication did not send this Quote.')}</p></div>}
       <article className="qp-paper" lang="fr">
         <header className="qp-paper-header"><div className="qp-business-name">{quote.businessName || 'Entreprise à renseigner'}</div><div className="qp-paper-meta"><span>Devis {quote.reference}</span><span>{quote.issueDate}</span></div></header>
-        <div className="qp-document-title"><h2>{quote.title || 'Nouveau devis'}</h2><p>{quote.siteAddress}</p></div>
+        <div className="qp-document-title" id="quote-title"><h2>{quote.title || 'Nouveau devis'}</h2>{!readOnly && changedFields.includes('title') && <span className="qp-changed-label" lang={locale}><Check />{t('Objet modifié', 'Title changed')}</span>}<p>{quote.siteAddress}</p></div>
         {<div className="qp-addresses"><div><span>Proposé par</span><strong>{quote.businessName}</strong><p>{quote.businessAddress}</p><p>{quote.businessContact}</p></div><div><span>À l’attention de</span><strong>{quote.customerName || 'Destinataire à renseigner'}</strong><p>{quote.customerAddress || 'Adresse à renseigner'}</p><p>{quote.customerContact}</p></div></div>}
         {!quote.lines.length && <div className="qp-empty-document"><FileText /><h2>Les travaux apparaîtront ici.</h2><p>Commencez par une description dans la conversation, ou ajoutez une ligne manuellement.</p></div>}
         {quote.lines.filter(l => !l.sectionId).map(renderLine)}
         {quote.sections.map(section => {
-          const lines = quote.lines.filter(l => l.sectionId === section.id), incomplete = lines.some(l => lineCents(l) === null);
-          const subtotal = lines.reduce((n, l) => n + (lineCents(l) ?? 0), 0);
+          const lines = quote.lines.filter(l => l.sectionId === section.id);
+          const sectionCalculation = calculation.sections.find(result => result.id === section.id);
+          const incomplete = sectionCalculation?.incomplete ?? true;
+          const subtotal = sectionCalculation?.subtotal ?? 0;
           return <section className="qp-quote-section" id={`section-${section.id}`} key={section.id}>
-            <div className="qp-section-title"><h3>{section.title}</h3><span>CHF</span></div>
+            <div className="qp-section-title"><h3>{section.title}{!readOnly && changedFields.includes(`section:${section.id}`) && <span className="qp-changed-label" lang={locale}><Check />{t('Section modifiée', 'Section changed')}</span>}</h3><span>CHF</span></div>
             {lines.map(renderLine)}
             <div className="qp-section-subtotal"><span>{incomplete ? 'Sous-total partiel' : 'Sous-total'}</span><strong>{formatMoney(subtotal)}</strong></div>
           </section>;
         })}
         {!readOnly && <div className="qp-add-line"><Button variant="outline" onClick={() => edit({ id: `new-${Date.now()}`, sectionId: activeSection, description: '', mode: 'quantity', quantity: '', unit: 'm²', unitPrice: '', amount: '' })}><Plus data-icon="inline-start" />{t('Ajouter une ligne', 'Add a line')}</Button></div>}
-        <div className="qp-totals">
+        <div className="qp-totals" id="quote-totals">
+          {!readOnly && changedFields.includes('discount') && <span className="qp-changed-label" lang={locale}><Check />{t('Remise modifiée', 'Discount changed')}</span>}
           <div><span>{sum.missing ? 'Sous-total partiel HT' : 'Sous-total HT'}</span><span>{formatMoney(sum.subtotal)}</span></div>
           {quote.discountMode !== 'none' && <div><span>Remise {quote.discountMode === 'percent' ? `${quote.discount} %` : 'CHF'}</span><span>{sum.missing || !sum.validDiscount ? '—' : `− ${formatMoney(sum.discount)}`}</span></div>}
           {quote.vatRegistered && <div><span>TVA 8,1 %</span><span>{sum.total === null ? '—' : formatMoney(sum.vat)}</span></div>}
