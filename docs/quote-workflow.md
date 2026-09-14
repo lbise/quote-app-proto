@@ -10,6 +10,10 @@ The prototype notice, scenario controls, layout switcher, scripted assistant and
 
 The design source remains under `app/components/quote-prototype/` for comparison. Its route is development-only. Production Quote modules do not import its fixtures, calculations or simulation.
 
+## Supplementary interaction review
+
+[Interaction review v1](quote-interaction-review-v1.md) records the current implementation and supplementary decisions for #9, including Customer search/replacement, edit scope, assistant explanations, section movement, undo/focus and bilingual copy. The user [approved these design decisions](https://github.com/lbise/quote-app-proto/issues/9#issuecomment-5669015864). Approval does not mean the proposed changes are implemented or extend #8's layout approval.
+
 ## Responsibilities
 
 - `app/lib/quote.ts` validates and calculates complete or incomplete Quotes. Integer CHF cents and scaled `bigint` intermediates implement half-up rounding. Missing values are separate from invalid inputs. Published content uses the same calculation boundary as manual and assistant changes.
