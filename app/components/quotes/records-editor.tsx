@@ -16,6 +16,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { type QuoteData } from "@/lib/quote"
+import { randomUUID } from "@/lib/random-id"
 
 type Locale = "fr" | "en"
 type Customer = { id: string; name: string; address: string; contact: string }
@@ -96,7 +97,7 @@ export function RecordsEditor({
     setError("")
     try {
       const payload = JSON.stringify(customer)
-      if (customerRequest.current?.payload !== payload) customerRequest.current = { payload, id: crypto.randomUUID() }
+      if (customerRequest.current?.payload !== payload) customerRequest.current = { payload, id: randomUUID() }
       const response = await fetch("/api/quotes", {
         method: "POST",
         headers: { "content-type": "application/json" },

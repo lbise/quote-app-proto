@@ -3,6 +3,7 @@ import { useLoaderData, useNavigate, useSearchParams } from 'react-router';
 import { ArrowRight, FileText, Plus, TriangleAlert } from 'lucide-react';
 import type { Route } from './+types/quotes';
 import { requireApprovedArtisan } from '../lib/auth.server';
+import { randomUUID } from '../lib/random-id';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
@@ -35,7 +36,7 @@ export default function Quotes() {
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [creating, setCreating] = useState(false);
-  const [createId, setCreateId] = useState(() => crypto.randomUUID());
+  const [createId, setCreateId] = useState(() => randomUUID());
   const [filter, setFilter] = useState('');
   const [recordsOpen, setRecordsOpen] = useState(false);
   const [privacy, setPrivacy] = useState(false);
@@ -60,7 +61,7 @@ export default function Quotes() {
     setCreating(true); setError(false);
     try {
       const next = await quoteRequest<QuoteRecord>({ action: 'create', requestId: createId });
-      setCreateId(crypto.randomUUID());
+      setCreateId(randomUUID());
       navigate(`/quotes?id=${encodeURIComponent(next.id)}`);
     } catch { setError(true); }
     finally { setCreating(false); }

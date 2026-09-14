@@ -14,6 +14,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { type QuoteData, type QuoteSection } from "@/lib/quote"
+import { randomUUID } from "@/lib/random-id"
 
 type Locale = "fr" | "en"
 
@@ -22,7 +23,7 @@ function t(locale: Locale, fr: string, en: string) {
 }
 
 function sectionId() {
-  return `section-${crypto.randomUUID()}`
+  return `section-${randomUUID()}`
 }
 
 function groupedLines(quote: QuoteData) {

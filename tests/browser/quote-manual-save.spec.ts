@@ -6,7 +6,7 @@ test("an Artisan can save a manually added Quote Line and reopen the Working Dra
   await page.goto("/quotes");
   await expect(page.getByRole("heading", { name: "My Quotes" })).toBeVisible();
 
-  await page.getByRole("button", { name: "New Quote" }).click();
+  await page.getByRole("button", { name: "New Quote", exact: true }).click();
   await expect(page).toHaveURL(/\/quotes\?id=.+/);
 
   await page.getByRole("button", { name: "Add a line" }).click();

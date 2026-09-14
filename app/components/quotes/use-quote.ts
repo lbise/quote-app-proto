@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { QuoteCalculation, QuoteData } from "../../lib/quote";
+import { randomUUID } from "../../lib/random-id";
 
 export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
 export type QuoteRecord = {
@@ -115,7 +116,7 @@ export function useQuote(initial: QuoteRecord) {
     // A definite validation rejection was never saved. Replace it with the corrected snapshot.
     // An uncertain network failure must instead retry its original key first.
     if (rejectedSave.current) { queue.current = []; rejectedSave.current = false; }
-    queue.current.push({ quote: structuredClone(next), requestId: crypto.randomUUID(), sequence: ++sequence.current });
+    queue.current.push({ quote: structuredClone(next), requestId: randomUUID(), sequence: ++sequence.current });
     void flush();
   }
 
@@ -125,7 +126,7 @@ export function useQuote(initial: QuoteRecord) {
     try {
       if (!(await flush())) return null;
       const retry = actionRetry.current;
-      const request = retry?.action === action && retry.version === current.current.version ? retry : { action, requestId: crypto.randomUUID(), version: current.current.version };
+      const request = retry?.action === action && retry.version === current.current.version ? retry : { action, requestId: randomUUID(), version: current.current.version };
       actionRetry.current = request;
       const next = await quoteRequest<QuoteRecord>({ action, id: initial.id, expectedVersion: request.version, requestId: request.requestId });
       actionRetry.current = null;
@@ -144,7 +145,7 @@ export function useQuote(initial: QuoteRecord) {
     // Network retries reuse the request key. A rejected stale response needs a new request against current content.
     const previous = lastRequest.current;
     const replay = retry && ai !== 'stale' && previous?.locale && (previous.baseVersion === current.current.version || current.current.assistantRequest?.status === 'complete');
-    const requestId = replay ? previous.requestId : crypto.randomUUID();
+    const requestId = replay ? previous.requestId : randomUUID();
     const baseVersion = replay ? previous.baseVersion : current.current.version;
     const requestLocale = replay ? previous.locale ?? locale : locale;
     lastRequest.current = { text, requestId, baseVersion, locale: requestLocale };
