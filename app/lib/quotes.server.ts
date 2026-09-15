@@ -343,6 +343,9 @@ async function saveCustomer(database: Database, businessId: string, body: Body, 
 
 async function saveDefaults(database: Database, businessId: string, body: Body, now: Date) {
   const defaults = defaultsFrom(body.defaults, true);
+  if (defaults.vatRegistered === true && !defaults.vatId?.trim()) {
+    throw new RequestFailure(422, "invalid_defaults", { errors: [{ path: "vatId", code: "required" }] });
+  }
   await database.insert(businessDefaults).values({ businessId, defaults, updatedAt: now }).onConflictDoUpdate({ target: businessDefaults.businessId, set: { defaults, updatedAt: now } });
   return readList(database, businessId);
 }

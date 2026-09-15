@@ -27,6 +27,16 @@ Publication freezes commercial content and calculated amounts together. It remov
 
 Local edits do not survive a browser crash or closure unless the server accepted them. The browser warns before leaving with unsaved work where supported. A conflict with another window retains local edits for inspection; it does not silently overwrite the newer server version.
 
+## Business defaults and copied details
+
+Use **Customers & business** to save reusable business name, address, contact details, terms and VAT settings. These defaults apply only when creating a new Quote. Use **Details & terms** to edit an existing Working Draft's copy, including a draft created before defaults were available. Those edits autosave and use Quote Undo. Saving defaults does neither.
+
+VAT registration has three states: To confirm, Yes and No. Saving registered defaults requires a nonblank VAT identifier. Artisans can save incomplete business details and leave registration at To confirm. Business setup never blocks starting a Quote. A Working Draft may also retain registered status with a missing identifier. Its editor explains that it is incomplete, and Publication still requires the missing details. Registered Quotes support only current standard-rate work. This flow does not change the existing calculation rules.
+
+Save defaults reports success only after the server accepts the request. A load failure disables the forms and offers Retry. A save failure keeps the entries and offers Retry without refreshing any Quote. Saving a Customer does not reset pending default edits. Closing with unsaved default edits asks whether to discard them, with Keep editing focused first.
+
+`app/lib/business-defaults.server.test.ts` covers this behavior through authenticated PostgreSQL requests. `tests/browser/business-defaults.spec.ts` covers copy scope, quote-local edits and Undo, load/save retries, discard confirmation and English/French keyboard validation. French terms remain commercial content when the interface language changes.
+
 ## Run and test
 
 Apply migrations to the configured local PostgreSQL database, then start the app:

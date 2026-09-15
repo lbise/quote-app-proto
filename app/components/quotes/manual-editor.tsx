@@ -121,7 +121,7 @@ export function ManualEditor({
         <DialogHeader>
           <DialogTitle>{t(locale, "Modifier le devis", "Edit quote")}</DialogTitle>
           <DialogDescription>
-            {t(locale, "Copie uniquement. Ces changements restent dans ce devis et ne créent ni ne mettent à jour de fiche client ou d'entreprise réutilisable.", "This changes this copied quote only. It does not create or update a reusable customer or business record.")}
+            {t(locale, "Ces modifications concernent uniquement ce devis. Les fiches clients et les valeurs par défaut de l'entreprise restent inchangées.", "This changes this Quote only. Saved Customer records and business defaults stay unchanged.")}
           </DialogDescription>
         </DialogHeader>
 
@@ -215,6 +215,7 @@ export function ManualEditor({
               <Field data-invalid={Boolean(fieldError("vatId")) || undefined}>
                 <FieldLabel htmlFor="manual-vat-id">{t(locale, "Numéro TVA", "VAT identifier")}</FieldLabel>
                 <Input id="manual-vat-id" value={draft.vatId} onChange={(event) => update("vatId", event.target.value)} aria-invalid={Boolean(fieldError("vatId"))} aria-describedby={fieldError("vatId") ? "manual-vat-id-error" : undefined} />
+                {draft.vatRegistered === true && !draft.vatId.trim() && <FieldDescription>{t(locale, "Le numéro TVA manque. Vous pouvez enregistrer ce brouillon de travail incomplet et le compléter plus tard.", "The VAT identifier is missing. You can save this incomplete Working Draft and complete it later.")}</FieldDescription>}
                 {fieldError("vatId") && <FieldError id="manual-vat-id-error">{fieldError("vatId")}</FieldError>}
               </Field>
               <Field>
