@@ -1,0 +1,9 @@
+# Freeze published Quote revisions
+
+An Artisan must be able to preserve the commercial content approved for sharing with a Customer while continuing to revise the Quote. Keep at most one editable Working Draft per Quote. Publication requires explicit Artisan confirmation and creates a numbered, immutable Published Revision. Later edits accumulate in a new Working Draft copied from the latest Published Revision; only another Publication creates the next revision number.
+
+The confirmed slice in [issue #7](https://github.com/lbise/quote-app-proto/issues/7) replaces [issue #6](https://github.com/lbise/quote-app-proto/issues/6)'s decision to leave all Quotes editable without immutable revisions. Editable snapshots alone cannot preserve what the Artisan approved once further changes begin. Recording every edit as a revision would instead turn autosaving and conversational corrections into a history the Artisan did not ask for. Freeze only published versions, not every intermediate edit.
+
+The Quote reference is unique within its Artisan Business and becomes fixed at first Publication. All customer-facing commercial content and calculated amounts freeze together, including copied Customer and business details, dates, terms and tax settings. A later Working Draft initially retains those values, including the issue date; Publication time is separate. Reusable-record changes never refresh an existing Working Draft or Published Revision silently. Future displayed logos must follow the same freezing rule, although this slice defers logos.
+
+Publication cannot be undone or an existing Published Revision overwritten. Corrections require another revision. Publication records approval for sharing, not Customer receipt or acceptance, and the assistant cannot complete it on the Artisan's behalf. Conversation is outside the frozen commercial content. This decision requires neither immutable PDF rendering nor a general edit audit log.
