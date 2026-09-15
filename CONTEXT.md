@@ -17,11 +17,21 @@ A reusable record of the person or organization for whom an Artisan Business pro
 _Avoid_: Client, buyer, account
 
 **Quote**:
-An editable commercial record belonging to an Artisan Business that describes proposed work for a Customer, including quantities and prices. Its customer-facing language is independent of the Artisan's interface language.
+A commercial record belonging to an Artisan Business that describes proposed work for a Customer, identified by a reference unique within that business and fixed after first Publication. Its customer-facing language is independent of the Artisan's interface language.
 _Avoid_: Estimate, invoice, proposal
 
+**Working Draft**:
+The editable version of a Quote being prepared, whose details, quantities, and prices may be incomplete. A Quote has at most one Working Draft, initially prepared from scratch or based on its latest Published Revision.
+
+**Published Revision**:
+A numbered version of a Quote whose customer-facing commercial content and calculated amounts are frozen by Publication. Published Revisions start at 1 and increase with each Publication, not with individual edits.
+_Avoid_: Sent Quote, accepted Quote
+
+**Publication**:
+An Artisan's explicit approval of a Working Draft for sharing with its Customer, creating a Published Revision that cannot be undone or overwritten. Publication does not establish Customer receipt or acceptance.
+
 **Quote Line**:
-An independently editable part of a Quote that describes proposed work or material, numbered consecutively in the Quote's current line order. Its price is either calculated from a quantity and unit price or entered as a fixed amount.
+A part of a Quote that describes proposed work or material, independently editable in a Working Draft and numbered consecutively in the Quote's current line order. Its price, when supplied, is either calculated from a quantity and unit price or entered as a fixed amount.
 _Avoid_: Quote item, catalog entry
 
 **Quote Section**:
