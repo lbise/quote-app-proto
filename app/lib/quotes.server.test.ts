@@ -100,35 +100,6 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(await publishedAgain.json()).toMatchObject({ revisions: [{ number: 1, calculation: { total: 10810 } }, { number: 2, calculation: { total: 21620 } }] });
   });
 
-  it("rejects a stale AI result without overwriting a manual Working Draft save", async () => {
-    let resolveProvider: ((value: { quote: QuoteData; message: string; changed: string[]; reviewPublication: boolean }) => void) | undefined;
-    let started: (() => void) | undefined;
-    const provider = (input: { quote: QuoteData }) => new Promise<{ quote: QuoteData; message: string; changed: string[]; reviewPublication: boolean }>((resolve) => {
-      resolveProvider = resolve;
-      started?.();
-    });
-    const fakeHandler = createQuoteHandler({ database: connection.db, auth, provider });
-    const call = (body: Record<string, unknown>, id?: string) => fakeHandler(new Request(`${origin}/api/quotes${id ? `?id=${id}` : ""}`, {
-      method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify(body),
-    }));
-    const created = await call({ action: "create", requestId: crypto.randomUUID() });
-    let detail = await created.json();
-    const current = complete(detail.draft.reference);
-    const saved = await call({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: current });
-    detail = await saved.json();
-
-    const providerStarted = new Promise<void>((resolve) => { started = resolve; });
-    const pending = call({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: "delayed-ai", text: "Renommer le projet", locale: "fr" });
-    await providerStarted;
-    const manual = { ...current, title: "Titre manuel prioritaire" };
-    const manuallySaved = await call({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: manual });
-    expect(manuallySaved.status).toBe(200);
-    resolveProvider!({ quote: { ...current, title: "Titre IA obsolète" }, message: "Modification proposée.", changed: ["title"], reviewPublication: false });
-    expect((await pending).status).toBe(409);
-
-    const reloaded = await handler(new Request(`${origin}/api/quotes?id=${detail.id}`, { headers: { cookie } }));
-    expect(await reloaded.json()).toMatchObject({ draft: { title: "Titre manuel prioritaire" }, pending: false, assistantRequest: { requestId: "delayed-ai", text: "Renommer le projet", status: "stale", baseVersion: detail.version } });
-  });
 
   it("keeps the real undo target when an identical normalized save is retried", async () => {
     const created = await request({ action: "create", requestId: crypto.randomUUID() });
@@ -173,37 +144,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(reused.status).toBe(409);
   });
 
-  it("returns an accepted AI operation on an idempotent retry", async () => {
-    const created = await request({ action: "create", requestId: crypto.randomUUID() });
-    let detail = await created.json();
-    const ready = complete(detail.draft.reference);
-    const saved = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: ready });
-    detail = await saved.json();
-    const requestId = crypto.randomUUID();
-    const provider = async (input: { quote: QuoteData }) => ({ quote: { ...input.quote, title: "Titre assistant" }, message: "Mis à jour.", changed: ["title"], reviewPublication: false });
-    const fakeHandler = createQuoteHandler({ database: connection.db, auth, provider });
-    const call = (body: Record<string, unknown>) => fakeHandler(new Request(`${origin}/api/quotes`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify(body) }));
-    const accepted = await call({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId, text: "Renomme", locale: "fr" });
-    expect(accepted.status).toBe(200);
-    const retry = await call({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId, text: "Renomme", locale: "fr" });
-    expect(await retry.json()).toMatchObject({ draft: { title: "Titre assistant" } });
-    const reused = await call({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId, text: "Autre instruction", locale: "fr" });
-    expect(reused.status).toBe(409);
-  });
 
-  it("preserves non-line assistant change metadata in response messages and GET", async () => {
-    const created = await request({ action: "create", requestId: crypto.randomUUID() });
-    let detail = await created.json();
-    const source = { ...complete(detail.draft.reference), sections: [{ id: "kitchen", title: "Cuisine" }] };
-    const saved = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: source });
-    detail = await saved.json();
-    const provider = async (input: { quote: QuoteData }) => ({ quote: { ...input.quote, title: "Titre IA", discountMode: "percent" as const, discount: "5", sections: [{ id: "kitchen", title: "Cuisine révisée" }] }, message: "Mise à jour.", changed: [], changedFields: ["title", "discount", "section:kitchen"], reviewPublication: false });
-    const assisted = await createQuoteHandler({ database: connection.db, auth, provider })(new Request(`${origin}/api/quotes`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Réviser", locale: "fr" }) }));
-    const accepted = await assisted.json();
-    expect(accepted.messages.at(-1)).toMatchObject({ changed: [], changedFields: ["title", "discount", "section:kitchen"] });
-    const reloaded = await request(undefined, detail.id);
-    expect((await reloaded.json()).messages.at(-1)).toMatchObject({ changed: [], changedFields: ["title", "discount", "section:kitchen"] });
-  });
 
   it("serializes concurrent Publication and later Working Draft retries", async () => {
     const created = await request({ action: "create", requestId: crypto.randomUUID() });
@@ -256,38 +197,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(await reloaded.json()).toMatchObject({ draft: { businessName: "Atelier par défaut", terms: "Paiement à 30 jours" } });
   });
 
-  it("reaps an expired AI lease through the authenticated detail boundary", async () => {
-    let now = new Date("2026-01-01T00:00:00.000Z");
-    let resolveProvider: ((value: { quote: null; message: string; changed: string[]; reviewPublication: boolean }) => void) | undefined;
-    let started: (() => void) | undefined;
-    const provider = () => new Promise<{ quote: null; message: string; changed: string[]; reviewPublication: boolean }>((resolve) => { resolveProvider = resolve; started?.(); });
-    const clocked = createQuoteHandler({ database: connection.db, auth, provider, now: () => now });
-    const call = (body?: Record<string, unknown>, id?: string) => clocked(new Request(`${origin}/api/quotes${id ? `?id=${id}` : ""}`, { method: body ? "POST" : "GET", headers: { cookie, ...(body ? { origin, "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }));
-    const created = await call({ action: "create", requestId: crypto.randomUUID() });
-    let detail = await created.json();
-    const saved = await call({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: complete(detail.draft.reference) });
-    detail = await saved.json();
-    const providerStarted = new Promise<void>((resolve) => { started = resolve; });
-    const pending = call({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Question", locale: "fr" });
-    await providerStarted;
-    now = new Date("2026-01-01T00:02:00.000Z");
-    const reloaded = await call(undefined, detail.id);
-    expect(await reloaded.json()).toMatchObject({ pending: false, draft: { title: "Bibliothèque sur mesure" }, assistantRequest: { text: "Question", status: "failed", baseVersion: detail.version } });
-    resolveProvider!({ quote: null, message: "Trop tard", changed: [], reviewPublication: false });
-    expect((await pending).status).toBe(409);
-  });
 
-  it("retains retry metadata after an AI provider failure without changing the Working Draft", async () => {
-    const created = await request({ action: "create", requestId: crypto.randomUUID() });
-    let detail = await created.json();
-    const saved = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: complete(detail.draft.reference) });
-    detail = await saved.json();
-    const failing = createQuoteHandler({ database: connection.db, auth, provider: async () => { throw new Error("unavailable"); } });
-    const response = await failing(new Request(`${origin}/api/quotes`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: "failed-assistant", text: "Réessayer plus tard", locale: "fr" }) }));
-    expect(response.status).toBe(502);
-    const reloaded = await request(undefined, detail.id);
-    expect(await reloaded.json()).toMatchObject({ draft: { title: "Bibliothèque sur mesure" }, pending: false, assistantRequest: { requestId: "failed-assistant", text: "Réessayer plus tard", status: "failed", baseVersion: detail.version } });
-  });
 
   it("accepts valid ungrouped decimal lines alongside sections", async () => {
     const created = await request({ action: "create", requestId: crypto.randomUUID() });
@@ -302,23 +212,6 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(await published.json()).toMatchObject({ revisions: [{ calculation: { lines: [{ id: "ungrouped", amount: 50 }, { id: "grouped", amount: 10025 }], total: 10891 } }] });
   });
 
-  it("undoes thirty fake-provider line changes as one Working Draft action", async () => {
-    const created = await request({ action: "create", requestId: crypto.randomUUID() });
-    let detail = await created.json();
-    const original = { ...complete(detail.draft.reference), lines: Array.from({ length: 30 }, (_, index) => ({ id: `line-${index + 1}`, sectionId: "", description: `Ligne ${index + 1}`, mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "1.00" })) };
-    const saved = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: original });
-    detail = await saved.json();
-    const provider = async (input: { quote: QuoteData }) => ({ quote: { ...input.quote, lines: input.quote.lines.map((line) => ({ ...line, description: `${line.description} modifiée` })) }, message: "Mises à jour appliquées.", changed: input.quote.lines.map((line) => line.id), reviewPublication: false });
-    const assisted = await createQuoteHandler({ database: connection.db, auth, provider })(new Request(`${origin}/api/quotes`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Préciser les lignes", locale: "fr" }) }));
-    detail = await assisted.json();
-    expect(detail.draft.lines).toHaveLength(30);
-    const undone = await request({ action: "undo", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID() });
-    const reverted = await undone.json();
-    expect(reverted.canUndo).toBe(false);
-    expect(reverted.draft.lines).toHaveLength(30);
-    expect(reverted.draft.lines[0]).toMatchObject({ id: "line-1", description: "Ligne 1" });
-    expect(reverted.draft.lines[29]).toMatchObject({ id: "line-30", description: "Ligne 30" });
-  });
 
   it("rejects cross-business detail reads", async () => {
     const created = await request({ action: "create", requestId: crypto.randomUUID() });

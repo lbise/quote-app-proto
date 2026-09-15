@@ -139,6 +139,10 @@ export const quote = pgTable(
     draft: jsonb("draft").$type<unknown>(),
     version: integer("version").default(0).notNull(),
     undoDraft: jsonb("undo_draft").$type<unknown>(),
+    // Assistant capture eligibility is server-owned provenance, never part of
+    // the editable Working Draft JSON received from a browser.
+    capturedLineIds: jsonb("captured_line_ids").$type<string[]>().default([]).notNull(),
+    undoCapturedLineIds: jsonb("undo_captured_line_ids").$type<string[]>(),
     pending: boolean("pending").default(false).notNull(),
     pendingVersion: integer("pending_version"),
     pendingRequestId: text("pending_request_id"),
@@ -167,16 +171,23 @@ export const quoteRevision = pgTable(
   (table) => [uniqueIndex("quote_revision_quote_number_idx").on(table.quoteId, table.number)],
 );
 
-export const quoteMessage = pgTable("quote_message", {
-  id: text("id").primaryKey(),
-  quoteId: text("quote_id").notNull().references(() => quote.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
-  fr: text("fr").notNull(),
-  en: text("en").notNull(),
-  changed: jsonb("changed").$type<string[] | { lines: string[]; fields: string[] }>(),
-  requestId: text("request_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const quoteMessage = pgTable(
+  "quote_message",
+  {
+    id: text("id").primaryKey(),
+    quoteId: text("quote_id").notNull().references(() => quote.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    fr: text("fr").notNull(),
+    en: text("en").notNull(),
+    changed: jsonb("changed").$type<string[] | { lines: string[]; fields: string[] }>(),
+    requestId: text("request_id"),
+    // Timestamps can tie. This identity gives the persisted conversation a
+    // durable order without relying on UUID ordering.
+    sequence: integer("sequence").generatedAlwaysAsIdentity().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("quote_message_quote_sequence_idx").on(table.quoteId, table.sequence)],
+);
 
 export const quoteRequest = pgTable(
   "quote_request",

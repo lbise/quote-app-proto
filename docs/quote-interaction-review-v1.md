@@ -273,21 +273,11 @@ Existing numeric validation remains field-specific. Blank means missing, never z
 
 ### Hosted-AI disclosure
 
-Retain `assistant-disclosure.tsx` and its first-send gate, with Close as a path back to manual work and Continue and send as the explicit first-send action. The review text in both languages is:
+Retain `assistant-disclosure.tsx` and its first-send gate, with Close as a path back to manual work and Continue and send as the explicit first-send action.
 
-**English.** Your message, relevant conversation, Quote title, sections, lines and discount are sent to OpenAI. Dedicated names, addresses, contacts, VAT identifier, reference, dates, work-site address and terms are not sent. Messages and descriptions may still contain personal information.
-
-Enabling the assistant requires a configuration that does not train on your data. OpenAI may retain content for up to 30 days for abuse monitoring. Do not send source documents or unnecessary personal information. Conversations are not written to application logs.
+Issue #16 supersedes this review's original OpenAI-specific privacy copy. The current bilingual component and [hosted AI configuration](quote-ai.md) describe pi-backed processing, the configured provider, and the isolated fictional-data Google exception. Unpaid experiments do not establish no-training approval or production readiness. Real-data processing requires a separate recorded provider review. Do not restore the earlier OpenAI retention statement for another provider.
 
 Applied changes save automatically. Review them and use Undo last change if needed. The assistant cannot publish, send or accept a Quote. Manual editing remains available without AI.
-
-**French.** Votre message, la conversation utile, l'objet, les sections, les lignes et la remise du devis sont transmis à OpenAI. Les champs dédiés aux noms, adresses, contacts, numéro TVA, référence, dates, adresse du chantier et conditions ne sont pas transmis. Les messages et descriptions peuvent toutefois contenir des données personnelles.
-
-L'activation exige une configuration sans entraînement sur vos données. OpenAI peut conserver le contenu jusqu'à 30 jours pour prévenir les abus. Ne transmettez pas de documents sources ni de données personnelles inutiles. Les conversations ne sont pas écrites dans les journaux de l'application.
-
-Les modifications appliquées sont enregistrées automatiquement. Relisez-les et utilisez Annuler la dernière modification si nécessaire. L'assistant ne peut ni publier, ni envoyer, ni accepter un devis. La saisie manuelle reste disponible sans IA.
-
-Keep the existing link labelled OpenAI API data policy / Politique de données de l'API OpenAI. This review carries forward current disclosure copy, not a fresh provider-policy verification. Deployment still requires the configuration and policy checks in [hosted AI configuration](quote-ai.md).
 
 ### Keyboard and validation acceptance walkthrough
 

@@ -18,7 +18,7 @@ The design source remains under `app/components/quote-prototype/` for comparison
 
 - `app/lib/quote.ts` validates and calculates complete or incomplete Quotes. Integer CHF cents and scaled `bigint` intermediates implement half-up rounding. Missing values are separate from invalid inputs. Published content uses the same calculation boundary as manual and assistant changes.
 - `app/lib/quotes.server.ts` handles authenticated requests for Quotes, reusable Customers and business defaults. The Artisan Business comes from the approved session. Request keys, optimistic versions and database locks protect publication and retry behavior.
-- `app/lib/quote-assistant.server.ts` sends only selected work fields and bounded conversation to OpenAI. It does not grant publication authority. See [hosted AI configuration](quote-ai.md).
+- `app/lib/quote-assistant.server.ts` runs pi's bounded model/tool loop with work-only context. `app/lib/quote-tools.server.ts` stages flat initial capture and missing-field clarification. The server commits a successful turn as one undoable action. The assistant has no Publication authority. See [hosted AI configuration](quote-ai.md).
 - `app/components/quotes/use-quote.ts` queues saves, retains failed local edits and coordinates visible assistant status. The document, dialogs and section controls use the approved layout.
 
 `GET /api/quotes` lists the authenticated business's Quotes, Customers and defaults. `GET /api/quotes?id=…` reads a Working Draft and its Published Revisions and conversation. `POST /api/quotes` accepts the explicit `create`, `save`, `undo`, `assistant`, `publish`, `new-draft`, `customer-save` and `defaults-save` operations.
@@ -58,11 +58,11 @@ Browser tests use an isolated database whose name ends in `_browser`, unless `BR
 
 The default browser suite uses Chromium on port 5180. Install it with `npx playwright install chromium`. PostgreSQL-backed server tests are skipped unless `TEST_DATABASE_URL` is set. A passing run with skips does not verify persistence. CI runs the database-backed tests and the browser suite.
 
-Routine tests use a controllable provider or browser network interception, not a live model. Before an Artisan rehearsal, configure the hosted provider, verify its no-training setting and check representative free-form requests. No provider credentials are bundled with this change.
+Routine request tests use a controllable pi model boundary and the real tool executor. Browser tests use network interception for deterministic assistant replies. Neither makes live model calls. Fictional Google app experiments require the isolated workflow in [quote-ai.md](quote-ai.md). Real-data rehearsal remains gated on recorded provider review and the release acceptance in #21. No provider credentials reach the browser.
 
 ## Migration and rollback
 
-`0002_quotes.sql` adds Quote, revision, conversation, request, Customer and defaults storage. `0003_quote_request_leases.sql` adds request payload hashes and AI lease expiry. Both migrations are additive and leave authentication tables unchanged.
+`0002_quotes.sql` adds Quote, revision, conversation, request, Customer and defaults storage. `0003_quote_request_leases.sql` adds request payload hashes and AI lease expiry. `0004_quote_capture_provenance.sql` stores server-owned initial-capture and undo eligibility and gives conversation messages a stable ordering sequence. These migrations are additive and leave authentication tables unchanged.
 
 Take a database backup before deployment. The previous application can run against the expanded schema, but cannot expose the new Quote workflow. Roll back the application image without dropping the new tables or columns. Preserve them so drafts and publications remain available after rolling forward. A database restore is a separate recovery operation and can lose changes made after the backup.
 

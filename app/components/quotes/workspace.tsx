@@ -16,13 +16,15 @@ import { useQuote, type QuoteRecord } from './use-quote';
 import { QuoteHeader } from './quote-header';
 import { AssistantDisclosure } from './assistant-disclosure';
 import { problemLabel } from './problem-label';
-import { useBlocker } from 'react-router';
+import type { QuoteAIDisclosure } from '../../lib/quote-ai-disclosure';
+import { useBlocker, useRouteLoaderData } from 'react-router';
 
 const clone = <T,>(value: T): T => structuredClone(value);
 const formatMoney = (value: number | null) => value === null ? '—' : money(value).replace(/\u202f/g, '’').replace(/\u00a0CHF$/, '');
 
 export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: { initial: QuoteRecord; locale: 'en' | 'fr'; onList: () => void; onLanguage: (locale: 'en' | 'fr') => void }) {
   const state = useQuote(initial);
+  const { quoteAI } = useRouteLoaderData('root') as { quoteAI: QuoteAIDisclosure };
   const { record, save, ai, error, changed, changedFields, busy, apply, flush, mutate, lastRequest } = state;
   const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
   const [input, setInput] = useState('');
@@ -234,7 +236,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     {modal === 'details' && <ManualEditor quote={quote} locale={locale} lockedReference={revisions.length > 0} onClose={closeModal} onApply={q => { apply(q); closeModal(); }} />}
     {modal === 'sections' && !readOnly && <SectionsEditor quote={quote} locale={locale} onApply={q => { apply(q); closeModal(); }} onClose={closeModal} />}
     {modal === 'records' && <RecordsEditor quote={readOnly ? null : quote} locale={locale} onApply={q => { apply(q); closeModal(); }} onClose={closeModal} />}
-    {modal === 'privacy' && <AssistantDisclosure locale={locale} onClose={() => { setPendingMessage(null); closeModal(); }} onContinue={pendingMessage ? () => {
+    {modal === 'privacy' && <AssistantDisclosure locale={locale} processing={quoteAI} onClose={() => { setPendingMessage(null); closeModal(); }} onContinue={pendingMessage ? () => {
       const text = pendingMessage;
       setAiDisclosed(true); setPendingMessage(null); setInput(''); closeModal();
       void state.runAssistant(text, locale).then(showAssistantResult);

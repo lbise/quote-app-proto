@@ -18,6 +18,7 @@ import {
   type InterfaceLanguage,
 } from "./lib/auth-config.server";
 import { getSession } from "./lib/auth.server";
+import { quoteAIDisclosure } from "./lib/quote-ai-config.server";
 
 import "./app.css";
 
@@ -42,7 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   return Response.json(
-    { locale },
+    { locale, quoteAI: quoteAIDisclosure() },
     { headers: { "Set-Cookie": localeCookie(locale) } },
   );
 }

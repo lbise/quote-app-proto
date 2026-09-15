@@ -17,11 +17,21 @@ import { provisionArtisanBusiness, getArtisanForUser } from "./artisan.server";
 import { type Database, getDatabase } from "./db.server";
 import { account, artisanBusiness, session, user, verification } from "./db/schema";
 import { sendAuthEmail } from "./mail.server";
+import {
+  assertQuoteAIConfiguration,
+  isFictionalQuoteAITest,
+  isFictionalTestIdentity,
+} from "./quote-ai-config.server";
 
 let authInstance: ReturnType<typeof createAuth> | undefined;
 
+function emailCanAccessThisInstance(email: string): boolean {
+  return isEmailAllowed(email) && (!isFictionalQuoteAITest() || isFictionalTestIdentity(email));
+}
+
 function createAuth(database: Database = getDatabase()) {
   assertAuthConfiguration();
+  assertQuoteAIConfiguration();
   const auth = betterAuth({
     appName: "Easy Quote",
     baseURL: authBaseUrl(),
@@ -67,7 +77,7 @@ function createAuth(database: Database = getDatabase()) {
       user: {
         create: {
           before: async (authUser) => {
-            if (!isEmailAllowed(authUser.email)) {
+            if (!emailCanAccessThisInstance(authUser.email)) {
               throw new APIError("FORBIDDEN", { message: "Registration is not available." });
             }
           },
@@ -85,7 +95,7 @@ function createAuth(database: Database = getDatabase()) {
       before: createAuthMiddleware(async (context) => {
         if (context.path === "/sign-up/email") {
           const body = context.body as { email?: unknown } | undefined;
-          if (typeof body?.email !== "string" || !isEmailAllowed(body.email)) {
+          if (typeof body?.email !== "string" || !emailCanAccessThisInstance(body.email)) {
             throw new APIError("FORBIDDEN", { message: "Registration is not available." });
           }
         }
@@ -150,7 +160,8 @@ export async function getSession(request: Request) {
 export async function requireApprovedArtisan(request: Request) {
   const current = await getSession(request);
   if (!current) throw new Response("Authentication required.", { status: 401 });
-  if (!hasApprovedAccess(current.user)) {
+  if (!hasApprovedAccess(current.user) ||
+    (isFictionalQuoteAITest() && !isFictionalTestIdentity(current.user.email))) {
     throw new Response("Access is not available.", { status: 403 });
   }
 

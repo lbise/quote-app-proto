@@ -1,44 +1,86 @@
-# Hosted Quote AI
+# Quote AI
 
-`app/lib/quote-assistant.server.ts` uses OpenAI's Chat Completions API with strict JSON Schema output. It is off until an operator enables it. There is no live tester data in the configured local environment now.
+Easy Quote has no approval to process real Artisan Business or Customer data with hosted AI. `QUOTE_AI_ENABLED` stays `false` in normal development and deployment. The only live experiment allowed now is the isolated fictional-data workflow below.
 
-## Tester disclosure
+The server owns provider, model, credentials, and request limits. An Artisan never supplies an endpoint, credential, provider, or model. Pi's Google provider factory registers the Gemini Developer API and its catalog. `QUOTE_AI_PROVIDER=google` and `QUOTE_AI_MODEL=gemini-2.5-flash` are the initial test values. A model change selects another model already in that registered catalog and requires a restart. An unknown provider or model fails. There is no endpoint setting and no fallback provider or model.
 
-Show this text before an Artisan first uses hosted AI:
+## What can leave Easy Quote
 
-> Easy Quote sends the message you submit, the conversation needed to answer it, and the Quote's work title, sections, lines, and discount to OpenAI for this request. It does not send the dedicated Customer or Artisan Business names, addresses, contact details, VAT identifier, Quote reference, dates, work-site address, or terms. A message or work description can still contain personal or commercial information that you type. OpenAI processes API content under its API data policy. Easy Quote does not write raw conversation text to its application logs. Review an applied change, undo it if needed, and review the Quote before Publication. The assistant cannot publish, send, or accept a Quote.
+The assistant request may include the Artisan's current message, the bounded conversation needed to answer it, and permitted Quote work content. It must not include dedicated Customer or Artisan Business names, addresses, contacts, VAT identifier, Quote reference, dates, work-site address, or terms. The restriction does not anonymize a message. An Artisan can still paste personal, confidential, or commercial information into a work description or chat message.
 
-The application keeps original Quote data locally. It merges only the AI response's title, Quote Sections, Quote Lines, and whole-Quote Discount into the current Quote. It never takes Customer or Artisan Business data from an AI response. The server must validate the merged Working Draft, detect stale versions, and enforce idempotency before it saves anything. `reviewPublication` may open the Artisan's review. It never completes Publication.
+Do not write raw conversations, Quote descriptions, provider payloads, or provider responses to application logs, traces, or error-reporting breadcrumbs. The assistant cannot publish, send, or accept a Quote. The Artisan must review quantities, prices, technical content, and applied changes before Publication.
 
-The assistant may make a wrong inference despite the prompt. The Artisan remains responsible for quantities, prices, technical content, and approval.
+The root loader sends only the enabled state, public provider name, and processing mode to `app/components/quotes/assistant-disclosure.tsx`. It never sends a credential or review reference. The dialog distinguishes disabled AI, the fictional test, and a production-gated configuration. A production gate is not presented as proof that real-data processing is approved.
 
-## OpenAI policy check
+## Initial-capture tools and execution limits
 
-These OpenAI primary sources were checked on 2026-09-13:
+`@earendil-works/pi-ai` supplies the provider connection and `@earendil-works/pi-agent-core` runs the tool loop in this backend. No coding-agent harness, local extensions, filesystem sessions, or shell tools are loaded. Each request creates its own agent and temporary Working Draft.
 
-- [Your data](https://platform.openai.com/docs/guides/your-data) says API data is not used to train or improve OpenAI models unless the customer explicitly opts in. It also says abuse-monitoring logs can contain prompts and responses and are retained for up to 30 days by default. This is why the app sends only the fields needed for a request and does not promise zero retention.
-- [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs) documents JSON Schema output for Chat Completions. Its supported-schema section lists `minLength`, `maxLength`, and `maxItems` for general models. Fine-tuned models have tighter limits, so the adapter rejects `OPENAI_MODEL` values beginning with `ft:`. The adapter still validates the returned data at runtime. A schema shapes a response. It does not prove commercial facts.
+Only `read_work`, `add_quote_line`, and `supply_missing_line_fields` are registered. Tools receive the authenticated draft from the server, not business or Quote IDs from the model. New lines get application UUIDs. Follow-up may fill empty fields only on lines captured in this flow. Server-owned capture eligibility survives reopening and Undo. A manual line edit revokes its eligibility; unrelated lines retain theirs. Publication clears eligibility for the next Working Draft.
 
-Do not enable this integration based only on this note. Before any live tester data is sent, the operator must revisit the first source, confirm that the API organization has not opted in to input/output sharing for training, and record the review in the deployment change. OpenAI's documentation describes default abuse-monitoring retention. Do not claim Zero Data Retention or Modified Abuse Monitoring unless OpenAI has approved and configured it for the organization or project.
+Numeric mutations require evidence from the current Artisan message, retained Artisan messages, or the same numeric field on an original Working Draft line. Assistant replies cannot establish evidence. Numeric matching does not prove that the model understood a technical reference or chose the intended work. Ambiguity calls for focused clarification, and the Artisan must review applied content. Quantities and prices remain missing unless supplied. There are no section, discount, duplication, or Publication tools.
 
-## Configuration
+A turn has at most six model rounds and twelve tool calls. Tools execute sequentially. The total deadline is `QUOTE_AI_TIMEOUT_MS`, not a fresh allowance per round. Model retries are disabled. The current message is limited to 8,000 characters. History retains up to 24 whole messages and 24,000 characters, and explicitly reports omitted older context. Selected work contains at most 200 lines and 40,000 UTF-8 bytes. A larger draft remains manually editable rather than losing work from its context.
 
-Set every required value in the deployment secret store. Do not commit `OPENAI_API_KEY`.
+Each outgoing context and serialized provider payload is limited to 200,000 bytes. Each model response is limited to 64,000 bytes, with 256,000 bytes across the turn and a 4,096-token output allowance per round. The final visible reply is limited to 4,000 characters. Any provider or tool failure, invalid result, timeout, or exhausted budget discards staged changes. The server validates and calculates a successful result, checks its version, and commits it once with the conversation and one Undo target. Payload-bound request IDs prevent duplicate accepted changes. Manual saves remain available and cause stale assistant results to be rejected.
 
-| Variable | Required value | Purpose |
+## Google terms checked for the fictional workflow
+
+The following Google primary sources were checked on 2026-09-15:
+
+- [Gemini API Additional Terms of Service](https://ai.google.dev/gemini-api/terms) says unpaid Gemini API quota is an Unpaid Service. Google may use submitted content and generated responses to provide, improve, and develop products and machine-learning technologies. Human reviewers may read, annotate, and process API input and output. The terms say not to submit sensitive, confidential, or personal information to Unpaid Services.
+- The same terms say API Clients made available to users in the European Economic Area, Switzerland, or the United Kingdom may use only Paid Services. For those regions, the Paid Services data-use terms apply even to Google AI Studio and unpaid Gemini API quota. A local test operator must check the applicable region and service status before running this workflow. Do not use the workflow merely because it is local or fictional.
+- [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing) marks the Free Tier as content used to improve Google's products and the Paid Tier as not used to improve Google's products. Pricing and terms can change.
+
+The fictional workflow requires `QUOTE_AI_FICTIONAL_TERMS_REVIEW_REFERENCE`. This is a record that a human checked the applicable terms and region for that run. It is not evidence of no training, no retention, or a production approval.
+
+## Configuration contract
+
+`app/entry.server.tsx` calls `assertQuoteAIConfiguration()` as its server module initializes, before it can handle requests. The synchronous check makes no network request. `configuredQuoteAI()` returns the selected `model`, a bound pi `streamFn`, and `timeoutMs`. The stream calls pi `models.streamSimple()` with the selected API key and provider environment pinned into the request, so an ambient process key or Agent option cannot select different credentials.
+
+| Variable | Normal production value | Fictional workflow value |
 | --- | --- | --- |
-| `QUOTE_AI_ENABLED` | `true` | Enables outbound OpenAI requests. Any other value disables the adapter. |
-| `QUOTE_AI_NO_TRAINING_CONFIRMED` | `true` | Records the operator's explicit verification that the OpenAI API organization has not opted into training on submitted content. |
-| `OPENAI_API_KEY` | Non-empty OpenAI API key | Authenticates requests. |
-| `OPENAI_MODEL` | A non-empty general OpenAI model name that supports Chat Completions Structured Outputs. Do not use a value beginning with `ft:`. | Selects the model. Review its current OpenAI documentation before deployment. |
-| `QUOTE_AI_TIMEOUT_MS` | Optional integer from `1000` through `45000`, default `20000` | Limits one provider request. |
+| `QUOTE_AI_ENABLED` | `true` only after approval | `true` |
+| `QUOTE_AI_PROVIDER` | A registered provider, currently `google` | `google` |
+| `QUOTE_AI_MODEL` | A model in that provider's pi catalog | `gemini-2.5-flash` |
+| `GEMINI_API_KEY` | Runtime secret, never browser-visible | Shell-only runtime secret |
+| `QUOTE_AI_TIMEOUT_MS` | Integer `1000` through `45000`, default `20000` | Same |
+| `QUOTE_AI_NO_TRAINING_CONFIRMED` | Exactly `true` after verification | Exactly `false` |
+| `QUOTE_AI_DATA_PROCESSING_REVIEW_REFERENCE` | Non-empty recorded provider and data-processing review | Not used |
+| `QUOTE_AI_FICTIONAL_TEST_MODE` | Absent or `false` | Exactly `true` |
+| `QUOTE_AI_FICTIONAL_TEST_IDENTITIES` | Not used | Explicit `@example.test` addresses only |
+| `QUOTE_AI_FICTIONAL_TERMS_REVIEW_REFERENCE` | Not used | Non-empty human review reference |
 
-The adapter fails closed if either enablement flag is absent, if the confirmation is not exactly `true`, or if the API key or model is missing. It makes no provider request in those cases.
+When enabled in production, the server requires both `QUOTE_AI_NO_TRAINING_CONFIRMED=true` and `QUOTE_AI_DATA_PROCESSING_REVIEW_REFERENCE`. The flag records an operator decision. It does not prove that the provider's plan, project, retention, training, regional terms, or data-processing terms were reviewed. The fictional mode rejects `NODE_ENV=production` and rejects that no-training flag.
 
-## Data and logging rules
+There is no production provider approval or recorded real-data review now. Do not invent a review reference to turn this on. [#21](https://github.com/lbise/quote-app-proto/issues/21) owns configured-provider rehearsal and release acceptance. Neither fake-provider tests nor a fictional-data Gemini experiment satisfies that gate or approves real-data processing.
 
-The request has a hard size limit. It sends the newest whole stored messages that fit within 24 messages and 24,000 characters in the current interface language, plus an 8,000-character current message and the full Working Draft when it has at most 50 Quote Sections, 200 Quote Lines, and 40,000 characters of selected Quote work data. These are full-Working-Draft AI limits, not subset-selection rules. If a Draft exceeds one, the adapter makes no provider request and manual editing remains available. It never silently drops Quote work. The adapter omits older conversation context rather than rejecting a normal growing conversation, marks that omission in the provider request, and tells the model to clarify rather than guess when omitted context matters. The outbound body may not exceed 200,000 bytes and the provider response may not exceed 256,000 bytes. It excludes unrelated records and the dedicated contact and identity fields listed in the disclosure.
+## Isolated fictional Google app test
 
-Do not add `console` logging, request-body logging, error reporting breadcrumbs, or traces that include raw conversations, Quote descriptions, or OpenAI responses. Provider errors returned by the adapter are generic for the same reason.
+This workflow starts a separate PostgreSQL container on `127.0.0.1:55433`, migrates a blank `easy_quote_fictional` database, creates one verified `fictional-artisan@example.test` account, then runs the app on `http://127.0.0.1:5175`. It allows no other sign-up address. It deletes the fictional database and volume when the server stops.
 
-Use a fake `QuoteAIProvider` for authenticated backend-request tests. Routine tests must not call OpenAI.
+It deliberately replaces inherited database and auth settings. It does not read `GEMINI_API_KEY` from `.env`, import a normal database, or provide an import command. The script passes explicit loopback origins, an explicit fictional identity allowlist, and `QUOTE_AI_NO_TRAINING_CONFIRMED=false` to the app. The configuration check rejects a non-loopback database or origin, a wildcard or real-looking tester address, production mode, or a missing terms-review reference. The auth hooks apply the same fictional identity allowlist to direct registration and every protected server request, so a stale session or `.env` allowlist cannot onboard a real Artisan.
+
+After checking the terms and region for the run, start it with shell variables, not a checked-in file:
+
+```sh
+GEMINI_API_KEY='...' \
+QUOTE_AI_FICTIONAL_TERMS_REVIEW_REFERENCE='LEGAL-TEST-001' \
+npx tsx scripts/quote-ai-fictional.ts
+```
+
+Set `QUOTE_AI_MODEL` in the same shell command to test another model in the registered Google catalog. An unsupported value fails before the app starts. The workflow refuses a production `NODE_ENV`.
+
+Sign in with the account printed by the script. Use only invented Artisan Business names, Customers, work, prices, and chat messages. Do not paste a real Quote, source document, contact detail, or conversation. Stop with Ctrl-C. The script removes its data.
+
+## Production review required later
+
+Before any real business or Customer data is processed, a human operator must:
+
+1. Choose the provider and plan, then review the current provider, retention, regional, and data-processing terms.
+2. Verify the actual no-training setting for the selected account or project and record the evidence in the deployment change.
+3. Set the production gate and a meaningful `QUOTE_AI_DATA_PROCESSING_REVIEW_REFERENCE` in the deployment secret store.
+4. Update this document and the disclosure to name the actual provider and describe its reviewed processing terms.
+5. Complete #21's configured-provider rehearsal and release acceptance.
+
+Do not promise zero retention. A provider may retain content for safety, abuse prevention, legal obligations, or other documented purposes even when it does not use prompts to improve models.

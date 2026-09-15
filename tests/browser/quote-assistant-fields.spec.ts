@@ -1,5 +1,7 @@
 import { createCompleteQuote, expect, test } from './fixtures';
 
+test.use({ fictionalAssistantDisclosure: true });
+
 test('assistant changes to the title, discount and sections are visible beside the Quote', async ({ artisan }) => {
   const seeded = await createCompleteQuote(artisan);
   const { page } = artisan;

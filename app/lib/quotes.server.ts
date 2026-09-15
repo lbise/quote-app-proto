@@ -7,7 +7,7 @@ import { getAuth } from "./auth.server";
 import { artisan, businessDefaults, customer, quote, quoteMessage, quoteRequest, quoteRevision } from "./db/schema";
 import { type Database, getDatabase } from "./db.server";
 import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
-import { generateQuoteChange, type QuoteAIInput, type QuoteAIProvider } from "./quote-assistant.server";
+import { generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
 import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -25,7 +25,7 @@ const MAX_QUOTE_BYTES = 220_000;
 const AI_LEASE_MS = 60_000; // Greater than the provider's bounded 45-second timeout.
 const defaultFields = ["businessName", "businessAddress", "businessContact", "vatRegistered", "vatId", "terms"] as const;
 
-export type QuoteHandlerDependencies = { database?: Database; auth?: SessionAuth; provider?: QuoteAIProvider; now?: () => Date };
+export type QuoteHandlerDependencies = { database?: Database; auth?: SessionAuth; modelBoundary?: QuoteAIModelBoundary; now?: () => Date };
 
 class RequestFailure extends Error {
   constructor(readonly status: number, readonly code: string, readonly details?: unknown) { super(code); }
@@ -111,6 +111,36 @@ function assistantMessage(text: string, changed: string[], changedFields?: strin
   return { role: "assistant", fr: text, en: text, changed, ...(changedFields?.length ? { changedFields } : {}) };
 }
 
+const lineIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+function trustedCapturedLineIds(value: unknown, draft: QuoteData): string[] {
+  if (!Array.isArray(value)) return [];
+  const lineIds = new Set(draft.lines.map((line) => line.id));
+  return [...new Set(value)].filter((id): id is string => typeof id === "string" && lineIdPattern.test(id) && lineIds.has(id));
+}
+
+function retainedAfterManualSave(capturedLineIds: unknown, before: QuoteData, after: QuoteData): string[] {
+  const previousLines = new Map(before.lines.map((line) => [line.id, line]));
+  const nextLines = new Map(after.lines.map((line) => [line.id, line]));
+  return trustedCapturedLineIds(capturedLineIds, before).filter((id) => stable(previousLines.get(id)) === stable(nextLines.get(id)));
+}
+
+function capturedResultIds(value: unknown, before: QuoteData, after: QuoteData, existing: unknown): string[] {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== "string" || !lineIdPattern.test(id)) || new Set(value).size !== value.length) {
+    throw new RequestFailure(502, "assistant_invalid_response");
+  }
+  const previousLineIds = new Set(before.lines.map((line) => line.id));
+  const currentLineIds = new Set(after.lines.map((line) => line.id));
+  const permitted = new Set([
+    ...trustedCapturedLineIds(existing, before),
+    ...after.lines.filter((line) => !previousLineIds.has(line.id)).map((line) => line.id),
+  ]);
+  if (value.some((id) => !currentLineIds.has(id) || !permitted.has(id))) {
+    throw new RequestFailure(502, "assistant_invalid_response");
+  }
+  return [...value];
+}
+
 function changedFieldsFrom(value: unknown): string[] | undefined {
   const fields = valueRecord(value)?.changedFields;
   if (fields === undefined) return undefined;
@@ -173,7 +203,7 @@ async function readDetail(database: Store, businessId: string, id: string) {
   const [record] = await database.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
   if (!record) throw new RequestFailure(404, "quote_not_found");
   const revisions = await database.select().from(quoteRevision).where(and(eq(quoteRevision.quoteId, id), eq(quoteRevision.businessId, businessId))).orderBy(asc(quoteRevision.number));
-  const messages = await database.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.createdAt));
+  const messages = await database.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
   const assistantRequest = await latestAssistantRequest(database, id);
   return {
     id: record.id, version: record.version, draft: (record.draft ?? null) as QuoteData | null,
@@ -293,7 +323,7 @@ export function createQuoteHandler(dependencies: QuoteHandlerDependencies = {}) 
       if (!["create", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "defaults-save"].includes(body.action!)) throw new RequestFailure(400, "invalid_action");
       if (body.action === "customer-save") return json(await saveCustomer(database, businessId, body, now()));
       if (body.action === "defaults-save") return json(await saveDefaults(database, businessId, body, now()));
-      if (body.action === "assistant") return json(await assistant(database, businessId, body, dependencies.provider, now()));
+      if (body.action === "assistant") return json(await assistant(database, businessId, body, dependencies.modelBoundary, now()));
       return json(await mutate(database, businessId, body, now()));
     } catch (error) {
       if (error instanceof RequestFailure) return json({ error: error.code, ...(error.details === undefined ? {} : { details: error.details }) }, error.status);
@@ -388,13 +418,18 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
           const published = await transaction.select({ id: quoteRevision.id }).from(quoteRevision).where(eq(quoteRevision.quoteId, id!)).limit(1);
           await assertReference(transaction, businessId, id!, next.reference, published.length > 0);
         }
-        await transaction.update(quote).set({ draft: next, undoDraft: oldDraft, title: next.title, reference: next.reference, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
+        await transaction.update(quote).set({
+          draft: next, undoDraft: oldDraft,
+          capturedLineIds: retainedAfterManualSave(record.capturedLineIds, oldDraft, next),
+          undoCapturedLineIds: trustedCapturedLineIds(record.capturedLineIds, oldDraft),
+          title: next.title, reference: next.reference, version: record.version + 1, updatedAt: now,
+        }).where(eq(quote.id, id!));
       }
     } else if (action === "new-draft") {
       if (record.draft) throw new RequestFailure(409, "working_draft_exists");
       const [latest] = await transaction.select().from(quoteRevision).where(eq(quoteRevision.quoteId, id!)).orderBy(desc(quoteRevision.number)).limit(1);
       if (!latest) throw new RequestFailure(409, "published_revision_required");
-      await transaction.update(quote).set({ draft: latest.quote, undoDraft: null, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
+      await transaction.update(quote).set({ draft: latest.quote, undoDraft: null, capturedLineIds: [], undoCapturedLineIds: null, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
     } else if (action === "undo") {
       if (!record.draft || record.undoDraft === null || record.undoDraft === undefined) throw new RequestFailure(409, "nothing_to_undo");
       const previous = record.undoDraft as QuoteData;
@@ -402,7 +437,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
         const published = await transaction.select({ id: quoteRevision.id }).from(quoteRevision).where(eq(quoteRevision.quoteId, id!)).limit(1);
         await assertReference(transaction, businessId, id!, previous.reference, published.length > 0);
       }
-      await transaction.update(quote).set({ draft: previous, undoDraft: null, title: previous.title, reference: previous.reference, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
+      await transaction.update(quote).set({ draft: previous, undoDraft: null, capturedLineIds: trustedCapturedLineIds(record.undoCapturedLineIds, previous), undoCapturedLineIds: null, title: previous.title, reference: previous.reference, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
       await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id!, role: "note", fr: "Dernière modification annulée.", en: "Latest change undone." });
     } else if (action === "publish") {
       if (record.pending) throw new RequestFailure(409, "assistant_pending");
@@ -411,7 +446,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
       if (!checked.calculation.complete) throw new RequestFailure(422, "incomplete_draft", { missing: checked.calculation.missing });
       const [previous] = await transaction.select({ number: quoteRevision.number }).from(quoteRevision).where(eq(quoteRevision.quoteId, id!)).orderBy(desc(quoteRevision.number)).limit(1);
       await transaction.insert(quoteRevision).values({ id: crypto.randomUUID(), quoteId: id!, businessId, number: (previous?.number ?? 0) + 1, quote: checked.draft, calculation: checked.calculation });
-      await transaction.update(quote).set({ draft: null, undoDraft: null, pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, title: checked.draft.title, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
+      await transaction.update(quote).set({ draft: null, undoDraft: null, capturedLineIds: [], undoCapturedLineIds: null, pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, title: checked.draft.title, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
     }
     await recordRequest(transaction, { businessId, quoteId: id!, action, requestId, status: "complete", baseVersion: record.version, payloadHash: hash, now });
     detail = await readDetail(transaction, businessId, id!);
@@ -420,7 +455,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
   return detail;
 }
 
-async function assistant(database: Database, businessId: string, body: Body, provider: QuoteAIProvider | undefined, now: Date): Promise<QuoteDetail & { reviewPublication?: boolean }> {
+async function assistant(database: Database, businessId: string, body: Body, modelBoundary: QuoteAIModelBoundary | undefined, now: Date): Promise<QuoteDetail & { reviewPublication?: boolean }> {
   const id = identifier(body.id, "quote_id");
   const requestId = requestKey(body.requestId);
   const hash = payloadHash(body);
@@ -444,27 +479,35 @@ async function assistant(database: Database, businessId: string, body: Body, pro
     checkVersion(record, body);
     if (record.pending) throw new RequestFailure(409, "assistant_pending");
     const draft = requireDraft(record);
-    const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.createdAt));
+    const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
     if (existing) await transaction.update(quoteRequest).set({ status: "pending", baseVersion: record.version, updatedAt: now }).where(eq(quoteRequest.id, existing.id));
     else await recordRequest(transaction, { businessId, quoteId: id, action: "assistant", requestId, status: "pending", baseVersion: record.version, payloadHash: hash, now });
     if (!existing) await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "artisan", fr: text, en: text, requestId });
     await transaction.update(quote).set({ pending: true, pendingVersion: record.version, pendingRequestId: requestId, pendingExpiresAt: new Date(now.getTime() + AI_LEASE_MS), updatedAt: now }).where(eq(quote.id, id));
     baseVersion = record.version;
-    input = { quote: draft, messages: messages.map((entry) => ({ role: entry.role as Message["role"], fr: entry.fr, en: entry.en })), text, locale };
+    input = {
+      quote: draft,
+      messages: messages.map((entry) => ({ role: entry.role as Message["role"], fr: entry.fr, en: entry.en })),
+      text,
+      locale,
+      capturedLineIds: trustedCapturedLineIds(record.capturedLineIds, draft),
+    };
   });
   if (completed) return completed;
   if (!input) throw new RequestFailure(500, "request_failed");
 
   let result: Awaited<ReturnType<typeof generateQuoteChange>>;
-  try { result = await generateQuoteChange(input, provider); } catch {
+  try { result = await generateQuoteChange(input, modelBoundary); } catch {
     await failAssistant(database, businessId, id, requestId, now);
     throw new RequestFailure(502, "assistant_unavailable");
   }
   let next: QuoteData | null;
   let changedFields: string[] | undefined;
+  let resultCapturedLineIds: string[] | undefined;
   try {
     next = result.quote ? asQuote(result.quote, true).draft : null;
     changedFields = changedFieldsFrom(result);
+    if (next) resultCapturedLineIds = capturedResultIds(result.capturedLineIds, input.quote, next, input.capturedLineIds);
   } catch {
     await failAssistant(database, businessId, id, requestId, now);
     throw new RequestFailure(502, "assistant_invalid_response");
@@ -489,7 +532,19 @@ async function assistant(database: Database, businessId: string, body: Body, pro
       const published = await transaction.select({ id: quoteRevision.id }).from(quoteRevision).where(eq(quoteRevision.quoteId, id)).limit(1);
       await assertReference(transaction, businessId, id, next.reference, published.length > 0);
     }
-    await transaction.update(quote).set({ draft: next ?? record.draft, undoDraft: next ? record.draft : record.undoDraft, title: next?.title ?? record.title, reference: next?.reference ?? record.reference, version: next ? record.version + 1 : record.version, pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now }).where(eq(quote.id, id));
+    const nextCapturedLineIds = next
+      ? resultCapturedLineIds!
+      : trustedCapturedLineIds(record.capturedLineIds, record.draft as QuoteData);
+    await transaction.update(quote).set({
+      draft: next ?? record.draft,
+      undoDraft: next ? record.draft : record.undoDraft,
+      capturedLineIds: nextCapturedLineIds,
+      undoCapturedLineIds: next ? trustedCapturedLineIds(record.capturedLineIds, record.draft as QuoteData) : record.undoCapturedLineIds,
+      title: next?.title ?? record.title,
+      reference: next?.reference ?? record.reference,
+      version: next ? record.version + 1 : record.version,
+      pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now,
+    }).where(eq(quote.id, id));
     const message = assistantMessage(result.message, result.changed, changedFields);
     await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: message.role, fr: message.fr, en: message.en, changed: storedChanges(result.changed, changedFields) });
     await transaction.update(quoteRequest).set({ status: "complete", updatedAt: now }).where(eq(quoteRequest.id, request.id));
