@@ -13,8 +13,8 @@ import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Store = Database | Transaction;
 type Message = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
-type Action = "create" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "defaults-save";
-type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; customer?: unknown; defaults?: unknown };
+type Action = "create" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "customer-apply" | "defaults-save";
+type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; customer?: unknown; customerId?: unknown; defaults?: unknown };
 type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: { id: string; email: string; emailVerified: boolean } } | null> } };
 type QuoteDetail = Awaited<ReturnType<typeof readDetail>>;
 
@@ -71,7 +71,7 @@ function stable(value: unknown, depth = 0): string {
 function payloadHash(body: Body): string {
   return createHash("sha256").update(stable({
     action: body.action, id: body.id, expectedVersion: body.expectedVersion, quote: body.quote,
-    text: body.text, locale: body.locale, customer: body.customer, defaults: body.defaults,
+    text: body.text, locale: body.locale, customer: body.customer, customerId: body.customerId, defaults: body.defaults,
   })).digest("hex");
 }
 
@@ -320,7 +320,7 @@ export function createQuoteHandler(dependencies: QuoteHandlerDependencies = {}) 
       if (request.method !== "POST") throw new RequestFailure(405, "method_not_allowed");
       assertMutationOrigin(request);
       const body = await readJson(request);
-      if (!["create", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "defaults-save"].includes(body.action!)) throw new RequestFailure(400, "invalid_action");
+      if (!["create", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "customer-apply", "defaults-save"].includes(body.action!)) throw new RequestFailure(400, "invalid_action");
       if (body.action === "customer-save") return json(await saveCustomer(database, businessId, body, now()));
       if (body.action === "defaults-save") return json(await saveDefaults(database, businessId, body, now()));
       if (body.action === "assistant") return json(await assistant(database, businessId, body, dependencies.modelBoundary, now()));
@@ -349,26 +349,35 @@ async function saveCustomer(database: Database, businessId: string, body: Body, 
   const name = identifier(data.name, "customer_name", 4_000).trim();
   const address = identifier(data.address, "customer_address", 20_000).trim();
   const contact = typeof data.contact === "string" && data.contact.length <= 4_000 ? data.contact : "";
-  const id = typeof data.id === "string" && data.id ? identifier(data.id, "customer_id") : crypto.randomUUID();
   const requestId = requestKey(body.requestId);
+  // A new Customer ID is derived from the idempotency key so a retry can
+  // identify the exact saved record, even if the first response was lost.
+  const id = typeof data.id === "string" && data.id
+    ? identifier(data.id, "customer_id")
+    : createHash("sha256").update(`${businessId}:${requestId}`).digest("hex");
   const hash = payloadHash(body);
+  let savedCustomer: { id: string; name: string; address: string; contact: string } | undefined;
   await database.transaction(async (transaction) => {
     await lockRequest(transaction, businessId, requestId);
     const request = await findRequest(transaction, businessId, requestId);
     if (request) {
       assertRequestBinding(request, "customer-save", undefined, hash);
-      if (request.status === "complete") return;
+      if (request.status === "complete") {
+        const [completed] = await transaction.select({ id: customer.id, name: customer.name, address: customer.address, contact: customer.contact })
+          .from(customer).where(and(eq(customer.id, id), eq(customer.businessId, businessId))).limit(1);
+        savedCustomer = completed;
+        return;
+      }
       throw new RequestFailure(409, "request_in_progress");
     }
     const [existing] = await transaction.select().from(customer).where(and(eq(customer.id, id), eq(customer.businessId, businessId))).limit(1);
     if (typeof data.id === "string" && data.id && !existing) throw new RequestFailure(404, "customer_not_found");
     if (existing) await transaction.update(customer).set({ name, address, contact, updatedAt: now }).where(eq(customer.id, id));
     else await transaction.insert(customer).values({ id, businessId, name, address, contact });
-    // The list response itself is the stable result; no Customer ID column is
-    // needed on quote_request to make a same-key retry safe.
+    savedCustomer = { id, name, address, contact };
     await recordRequest(transaction, { businessId, action: "customer-save", requestId, status: "complete", payloadHash: hash, now });
   });
-  return readList(database, businessId);
+  return { ...(await readList(database, businessId)), ...(savedCustomer ? { savedCustomer } : {}) };
 }
 
 async function saveDefaults(database: Database, businessId: string, body: Body, now: Date) {
@@ -408,7 +417,25 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
     const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id!), eq(quote.businessId, businessId))).limit(1);
     if (!record) throw new RequestFailure(404, "quote_not_found");
     checkVersion(record, body);
-    if (action === "save") {
+    if (action === "customer-apply") {
+      const oldDraft = requireDraft(record);
+      const customerId = identifier(body.customerId, "customer_id");
+      const [selected] = await transaction.select().from(customer).where(and(eq(customer.id, customerId), eq(customer.businessId, businessId))).limit(1);
+      if (!selected) throw new RequestFailure(404, "customer_not_found");
+      const preview = valueRecord(body.customer);
+      if (preview && (preview.name !== selected.name || preview.address !== selected.address || preview.contact !== selected.contact)) {
+        throw new RequestFailure(409, "customer_changed");
+      }
+      const next = { ...oldDraft, customerName: selected.name, customerAddress: selected.address, customerContact: selected.contact };
+      if (stable(next) !== stable(oldDraft)) {
+        await transaction.update(quote).set({
+          draft: next, undoDraft: oldDraft,
+          capturedLineIds: retainedAfterManualSave(record.capturedLineIds, oldDraft, next),
+          undoCapturedLineIds: trustedCapturedLineIds(record.capturedLineIds, oldDraft),
+          title: next.title, reference: next.reference, version: record.version + 1, updatedAt: now,
+        }).where(eq(quote.id, id!));
+      }
+    } else if (action === "save") {
       const oldDraft = requireDraft(record);
       const next = asQuote(body.quote, true).draft;
       // Both states have passed the canonical Quote calculation boundary, so

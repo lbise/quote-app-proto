@@ -21,9 +21,18 @@ import { randomUUID } from "@/lib/random-id"
 
 type Locale = "fr" | "en"
 type Customer = { id: string; name: string; address: string; contact: string }
-type RecordsResponse = { customers?: Customer[]; defaults?: Partial<QuoteData> }
+type RecordsResponse = { customers?: Customer[]; savedCustomer?: Customer; defaults?: Partial<QuoteData> }
 type CustomerDraft = Omit<Customer, "id"> & { id?: string }
 type Status = "idle" | "loading" | "saving" | "error"
+type DiscardScope = "defaults" | "customer"
+
+function normalizeSearch(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase()
+}
+
+function customerFields(value: CustomerDraft | Customer) {
+  return { name: value.name, address: value.address, contact: value.contact }
+}
 
 function t(locale: Locale, fr: string, en: string) {
   return locale === "fr" ? fr : en
@@ -34,28 +43,33 @@ const emptyCustomer = (): CustomerDraft => ({ name: "", address: "", contact: ""
 export function RecordsEditor({
   quote,
   locale,
-  onApply,
+  onApplyCustomer,
   onClose,
 }: {
   quote: QuoteData | null
   locale: Locale
-  onApply: (q: QuoteData) => void
+  onApplyCustomer: (customerId: string, snapshot: { name: string; address: string; contact: string }) => Promise<boolean>
   onClose: () => void
 }) {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [defaults, setDefaults] = useState<Partial<QuoteData>>({})
   const [savedDefaults, setSavedDefaults] = useState<Partial<QuoteData>>({})
-  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState<DiscardScope | null>(null)
   const afterDiscard = useRef<() => void>(onClose)
   const [customer, setCustomer] = useState<CustomerDraft>(emptyCustomer)
   const [selectedId, setSelectedId] = useState("")
+  const [search, setSearch] = useState("")
   const [status, setStatus] = useState<Status>("loading")
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState("")
+  const [customerNotice, setCustomerNotice] = useState("")
+  const [customerFieldErrors, setCustomerFieldErrors] = useState<Array<"name" | "address">>([])
   const [defaultsSaved, setDefaultsSaved] = useState(false)
   const [defaultsSaveFailed, setDefaultsSaveFailed] = useState(false)
   const [vatIdError, setVatIdError] = useState(false)
+  const [replacementOpen, setReplacementOpen] = useState(false)
   const opener = useRef(typeof document === "undefined" ? null : document.activeElement as HTMLElement | null)
+  const useCustomerButton = useRef<HTMLButtonElement | null>(null)
   const customerRequest = useRef<{ payload: string; id: string } | null>(null)
 
   async function load(signal?: AbortSignal) {
@@ -84,14 +98,55 @@ export function RecordsEditor({
     return () => controller.abort()
   }, []) // The endpoint is loaded once. A locale change only changes visible copy.
 
-  function chooseCustomer(id: string) {
+  const selectedCustomer = customers.find((item) => item.id === selectedId)
+  const customerDirty = JSON.stringify(customerFields(customer)) !== JSON.stringify(customerFields(selectedCustomer ?? emptyCustomer()))
+  const filteredCustomers = customers.filter((item) => normalizeSearch(`${item.name} ${item.address} ${item.contact}`).includes(normalizeSearch(search)))
+
+  useEffect(() => {
+    if (selectedId && !filteredCustomers.some((item) => item.id === selectedId)) {
+      setSelectedId("")
+      if (!customerDirty) setCustomer(emptyCustomer())
+    }
+  }, [search, customers, customerDirty])
+
+  function discardCustomerEdits() {
+    setCustomer(selectedCustomer ? { ...selectedCustomer } : emptyCustomer())
+  }
+
+  function askDiscard(scope: DiscardScope, action: () => void) {
+    afterDiscard.current = () => {
+      if (scope === "customer") discardCustomerEdits()
+      else {
+        setDefaults({ ...savedDefaults })
+        setDefaultsSaved(false)
+      }
+      action()
+    }
+    setConfirmDiscard(scope)
+  }
+
+  function withCustomerEditsDiscarded(action: () => void) {
+    if (customerDirty) askDiscard("customer", action)
+    else action()
+  }
+
+  function chooseCustomerNow(id: string) {
     setSelectedId(id)
     const record = customers.find((item) => item.id === id)
     setCustomer(record ? { ...record } : emptyCustomer())
+    setCustomerNotice("")
+    setError("")
+  }
+
+  function chooseCustomer(id: string) {
+    withCustomerEditsDiscarded(() => chooseCustomerNow(id))
   }
 
   function updateCustomer<K extends keyof CustomerDraft>(key: K, value: CustomerDraft[K]) {
     setCustomer((current) => ({ ...current, [key]: value }))
+    if (key === "name" || key === "address") setCustomerFieldErrors((current) => current.filter((field) => field !== key))
+    setCustomerNotice("")
+    setError("")
   }
 
   function updateDefaults<K extends keyof QuoteData>(key: K, value: QuoteData[K]) {
@@ -104,11 +159,18 @@ export function RecordsEditor({
     event.preventDefault()
     setDefaultsSaved(false)
     setDefaultsSaveFailed(false)
-    if (!customer.name.trim() || !customer.address.trim()) {
+    const missingCustomerFields = [
+      ...(!customer.name.trim() ? ["name" as const] : []),
+      ...(!customer.address.trim() ? ["address" as const] : []),
+    ]
+    if (missingCustomerFields.length) {
+      setCustomerFieldErrors(missingCustomerFields)
       setError(t(locale, "Indiquez le nom et l'adresse du client.", "Enter the Customer name and address."))
+      document.getElementById(missingCustomerFields[0] === "name" ? "record-customer-name" : "record-customer-address")?.focus()
       setStatus("error")
       return
     }
+    setCustomerFieldErrors([])
     setStatus("saving")
     setError("")
     try {
@@ -122,13 +184,18 @@ export function RecordsEditor({
       if (!response.ok) throw new Error("save")
       const data = await response.json() as RecordsResponse
       customerRequest.current = null
+      const saved = data.savedCustomer ?? data.customers?.find((item) => item.name === customer.name.trim() && item.address === customer.address.trim() && item.contact === customer.contact) ?? null
       setCustomers(data.customers ?? [])
       setStatus("idle")
-      setSelectedId("")
-      setCustomer(emptyCustomer())
+      setCustomerFieldErrors([])
+      if (saved) {
+        setSelectedId(saved.id)
+        setCustomer({ ...saved })
+        setCustomerNotice(t(locale, customer.id ? "Client mis à jour. Les devis existants sont inchangés." : "Client créé. Ce devis est inchangé.", customer.id ? "Customer updated. Existing Quotes are unchanged." : "Customer created. This Quote is unchanged."))
+      }
     } catch {
       setStatus("error")
-      setError(t(locale, "Impossible d'enregistrer le client. Réessayez.", "Could not save the Customer. Try again."))
+      setError(t(locale, "Impossible d'enregistrer le client. Votre saisie est conservée. Réessayez.", "Could not save the Customer. Your entries are kept. Try again."))
     }
   }
 
@@ -164,22 +231,46 @@ export function RecordsEditor({
 
   function close(action = onClose) {
     if (status === "saving") return
+    if (customerDirty) {
+      askDiscard("customer", () => {
+        if (JSON.stringify(defaults) !== JSON.stringify(savedDefaults)) askDiscard("defaults", action)
+        else action()
+      })
+      return
+    }
     if (JSON.stringify(defaults) !== JSON.stringify(savedDefaults)) {
-      afterDiscard.current = action
-      setConfirmDiscard(true)
-    } else action()
+      askDiscard("defaults", action)
+      return
+    }
+    action()
   }
 
   function useCustomer() {
-    if (!quote || !customer.id) return
-    close(() => {
-      onApply({ ...quote, customerName: customer.name, customerAddress: customer.address, customerContact: customer.contact })
-      onClose()
-    })
+    if (!quote || !selectedCustomer || customerDirty) return
+    if (JSON.stringify(defaults) !== JSON.stringify(savedDefaults)) {
+      askDiscard("defaults", () => setReplacementOpen(true))
+      return
+    }
+    setReplacementOpen(true)
   }
 
-  const selectedCustomer = customers.find((item) => item.id === selectedId)
+  async function replaceCustomer() {
+    if (!selectedCustomer) return
+    const applied = await onApplyCustomer(selectedCustomer.id, customerFields(selectedCustomer))
+    if (!applied) {
+      setError(t(locale, "Impossible de remplacer le client. Votre devis reste inchangé. Réessayez.", "Could not replace the Customer. Your Quote is unchanged. Try again."))
+      return
+    }
+    setReplacementOpen(false)
+    onClose()
+  }
+
   const busy = !loaded || status === "loading" || status === "saving"
+  const replacementRows = [
+    { label: t(locale, "Nom", "Name"), current: quote?.customerName ?? "", replacement: selectedCustomer?.name ?? "" },
+    { label: t(locale, "Adresse", "Address"), current: quote?.customerAddress ?? "", replacement: selectedCustomer?.address ?? "" },
+    { label: t(locale, "Personne de contact", "Contact person"), current: quote?.customerContact ?? "", replacement: selectedCustomer?.contact ?? "" },
+  ]
 
   return (
     <Dialog open onOpenChange={(open) => !open && close()}>
@@ -196,37 +287,48 @@ export function RecordsEditor({
             <h2 id="customer-record-heading" className="mb-3 text-base font-medium">{t(locale, "Fiche client", "Customer record")}</h2>
             <FieldGroup>
               <Field data-disabled={busy || undefined}>
+                <FieldLabel htmlFor="record-customer-search">{t(locale, "Rechercher un client", "Search Customers")}</FieldLabel>
+                <Input id="record-customer-search" value={search} disabled={busy} onChange={(event) => setSearch(event.target.value)} />
+              </Field>
+              <Field data-disabled={busy || undefined}>
                 <FieldLabel htmlFor="record-customer">{t(locale, "Choisir un client", "Choose a Customer")}</FieldLabel>
                 <select id="record-customer" value={selectedId} disabled={busy} onChange={(event) => chooseCustomer(event.target.value)}>
                   <option value="">{t(locale, "Nouveau client", "New Customer")}</option>
-                  {customers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  {filteredCustomers.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.address.replace(/\n/g, ", ")}</option>)}
                 </select>
                 <FieldDescription>{t(locale, "Choisissez une fiche pour la mettre à jour, ou créez-en une nouvelle.", "Choose a record to update it, or create a new one.")}</FieldDescription>
               </Field>
             </FieldGroup>
+            {customers.length === 0 && <p className="mt-2 text-sm text-muted-foreground">{t(locale, "Aucun client enregistré. Vous pouvez en ajouter un maintenant ou continuer votre devis.", "No saved Customers yet. You can add one now or continue your Quote.")}</p>}
+            {customers.length > 0 && filteredCustomers.length === 0 && <p className="mt-2 text-sm text-muted-foreground">{t(locale, "Aucun client ne correspond à votre recherche.", "No Customers match your search.")}</p>}
 
             <form className="mt-4" onSubmit={saveCustomer} noValidate>
               <FieldGroup>
-                <Field data-disabled={busy || undefined}>
+                <Field data-invalid={customerFieldErrors.includes("name") || undefined} data-disabled={busy || undefined}>
                   <FieldLabel htmlFor="record-customer-name">{t(locale, "Nom", "Name")}</FieldLabel>
-                  <Input id="record-customer-name" value={customer.name} disabled={busy} onChange={(event) => updateCustomer("name", event.target.value)} />
+                  <Input id="record-customer-name" value={customer.name} disabled={busy} aria-invalid={customerFieldErrors.includes("name")} aria-describedby={customerFieldErrors.includes("name") ? "record-customer-name-error" : undefined} onChange={(event) => updateCustomer("name", event.target.value)} />
+                  {customerFieldErrors.includes("name") && <FieldError id="record-customer-name-error">{t(locale, "Indiquez le nom du client.", "Enter the Customer name.")}</FieldError>}
                 </Field>
-                <Field data-disabled={busy || undefined}>
+                <Field data-invalid={customerFieldErrors.includes("address") || undefined} data-disabled={busy || undefined}>
                   <FieldLabel htmlFor="record-customer-address">{t(locale, "Adresse", "Address")}</FieldLabel>
-                  <Textarea id="record-customer-address" value={customer.address} disabled={busy} onChange={(event) => updateCustomer("address", event.target.value)} />
+                  <Textarea id="record-customer-address" value={customer.address} disabled={busy} aria-invalid={customerFieldErrors.includes("address")} aria-describedby={customerFieldErrors.includes("address") ? "record-customer-address-error" : undefined} onChange={(event) => updateCustomer("address", event.target.value)} />
+                  {customerFieldErrors.includes("address") && <FieldError id="record-customer-address-error">{t(locale, "Indiquez l'adresse du client.", "Enter the Customer address.")}</FieldError>}
                 </Field>
                 <Field data-disabled={busy || undefined}>
                   <FieldLabel htmlFor="record-customer-contact">{t(locale, "Personne de contact", "Contact person")}</FieldLabel>
                   <Input id="record-customer-contact" value={customer.contact} disabled={busy} onChange={(event) => updateCustomer("contact", event.target.value)} />
                   <FieldDescription>{t(locale, "Facultatif.", "Optional.")}</FieldDescription>
                 </Field>
+                {customerDirty && <Alert><AlertDescription>{t(locale, "Enregistrez ou abandonnez les modifications de la fiche avant d'utiliser ce client.", "Save or discard record edits before using this Customer.")}</AlertDescription></Alert>}
                 <div className="flex flex-wrap justify-end gap-2">
-                  {quote && selectedCustomer && <Button type="button" variant="outline" disabled={busy} onClick={useCustomer}>{t(locale, "Utiliser ce client", "Use this Customer")}</Button>}
+                  {customerDirty && <Button type="button" variant="ghost" disabled={busy} onClick={discardCustomerEdits}>{t(locale, "Abandonner les modifications", "Discard edits")}</Button>}
+                  {quote && selectedCustomer && <Button ref={useCustomerButton} type="button" variant="outline" disabled={busy || customerDirty} onClick={useCustomer}>{t(locale, "Utiliser pour ce devis", "Use for this Quote")}</Button>}
                   <Button type="submit" disabled={busy}>{customer.id ? t(locale, "Mettre à jour le client", "Update Customer") : t(locale, "Créer le client", "Create Customer")}</Button>
                 </div>
               </FieldGroup>
             </form>
-            {quote && <p className="mt-3 text-sm text-muted-foreground">{t(locale, "Utiliser ce client copie les valeurs affichées dans le devis. Les modifications ultérieures de la fiche restent indépendantes.", "Use this Customer copies the displayed values into the Quote. Later record edits remain independent.")}</p>}
+            {customerNotice && <p className="mt-3 text-sm text-muted-foreground" role="status">{customerNotice}</p>}
+            {quote && <p className="mt-3 text-sm text-muted-foreground">{t(locale, "Utiliser ce client copie les valeurs enregistrées dans le devis. Les modifications ultérieures de la fiche restent indépendantes.", "Use this Customer copies the saved values into the Quote. Later record edits remain independent.")}</p>}
           </section>
 
           <section aria-labelledby="business-defaults-heading">
@@ -279,15 +381,39 @@ export function RecordsEditor({
           {status === "saving" && <span className="mr-auto text-sm text-muted-foreground" role="status">{t(locale, "Enregistrement…", "Saving…")}</span>}
           <Button type="button" variant="outline" disabled={status === "saving"} onClick={() => close()}>{t(locale, "Fermer", "Close")}</Button>
         </DialogFooter>
-        <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialog open={confirmDiscard !== null} onOpenChange={(open) => !open && setConfirmDiscard(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t(locale, "Abandonner les modifications non enregistrées des valeurs par défaut ?", "Discard unsaved default edits?")}</AlertDialogTitle>
-              <AlertDialogDescription>{t(locale, "Les modifications non enregistrées seront perdues. Les valeurs par défaut enregistrées resteront inchangées.", "Unsaved default edits will be lost. Saved defaults will stay unchanged.")}</AlertDialogDescription>
+              <AlertDialogTitle>{confirmDiscard === "customer"
+                ? t(locale, "Abandonner les modifications non enregistrées de la fiche ?", "Discard unsaved record edits?")
+                : t(locale, "Abandonner les modifications non enregistrées des valeurs par défaut ?", "Discard unsaved default edits?")}</AlertDialogTitle>
+              <AlertDialogDescription>{confirmDiscard === "customer"
+                ? t(locale, "Les modifications non enregistrées de la fiche seront perdues. Le devis reste inchangé.", "Unsaved record edits will be lost. The Quote stays unchanged.")
+                : t(locale, "Les modifications non enregistrées seront perdues. Les valeurs par défaut enregistrées resteront inchangées.", "Unsaved default edits will be lost. Saved defaults will stay unchanged.")}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t(locale, "Continuer la saisie", "Keep editing")}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => afterDiscard.current()}>{t(locale, "Abandonner les modifications", "Discard edits")}</AlertDialogAction>
+              <AlertDialogAction onClick={() => { setConfirmDiscard(null); afterDiscard.current() }}>{t(locale, "Abandonner les modifications", "Discard edits")}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={replacementOpen} onOpenChange={(open) => { setReplacementOpen(open); if (!open) setTimeout(() => useCustomerButton.current?.focus(), 0) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t(locale, "Remplacer les coordonnées du client dans ce devis ?", "Replace Customer details in this Quote?")}</AlertDialogTitle>
+              <AlertDialogDescription>{t(locale, "Seul ce brouillon de travail change. Les fiches clients et les révisions publiées restent inchangées. Vous pouvez annuler ce remplacement.", "Only this Working Draft changes. Saved Customer records and Published Revisions stay unchanged. You can undo this replacement.")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="overflow-x-auto">
+              <table>
+                <thead><tr><th>{t(locale, "Champ", "Field")}</th><th>{t(locale, "Actuel", "Current")}</th><th>{t(locale, "Remplacement", "Replacement")}</th></tr></thead>
+                <tbody>
+                  {replacementRows.map(({ label, current, replacement }) => <tr key={label}><th>{label}</th><td>{current || t(locale, "Aucun", "None")}</td><td>{replacement || t(locale, "Aucun", "None")}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t(locale, "Conserver le client actuel", "Keep current Customer")}</AlertDialogCancel>
+              <AlertDialogAction onClick={(event) => { event.preventDefault(); void replaceCustomer() }}>{t(locale, "Remplacer dans ce devis", "Replace in this Quote")}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

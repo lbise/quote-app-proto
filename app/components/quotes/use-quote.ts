@@ -46,7 +46,7 @@ export function useQuote(initial: QuoteRecord) {
   const saving = useRef<Promise<boolean> | null>(null);
   const alive = useRef(true);
   const lastRequest = useRef<{ text: string; requestId: string; baseVersion: number; locale?: 'fr' | 'en' } | null>(initial.assistantRequest ?? null);
-  const actionRetry = useRef<{ action: string; requestId: string; version: number } | null>(null);
+  const actionRetry = useRef<{ action: string; requestId: string; version: number; customerId?: string } | null>(null);
   const rejectedSave = useRef(false);
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -120,6 +120,26 @@ export function useQuote(initial: QuoteRecord) {
     void flush();
   }
 
+  async function applyCustomer(customerId: string, snapshot: { name: string; address: string; contact: string }) {
+    if (busy || ai === "processing" || !current.current.draft) return false;
+    if (!(await flush())) return false;
+    setBusy(true); setError(null);
+    const previous = actionRetry.current;
+    const request = previous?.action === "customer-apply" && previous.customerId === customerId && previous.version === current.current.version
+      ? previous
+      : { action: "customer-apply", requestId: randomUUID(), version: current.current.version, customerId };
+    actionRetry.current = request;
+    try {
+      const next = await quoteRequest<QuoteRecord>({ action: "customer-apply", id: initial.id, expectedVersion: request.version, requestId: request.requestId, customerId, customer: snapshot });
+      actionRetry.current = null;
+      accept(next, true); setChanged([]); setChangedFields(["customer"]);
+      return true;
+    } catch (failure) {
+      setError(failure instanceof RequestError ? failure.code : "connection_failed");
+      return false;
+    } finally { if (alive.current) setBusy(false); }
+  }
+
   async function mutate(action: "publish" | "new-draft" | "undo") {
     if (busy || ai === "processing") return null;
     setBusy(true); setError(null);
@@ -172,5 +192,5 @@ export function useQuote(initial: QuoteRecord) {
     }
   }
 
-  return { record, quote, save, ai, error, changed, changedFields, busy, apply, flush, mutate, runAssistant, lastRequest };
+  return { record, quote, save, ai, error, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, lastRequest };
 }

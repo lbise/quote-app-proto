@@ -46,7 +46,7 @@ function appendToSection(lines: QuoteLine[], line: QuoteLine, sections: { id: st
 export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: { initial: QuoteRecord; locale: 'en' | 'fr'; onList: () => void; onLanguage: (locale: 'en' | 'fr') => void }) {
   const state = useQuote(initial);
   const { quoteAI } = useRouteLoaderData('root') as { quoteAI: QuoteAIDisclosure };
-  const { record, save, ai, error, changed, changedFields, busy, apply, flush, mutate, lastRequest } = state;
+  const { record, save, ai, error, changed, changedFields, busy, apply, flush, mutate, applyCustomer, lastRequest } = state;
   const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
   const [input, setInput] = useState('');
   const [aiDisclosed, setAiDisclosed] = useState(false);
@@ -152,7 +152,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     <div className="qp-document-status"><Badge variant={readOnly ? 'secondary' : 'outline'}>{readOnly ? <LockKeyhole data-icon="inline-start" /> : <Pencil data-icon="inline-start" />}{readOnly ? t(`Révision publiée ${readRevision + 1}`, `Published revision ${readRevision + 1}`) : t('Brouillon de travail', 'Working draft')}</Badge>{!readOnly && status}</div>
     <div className="qp-toolbar-actions">
       {revisions.length > 0 && <select aria-label={t('Version du devis', 'Quote version')} value={readRevision === null ? 'draft' : String(readRevision)} onChange={e => setReadRevision(e.target.value === 'draft' ? null : Number(e.target.value))} disabled={save !== 'saved' || ai === 'processing' || busy}>{record.draft && <option value="draft">{t('Brouillon', 'Draft')}</option>}{revisions.map((r, i) => <option key={r.number} value={i}>{t('Révision', 'Revision')} {r.number}</option>)}</select>}
-      {!readOnly && <Button variant="ghost" disabled={!record.canUndo || save !== 'saved' || busy || ai === 'processing'} onClick={() => void mutate('undo')}><RotateCcw data-icon="inline-start" />{t('Annuler', 'Undo')}</Button>}
+      {!readOnly && <Button variant="ghost" disabled={!record.canUndo || save !== 'saved' || busy || ai === 'processing'} onClick={() => void mutate('undo')}><RotateCcw data-icon="inline-start" />{t('Annuler la dernière modification', 'Undo last change')}</Button>}
       {readOnly ? <Button disabled={busy} onClick={() => void newRevision()}><Pencil data-icon="inline-start" />{record.draft ? t('Reprendre', 'Resume draft') : t('Nouvelle révision', 'New revision')}</Button> : <Button onClick={() => openModal('publish')}><Check data-icon="inline-start" />{t('Relire et publier', 'Review & publish')}</Button>}
     </div>
   </div>;
@@ -269,7 +269,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     }} />}
     {modal === 'details' && <ManualEditor quote={quote} locale={locale} lockedReference={revisions.length > 0} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'sections' && !readOnly && <SectionsEditor quote={quote} locale={locale} onApply={q => apply(q)} onClose={closeModal} />}
-    {modal === 'records' && <RecordsEditor quote={readOnly ? null : quote} locale={locale} onApply={q => apply(q)} onClose={closeModal} />}
+    {modal === 'records' && <RecordsEditor quote={readOnly ? null : quote} locale={locale} onApplyCustomer={applyCustomer} onClose={closeModal} />}
     {modal === 'privacy' && <AssistantDisclosure locale={locale} processing={quoteAI} onClose={() => { setPendingMessage(null); closeModal(); }} onContinue={pendingMessage ? () => {
       const text = pendingMessage;
       setAiDisclosed(true); setPendingMessage(null); setInput(''); closeModal();

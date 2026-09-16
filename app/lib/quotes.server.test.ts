@@ -196,9 +196,42 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     ]);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect((await first.json()).customers.filter((entry: { name: string }) => entry.name === customer.name)).toHaveLength(1);
+    const firstBody = await first.json();
+    expect(firstBody.customers.filter((entry: { name: string }) => entry.name === customer.name)).toHaveLength(1);
+    expect(firstBody.savedCustomer).toMatchObject(customer);
     const changed = await request({ action: "customer-save", requestId, customer: { ...customer, contact: "Autre" } });
     expect(changed.status).toBe(409);
+  });
+
+  it("applies an owned Customer to one Working Draft without linking later changes", async () => {
+    const savedCustomer = await request({ action: "customer-save", requestId: crypto.randomUUID(), customer: { name: "Maison Alpha", address: "Rue Alpha 1", contact: "Camille" } });
+    const customerBody = await savedCustomer.json();
+    const customerId = customerBody.savedCustomer.id as string;
+    const firstCreated = await request({ action: "create", requestId: crypto.randomUUID() });
+    const first = await firstCreated.json();
+    const secondCreated = await request({ action: "create", requestId: crypto.randomUUID() });
+    const second = await secondCreated.json();
+
+    const applied = await request({ action: "customer-apply", id: first.id, expectedVersion: first.version, requestId: crypto.randomUUID(), customerId });
+    expect(applied.status).toBe(200);
+    let firstDetail = await applied.json();
+    expect(firstDetail.draft).toMatchObject({ customerName: "Maison Alpha", customerAddress: "Rue Alpha 1", customerContact: "Camille" });
+
+    const localCorrection = { ...firstDetail.draft, customerAddress: "Rue Alpha 9", customerContact: "" };
+    const corrected = await request({ action: "save", id: first.id, expectedVersion: firstDetail.version, requestId: crypto.randomUUID(), quote: localCorrection });
+    firstDetail = await corrected.json();
+    const secondApplied = await request({ action: "customer-apply", id: second.id, expectedVersion: second.version, requestId: crypto.randomUUID(), customerId });
+    expect(secondApplied.status).toBe(200);
+
+    const updatedReusable = await request({ action: "customer-save", requestId: crypto.randomUUID(), customer: { id: customerId, name: "Maison Alpha", address: "Rue Alpha 14", contact: "Camille mise à jour" } });
+    expect(updatedReusable.status).toBe(200);
+    const reopenedFirst = await request(undefined, first.id);
+    expect((await reopenedFirst.json()).draft).toMatchObject({ customerName: "Maison Alpha", customerAddress: "Rue Alpha 9", customerContact: "" });
+    const reopenedSecond = await request(undefined, second.id);
+    expect((await reopenedSecond.json()).draft).toMatchObject({ customerName: "Maison Alpha", customerAddress: "Rue Alpha 1", customerContact: "Camille" });
+
+    const missingCustomer = await request({ action: "customer-apply", id: first.id, expectedVersion: firstDetail.version, requestId: crypto.randomUUID(), customerId: "customer-from-another-business" });
+    expect(missingCustomer.status).toBe(404);
   });
 
   it("serializes duplicate create keys and rejects a reused key with a different payload", async () => {
@@ -283,9 +316,11 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
   });
 
 
-  it("rejects cross-business detail reads", async () => {
+  it("rejects cross-business detail reads and reusable Customer operations", async () => {
     const created = await request({ action: "create", requestId: crypto.randomUUID() });
     const own = await created.json();
+    const ownCustomerResponse = await request({ action: "customer-save", requestId: crypto.randomUUID(), customer: { name: "Own Customer", address: "Own address", contact: "" } });
+    const ownCustomerId = (await ownCustomerResponse.json()).savedCustomer.id as string;
     const otherAuth = createAuthForDatabase(connection.db);
     const email = `other-${crypto.randomUUID()}@example.com`;
     const signup = await otherAuth.handler(new Request(`${origin}/api/auth/sign-up/email`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Other", email, password: "password123" }) }));
@@ -293,7 +328,19 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     await connection.db.update(user).set({ emailVerified: true }).where(eq(user.id, other.user.id));
     const signin = await otherAuth.handler(new Request(`${origin}/api/auth/sign-in/email`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: "password123" }) }));
     const otherCookie = signin.headers.getSetCookie().map((entry) => entry.split(";", 1)[0]).join("; ");
-    const response = await createQuoteHandler({ database: connection.db, auth: otherAuth })(new Request(`${origin}/api/quotes?id=${own.id}`, { headers: { cookie: otherCookie } }));
-    expect(response.status).toBe(404);
+    const otherHandler = createQuoteHandler({ database: connection.db, auth: otherAuth });
+    const otherRequest = (body?: Record<string, unknown>, id?: string) => otherHandler(new Request(`${origin}/api/quotes${id ? `?id=${id}` : ""}`, {
+      method: body ? "POST" : "GET", headers: { cookie: otherCookie, ...(body ? { origin, "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}),
+    }));
+    const otherCustomerResponse = await otherRequest({ action: "customer-save", requestId: crypto.randomUUID(), customer: { name: "Other Customer", address: "Other address", contact: "" } });
+    const otherCustomerId = (await otherCustomerResponse.json()).savedCustomer.id as string;
+
+    const ownList = await request();
+    expect(ownList.status).toBe(200);
+    expect((await ownList.json()).customers).not.toContainEqual(expect.objectContaining({ id: otherCustomerId }));
+    expect((await request({ action: "customer-save", requestId: crypto.randomUUID(), customer: { id: otherCustomerId, name: "Hijacked", address: "Nope", contact: "" } })).status).toBe(404);
+    expect((await request({ action: "customer-apply", id: own.id, expectedVersion: own.version, requestId: crypto.randomUUID(), customerId: otherCustomerId })).status).toBe(404);
+    expect((await otherRequest(undefined, own.id)).status).toBe(404);
+    expect((await otherRequest({ action: "customer-apply", id: own.id, expectedVersion: own.version, requestId: crypto.randomUUID(), customerId: ownCustomerId })).status).toBe(404);
   });
 });

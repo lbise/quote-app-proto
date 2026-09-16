@@ -80,6 +80,6 @@ export default function Quotes() {
         {!list.quotes.length ? <div className="qp-list-empty"><FileText /><h2>{t('Votre premier devis commence ici.', 'Your first Quote starts here.')}</h2><p>{t('Décrivez les travaux. Les coordonnées pourront attendre.', 'Describe the work. Contact details can wait.')}</p><Button disabled={creating} onClick={() => void create()}>{t('Créer un devis', 'Create a Quote')}</Button></div> : <div className="qp-list-rows">{list.quotes.filter(q => `${q.reference} ${q.title} ${q.customerName}`.toLowerCase().includes(filter.toLowerCase())).map(q => <button className="qp-list-row" key={q.id} onClick={() => navigate(`/quotes?id=${encodeURIComponent(q.id)}`)}><FileText /><div><strong>{q.title || t('Nouveau devis', 'New Quote')}</strong><span>{q.customerName || t('Sans destinataire', 'No Customer')} · {q.reference}</span></div><Badge variant="outline">{q.hasDraft ? t('Brouillon', 'Draft') : t(`Révision ${q.revision}`, `Revision ${q.revision}`)}</Badge><ArrowRight /></button>)}</div>}
       </>}
     </main>
-    {recordsOpen && <RecordsEditor quote={null} locale={locale} onApply={() => {}} onClose={() => setRecordsOpen(false)} />}
+    {recordsOpen && <RecordsEditor quote={null} locale={locale} onApplyCustomer={async () => false} onClose={() => setRecordsOpen(false)} />}
   </div>;
 }

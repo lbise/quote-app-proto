@@ -26,7 +26,7 @@ test("records load failure offers keyboard retry without enabling an empty defau
     }
     await route.continue();
   });
-  await page.getByRole("button", { name: "Customers & business" }).press("Enter");
+  await page.getByRole("button", { name: "Customers and defaults" }).press("Enter");
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("alert")).toContainText("Could not load records. Try again.");
   await expect(dialog.getByRole("button", { name: "Save defaults" })).toBeDisabled();
@@ -41,7 +41,7 @@ test("defaults retain entries through a lost save response and announce success 
   const { page } = artisan;
   await page.setViewportSize({ width: 1280, height: 580 });
   await page.goto(`/quotes?id=${seeded.id}`);
-  await page.getByRole("button", { name: "Customers & business" }).click();
+  await page.getByRole("button", { name: "Customers and defaults" }).click();
   const dialog = page.getByRole("dialog");
   const defaults = dialog.getByRole("region", { name: "Business defaults" });
   await defaults.getByLabel("Business name").fill("Atelier des Érables");
@@ -70,7 +70,7 @@ test("defaults retain entries through a lost save response and announce success 
   await dialog.getByRole("button", { name: "Close" }).press("Enter");
   await page.reload();
   await expect(page.getByRole("article").getByRole("strong").filter({ hasText: /^Atelier du Bois Sàrl$/ })).toBeVisible();
-  await page.getByRole("button", { name: "Customers & business" }).click();
+  await page.getByRole("button", { name: "Customers and defaults" }).click();
   await expect(defaults.getByLabel("Business name")).toHaveValue("Atelier des Érables");
   await expect(defaults.getByLabel("Default terms")).toHaveValue("Acompte de 20 %. Solde à 30 jours.\nLivraison en octobre. Garantie de 2 ans.");
 });
@@ -82,7 +82,7 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await expect(page.getByRole("heading", { name: "Prepare a Quote" })).toBeAttached();
   const incompleteUrl = page.url();
   await expect(page.getByText("Entreprise à renseigner", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Customers & business" }).click();
+  await page.getByRole("button", { name: "Customers and defaults" }).click();
   const defaults = page.getByRole("region", { name: "Business defaults" });
   await expect(defaults.getByText("To change this Quote's business details, use Details & terms.")).toBeVisible();
   await defaults.getByLabel("Business name").fill("Atelier des Tilleuls");
@@ -102,7 +102,7 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await expect(paper).toContainText("Rue Exemple 4");
   await expect(paper).toContainText("bonjour@example.test · 021 000 00 00");
   await expect(paper).toContainText("Paiement à 30 jours. Livraison en octobre. Garantie de 2 ans.");
-  await page.getByRole("button", { name: "Customers & business" }).click();
+  await page.getByRole("button", { name: "Customers and defaults" }).click();
   await defaults.getByLabel("Business name").fill("Atelier des Tilleuls actualisé");
   await defaults.getByRole("button", { name: "Save defaults" }).click();
   await expect(page.getByRole("dialog").getByRole("status")).toContainText("This Quote is unchanged.");
@@ -136,7 +136,7 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await editor.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
   await expect(paper).toContainText("Atelier local au devis");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.getByRole("button", { name: "Undo last change", exact: true }).click()
   await expect(paper).toContainText("Atelier du Bois Sàrl");
   await expect(paper).not.toContainText("Acompte convenu");
 
@@ -147,7 +147,7 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await editor.getByLabel("Quote terms").fill("Acompte convenu de 15 %. Solde à 45 jours.");
   await editor.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
-  await page.getByRole("button", { name: "Customers & business" }).click();
+  await page.getByRole("button", { name: "Customers and defaults" }).click();
   const defaults = page.getByRole("region", { name: "Business defaults" });
   await expect(defaults.getByLabel("Business name")).toHaveValue("Atelier des Tilleuls");
   await defaults.getByLabel("Business name").fill("Atelier des Tilleuls actualisé");
@@ -169,7 +169,7 @@ test("saving a Customer does not discard pending defaults, and closing asks befo
   const seeded = await createCompleteQuote(artisan);
   const { page } = artisan;
   await page.goto(`/quotes?id=${seeded.id}`);
-  await page.getByRole("button", { name: "Customers & business" }).click();
+  await page.getByRole("button", { name: "Customers and defaults" }).click();
   const dialog = page.getByRole("dialog");
   const defaults = dialog.getByRole("region", { name: "Business defaults" });
   await expect(defaults.getByLabel("Business name")).toBeEnabled();
@@ -179,10 +179,11 @@ test("saving a Customer does not discard pending defaults, and closing asks befo
   await customer.getByLabel("Name", { exact: true }).fill("Maison du Saule");
   await customer.getByLabel("Address", { exact: true }).fill("Rue Exemple 7");
   await customer.getByRole("button", { name: "Create Customer" }).click();
-  await expect(customer.getByLabel("Choose a Customer").getByRole("option", { name: "Maison du Saule" })).toHaveCount(1);
+  const savedCustomerOption = customer.getByLabel("Choose a Customer").getByRole("option", { name: /Maison du Saule/ });
+  await expect(savedCustomerOption).toHaveCount(1);
   await expect(defaults.getByLabel("Business name")).toHaveValue("Valeur non enregistrée");
-  await customer.getByLabel("Choose a Customer").selectOption({ label: "Maison du Saule" });
-  await dialog.getByRole("button", { name: "Use this Customer" }).press("Enter");
+  await customer.getByLabel("Choose a Customer").selectOption(await savedCustomerOption.getAttribute("value") ?? "");
+  await dialog.getByRole("button", { name: "Use for this Quote" }).press("Enter");
   const confirmation = page.getByRole("alertdialog", { name: "Discard unsaved default edits?", exact: true });
   await expect(confirmation.getByRole("button", { name: "Keep editing" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -191,7 +192,7 @@ test("saving a Customer does not discard pending defaults, and closing asks befo
   await page.keyboard.press("Escape");
   await confirmation.getByRole("button", { name: "Discard edits", exact: true }).press("Enter");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Customers & business" }).press("Enter");
+  await page.getByRole("button", { name: "Customers and defaults" }).press("Enter");
   await expect(defaults.getByLabel("Business name")).toHaveValue(originalName);
 });
 
@@ -226,7 +227,7 @@ for (const locale of ["en", "fr"] as const) {
     const reset = await api.post("/api/quotes", { headers: { origin: baseURL }, data: { action: "defaults-save", defaults: {} } });
     expect(reset.ok()).toBe(true);
     await page.getByLabel("Interface language / Langue de l’interface").selectOption(locale);
-    const opener = page.getByRole("button", { name: locale === "en" ? "Customers & business" : "Clients et entreprise" });
+    const opener = page.getByRole("button", { name: locale === "en" ? "Customers and defaults" : "Clients et valeurs par défaut" });
     await opener.press("Enter");
     const dialog = page.getByRole("dialog");
     const defaults = dialog.getByRole("region", { name: locale === "en" ? "Business defaults" : "Valeurs par défaut de l'entreprise" });

@@ -38,13 +38,15 @@ test("an Artisan can open and edit Quotes without the secure-context UUID API", 
     await sections.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Customers & business" }).click();
+    await page.getByRole("button", { name: "Customers and defaults" }).click();
     const customer = page.getByRole("region", { name: "Customer record" });
     await customer.getByRole("textbox", { name: "Name", exact: true }).fill("HTTP Customer fixture");
     await customer.getByRole("textbox", { name: "Address", exact: true }).fill("Rue Exemple 1");
     await page.getByRole("button", { name: "Create Customer" }).click();
-    await page.getByLabel("Choose a Customer").selectOption({ label: "HTTP Customer fixture" });
-    await page.getByRole("button", { name: "Use this Customer" }).click();
+    const customerOption = page.getByLabel("Choose a Customer").getByRole("option", { name: /HTTP Customer fixture/ });
+    await page.getByLabel("Choose a Customer").selectOption(await customerOption.getAttribute("value") ?? "");
+    await page.getByRole("button", { name: "Use for this Quote" }).click();
+    await page.getByRole("button", { name: "Replace in this Quote" }).click();
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText("HTTP Customer fixture", { exact: true })).toBeVisible();
