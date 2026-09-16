@@ -42,6 +42,9 @@ export function assistantDiagnosticFrom(failure: unknown): QuoteAssistantDiagnos
     phase: value.phase,
     code: value.code,
     ...(typeof value.tool === "string" ? { tool: value.tool } : {}),
+    ...(value.toolCall && typeof value.toolCall === "object" && typeof (value.toolCall as { name?: unknown }).name === "string"
+      ? { toolCall: { name: (value.toolCall as { name: string }).name, arguments: (value.toolCall as { arguments?: unknown }).arguments } }
+      : {}),
     ...(typeof value.requestId === "string" ? { requestId: value.requestId } : {}),
   };
 }

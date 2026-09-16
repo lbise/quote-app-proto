@@ -65,7 +65,15 @@ describe("pi Quote assistant model boundary", () => {
     const failure = generateQuoteChange({ ...input(), text: "Paint 2 walls." }, boundary);
     await expect(failure).rejects.toThrow("could not complete");
     await expect(failure).rejects.toMatchObject({
-      diagnostic: { phase: "tool", code: "invalid_tool_arguments", tool: "add_quote_line" },
+      diagnostic: {
+        phase: "tool",
+        code: "invalid_tool_arguments",
+        tool: "add_quote_line",
+        toolCall: {
+          name: "add_quote_line",
+          arguments: { description: "Peinture", mode: "quantity", quantity: 2, unit: "", unitPrice: "", amount: "", evidence: [{ field: "quantity", text: "2" }] },
+        },
+      },
     });
   });
 

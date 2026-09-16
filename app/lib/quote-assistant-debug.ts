@@ -5,5 +5,6 @@ export type QuoteAssistantDiagnostic = {
   phase: QuoteAssistantDiagnosticPhase;
   code: string;
   tool?: string;
+  toolCall?: { name: string; arguments: unknown };
   requestId?: string;
 };

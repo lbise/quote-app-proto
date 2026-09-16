@@ -121,6 +121,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   let failed = false;
   let rounds = 0;
   let toolCalls = 0;
+  const toolCallsById = new Map<string, { name: string; arguments: unknown }>();
   let lastToolName: string | undefined;
   let diagnostic: QuoteAssistantDiagnostic = { phase: "model", code: "assistant_failed" };
   const agent = new Agent({
@@ -145,13 +146,23 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     beforeToolCall: async () => {
       toolCalls += 1;
       failed ||= toolCalls > 12;
-      if (failed) diagnostic = { phase: "tool", code: "tool_call_limit_exceeded", ...(lastToolName ? { tool: lastToolName } : {}) };
+      if (failed) {
+        const toolCall = lastToolName ? [...toolCallsById.values()].reverse().find((call) => call.name === lastToolName) : undefined;
+        diagnostic = { phase: "tool", code: "tool_call_limit_exceeded", ...(lastToolName ? { tool: lastToolName } : {}), ...(toolCall ? { toolCall } : {}) };
+      }
       return failed ? { block: true, reason: "Request ended.", terminate: true } : undefined;
     },
     shouldStopAfterTurn: ({ message, toolResults }) => {
       rounds += 1;
-      if (toolResults.some((result) => result.isError)) {
-        diagnostic = { phase: "tool", code: staged.diagnostic()?.code ?? "tool_rejected", ...(lastToolName ? { tool: lastToolName } : {}) };
+      const failedTool = toolResults.find((result) => result.isError);
+      if (failedTool) {
+        const toolCall = toolCallsById.get(failedTool.toolCallId);
+        diagnostic = {
+          phase: "tool",
+          code: staged.diagnostic()?.code ?? "tool_rejected",
+          tool: failedTool.toolName,
+          ...(toolCall ? { toolCall } : {}),
+        };
         failed = true;
       }
       if (rounds >= 6 && message.content.some((part) => part.type === "toolCall")) {
@@ -163,7 +174,10 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   });
   let responseBytes = 0;
   agent.subscribe((event) => {
-    if (event.type === "tool_execution_start") lastToolName = event.toolName;
+    if (event.type === "tool_execution_start") {
+      lastToolName = event.toolName;
+      toolCallsById.set(event.toolCallId, { name: event.toolName, arguments: event.args });
+    }
     if ((event.type === "message_update" || event.type === "message_end") && event.message.role === "assistant") {
       const size = Buffer.byteLength(JSON.stringify(event.message));
       if (event.type === "message_end") responseBytes += size;
@@ -174,7 +188,13 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
       }
     }
     if (event.type === "tool_execution_end" && event.isError) {
-      diagnostic = { phase: "tool", code: staged.diagnostic()?.code ?? "tool_rejected", tool: event.toolName };
+      const toolCall = toolCallsById.get(event.toolCallId);
+      diagnostic = {
+        phase: "tool",
+        code: staged.diagnostic()?.code ?? "tool_rejected",
+        tool: event.toolName,
+        ...(toolCall ? { toolCall } : {}),
+      };
     }
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
