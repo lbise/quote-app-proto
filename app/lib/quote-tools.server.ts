@@ -685,15 +685,27 @@ function assertEvidence(value: unknown, context: EvidenceContext, supplied: Reco
     if (matchingEvidence.sourceLineId !== undefined) {
       const sourceLine = context.originalLines.get(matchingEvidence.sourceLineId);
       if (!sourceLine || normalizedDecimal(sourceLine[field]) !== normalizedDecimal(suppliedValue)) throw new Error("invalid");
-    } else if (!context.artisanTexts.some((text) => text.includes(matchingEvidence.text) && numericEvidenceMatches(suppliedValue, text))) {
+    } else if (!context.artisanTexts.some((text) => evidenceAppears(text, matchingEvidence.text) && numericEvidenceMatches(suppliedValue, text))) {
       throw new Error("invalid");
     }
   }
 }
 
+function evidenceAppears(text: string, evidence: string): boolean {
+  const compact = (value: string) => value.normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase();
+  return compact(text).includes(compact(evidence));
+}
+
 function numericEvidenceMatches(value: string, evidence: string): boolean {
   const expected = normalizedDecimal(value);
-  return expected !== undefined && [...standaloneNumbers(evidence)].some((candidate) => normalizedDecimal(candidate) === expected);
+  return expected !== undefined && [...evidencedNumbers(evidence)].some((candidate) => normalizedDecimal(candidate) === expected);
+}
+
+function* evidencedNumbers(text: string): Iterable<string> {
+  yield* standaloneNumbers(text);
+  // Currency is commonly typed without a space (for example, 12.50chf).
+  const currencyPattern = /(?<![\p{L}\p{N}_.,'’−-])\d+(?:[.,]\d+)?(?=\s*(?:chf|francs?|fr\.?|sfr)\b)/giu;
+  for (const match of text.matchAll(currencyPattern)) yield match[0];
 }
 
 function* standaloneNumbers(text: string): Iterable<string> {

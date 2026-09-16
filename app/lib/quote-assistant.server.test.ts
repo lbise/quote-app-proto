@@ -116,6 +116,30 @@ describe("pi Quote assistant model boundary", () => {
     await expect(generateQuoteChange(input(), boundary)).rejects.toThrow("could not complete");
     expect(fake.getPendingResponseCount()).toBe(1);
   });
+  it("captures a French line when the Artisan writes the CHF price without a space", async () => {
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("add_quote_line", {
+        description: "Repeindre la chambre d’Eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond",
+        mode: "quantity",
+        unit: "m²",
+        unitPrice: "12.50",
+        evidence: [{ field: "unitPrice", text: "12.50chf" }],
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("J’ai ajouté la ligne; la surface reste à confirmer.")]),
+    ]);
+    const result = await generateQuoteChange({
+      ...input(),
+      locale: "fr",
+      text: "Je veux repeindre la chambre d'eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond. Prix au m2 12.50chf",
+    }, boundary);
+    expect(result.quote?.lines[0]).toMatchObject({
+      description: "Repeindre la chambre d’Eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond",
+      unit: "m²",
+      unitPrice: "12.50",
+      quantity: "",
+    });
+  });
+
   it("creates a line with empty commercial fields when the Artisan gives only work details", async () => {
     const { boundary } = modelBoundary([
       fauxAssistantMessage([fauxToolCall("add_quote_line", {
