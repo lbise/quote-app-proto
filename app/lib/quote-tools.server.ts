@@ -46,11 +46,11 @@ const lineValueParameters = Type.Object({
 const addLineParameters = Type.Object({
   description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION }),
   mode: StringEnum(["quantity", "fixed"]),
-  quantity: Type.String({ maxLength: MAX_DECIMAL }),
-  unit: Type.String({ maxLength: MAX_UNIT }),
-  unitPrice: Type.String({ maxLength: MAX_DECIMAL }),
-  amount: Type.String({ maxLength: MAX_DECIMAL }),
-  evidence: evidenceParameters,
+  quantity: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
+  unit: Type.Optional(Type.String({ maxLength: MAX_UNIT })),
+  unitPrice: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
+  amount: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
+  evidence: Type.Optional(evidenceParameters),
 }, { additionalProperties: false });
 const supplyLineParameters = Type.Object({
   lineId: Type.String({ minLength: 1, maxLength: 128 }),
@@ -223,10 +223,16 @@ function newLineId(quote: QuoteData): string {
 
 function addLineInput(value: unknown, evidenceContext: EvidenceContext): Omit<QuoteLine, "id" | "sectionId"> {
   const keys = ["description", "mode", "quantity", "unit", "unitPrice", "amount", "evidence"];
-  if (!isExactRecord(value, keys)) {
+  if (!isRecord(value) || !Object.hasOwn(value, "description") || !Object.hasOwn(value, "mode")
+    || Object.keys(value).some((key) => !keys.includes(key))) {
     throw new Error("invalid");
   }
-  const { description, mode, quantity, unit, unitPrice, amount } = value;
+  const description = value.description;
+  const mode = value.mode;
+  const quantity = value.quantity ?? "";
+  const unit = value.unit ?? "";
+  const unitPrice = value.unitPrice ?? "";
+  const amount = value.amount ?? "";
   if (typeof description !== "string" || !description.trim() || description.length > MAX_DESCRIPTION
     || (mode !== "quantity" && mode !== "fixed")
     || typeof quantity !== "string" || quantity.length > MAX_DECIMAL
@@ -238,7 +244,7 @@ function addLineInput(value: unknown, evidenceContext: EvidenceContext): Omit<Qu
   if ((mode === "quantity" && amount !== "") || (mode === "fixed" && (quantity !== "" || unit !== "" || unitPrice !== ""))) {
     throw new Error("invalid");
   }
-  assertEvidence(value.evidence, evidenceContext, { quantity, unitPrice, amount });
+  assertEvidence(value.evidence ?? [], evidenceContext, { quantity, unitPrice, amount });
   return { description, mode, quantity, unit, unitPrice, amount };
 }
 
@@ -246,7 +252,8 @@ function suppliedLineFields(value: unknown, evidenceContext: EvidenceContext): {
   lineId: string;
   fields: SuppliedLineFields;
 } {
-  if (!isExactRecord(value, ["lineId", "fields", "evidence"])
+  if (!isRecord(value) || !Object.hasOwn(value, "lineId") || !Object.hasOwn(value, "fields")
+    || Object.keys(value).some((key) => !["lineId", "fields", "evidence"].includes(key))
     || typeof value.lineId !== "string" || !value.lineId || value.lineId.length > 128
     || !isRecord(value.fields)) {
     throw new Error("invalid");
@@ -264,7 +271,7 @@ function suppliedLineFields(value: unknown, evidenceContext: EvidenceContext): {
     if (typeof supplied !== "string" || !supplied.trim() || supplied.length > maxLength) throw new Error("invalid");
     result[field] = supplied;
   }
-  assertEvidence(value.evidence, evidenceContext, {
+  assertEvidence(value.evidence ?? [], evidenceContext, {
     quantity: result.quantity ?? "",
     unitPrice: result.unitPrice ?? "",
     amount: result.amount ?? "",

@@ -116,6 +116,28 @@ describe("pi Quote assistant model boundary", () => {
     await expect(generateQuoteChange(input(), boundary)).rejects.toThrow("could not complete");
     expect(fake.getPendingResponseCount()).toBe(1);
   });
+  it("creates a line with empty commercial fields when the Artisan gives only work details", async () => {
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("add_quote_line", {
+        description: "Repeindre la chambre d’Eugènie en vert pomme",
+        mode: "quantity",
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("J’ai ajouté le travail. Les dimensions et le prix restent à compléter.")]),
+    ]);
+    const result = await generateQuoteChange({
+      ...input(),
+      text: "Il faut repeindre la chambre d’Eugènie en vert pomme.",
+    }, boundary);
+    expect(result.quote?.lines).toEqual([expect.objectContaining({
+      description: "Repeindre la chambre d’Eugènie en vert pomme",
+      mode: "quantity",
+      quantity: "",
+      unit: "",
+      unitPrice: "",
+      amount: "",
+    })]);
+  });
+
   it("opens publication review only after an explicit publication request", async () => {
     const { boundary } = modelBoundary([fauxAssistantMessage([fauxText("The work is ready to review.")])]);
     expect((await generateQuoteChange({ ...input(), text: "Please review the Quote before I publish it." }, boundary)).reviewPublication).toBe(true);
