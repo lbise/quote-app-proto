@@ -76,6 +76,10 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   }
   function revealField(field: string) {
     setNarrowPanel('quote');
+    if (field === 'customer') {
+      openModal('details');
+      return;
+    }
     const id = field === 'discount' ? 'quote-totals' : field.startsWith('section:') ? `section-${field.slice(8)}` : 'quote-title';
     setTimeout(() => (document.getElementById(id) ?? document.getElementById('quote-title'))?.scrollIntoView({ block: 'center' }), 0);
   }

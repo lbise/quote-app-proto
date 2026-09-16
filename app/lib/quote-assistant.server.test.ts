@@ -138,6 +138,28 @@ describe("pi Quote assistant model boundary", () => {
     })]);
   });
 
+  it("captures Customer details supplied alongside the work", async () => {
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("set_customer_info", {
+        name: "Simon Rowell",
+        address: "chemin des Glycines 14, 1007 Lausanne",
+        contact: "079 123 45 67",
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("J’ai enregistré les coordonnées du client.")]),
+    ]);
+    const result = await generateQuoteChange({
+      ...input(),
+      locale: "fr",
+      text: "Client Simon Rowell, chemin des Glycines 14, 1007 Lausanne, tél. 079 123 45 67.",
+    }, boundary);
+    expect(result.quote).toMatchObject({
+      customerName: "Simon Rowell",
+      customerAddress: "chemin des Glycines 14, 1007 Lausanne",
+      customerContact: "079 123 45 67",
+    });
+    expect(result.changedFields).toEqual(["customer"]);
+  });
+
   it("opens publication review only after an explicit publication request", async () => {
     const { boundary } = modelBoundary([fauxAssistantMessage([fauxText("The work is ready to review.")])]);
     expect((await generateQuoteChange({ ...input(), text: "Please review the Quote before I publish it." }, boundary)).reviewPublication).toBe(true);
@@ -149,6 +171,6 @@ describe("pi Quote assistant model boundary", () => {
     const { boundary, contexts } = modelBoundary([fauxAssistantMessage([fauxText("Which room needs painting?")])]);
     const result = await generateQuoteChange(input(), boundary);
     expect(result).toMatchObject({ quote: null, changed: [], message: "Which room needs painting?", reviewPublication: false });
-    expect(contexts[0].tools?.map((tool) => tool.name)).toEqual(["read_work", "add_quote_line", "supply_missing_line_fields"]);
+    expect(contexts[0].tools?.map((tool) => tool.name)).toEqual(["read_work", "set_customer_info", "add_quote_line", "supply_missing_line_fields"]);
   });
 });

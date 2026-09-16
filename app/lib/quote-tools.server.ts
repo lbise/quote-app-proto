@@ -9,6 +9,7 @@ export type QuoteToolsResult = {
   quote: QuoteData | null;
   changed: string[];
   capturedLineIds: string[];
+  changedFields?: string[];
 };
 
 export type CreateQuoteToolsInput = {
@@ -24,6 +25,9 @@ const MAX_ARTISAN_HISTORY_MESSAGES = 24;
 const MAX_ARTISAN_HISTORY_CHARS = 24_000;
 const MAX_LINES = 200;
 const MAX_DESCRIPTION = 4_000;
+const MAX_CUSTOMER_NAME = 300;
+const MAX_CUSTOMER_ADDRESS = 1_000;
+const MAX_CUSTOMER_CONTACT = 300;
 const MAX_UNIT = 100;
 const MAX_DECIMAL = 20;
 const MAX_EVIDENCE = 8;
@@ -55,7 +59,12 @@ const addLineParameters = Type.Object({
 const supplyLineParameters = Type.Object({
   lineId: Type.String({ minLength: 1, maxLength: 128 }),
   fields: Type.Partial(lineValueParameters),
-  evidence: evidenceParameters,
+  evidence: Type.Optional(evidenceParameters),
+}, { additionalProperties: false });
+const customerInfoParameters = Type.Object({
+  name: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_CUSTOMER_NAME })),
+  address: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_CUSTOMER_ADDRESS })),
+  contact: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_CUSTOMER_CONTACT })),
 }, { additionalProperties: false });
 
 type EvidenceField = "quantity" | "unitPrice" | "amount";
@@ -78,6 +87,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   };
   const capturedLineIds = [...new Set(input.capturedLineIds.filter((id) => staged.lines.some((line) => line.id === id)))];
   const changed = new Set<string>();
+  const changedFields = new Set<string>();
   let poisoned = false;
 
   const reject = (): never => {
@@ -85,13 +95,15 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     throw new Error("Tool input rejected.");
   };
 
-  const mutate = async (signal: AbortSignal | undefined, operation: () => string) => {
+  const mutate = async (signal: AbortSignal | undefined, operation: () => string, kind: "line" | "field" = "line") => {
     if (poisoned || signal?.aborted) reject();
     try {
-      const lineId = operation();
+      const changedId = operation();
       if (calculateQuote(staged).errors.length > 0 || workPayloadBytes(staged) > MAX_WORK_PAYLOAD_BYTES) reject();
-      changed.add(lineId);
-      return { content: [{ type: "text" as const, text: JSON.stringify({ changed: [lineId] }) }], details: { changed: [lineId] } };
+      if (kind === "line") changed.add(changedId);
+      else changedFields.add(changedId);
+      const details = kind === "line" ? { changed: [changedId] } : { changed: [], changedFields: [changedId] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
     } catch {
       poisoned = true;
       throw new Error("Tool input rejected.");
@@ -123,6 +135,22 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
       const details = { lines };
       return { content: [{ type: "text", text: JSON.stringify(details) }], details };
     },
+  };
+
+  const setCustomerInfo: AgentTool = {
+    name: "set_customer_info",
+    label: "Set Customer info",
+    description: "Copy Customer name, address, or contact details supplied by the Artisan into this Quote only. Never infer a value and never create or modify a reusable Customer record.",
+    parameters: customerInfoParameters,
+    executionMode: "sequential",
+    prepareArguments: prepare((args) => { customerInfoInput(args, evidenceContext); }),
+    execute: async (_toolCallId, params, signal) => mutate(signal, () => {
+      const customer = customerInfoInput(params, evidenceContext);
+      staged.customerName = customer.name ?? staged.customerName;
+      staged.customerAddress = customer.address ?? staged.customerAddress;
+      staged.customerContact = customer.contact ?? staged.customerContact;
+      return "customer";
+    }, "field"),
   };
 
   const addQuoteLine: AgentTool = {
@@ -166,11 +194,43 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   };
 
   return {
-    tools: [readWork, addQuoteLine, supplyMissingLineFields],
+    tools: [readWork, setCustomerInfo, addQuoteLine, supplyMissingLineFields],
     result: () => poisoned
       ? { quote: null, changed: [], capturedLineIds: [] }
-      : { quote: cloneQuote(staged), changed: [...changed], capturedLineIds: [...capturedLineIds] },
+      : {
+        quote: cloneQuote(staged),
+        changed: [...changed],
+        capturedLineIds: [...capturedLineIds],
+        ...(changedFields.size ? { changedFields: [...changedFields] } : {}),
+      },
   };
+}
+
+function customerInfoInput(value: unknown, context: EvidenceContext): { name?: string; address?: string; contact?: string } {
+  if (!isRecord(value) || !Object.keys(value).length || Object.keys(value).some((key) => !["name", "address", "contact"].includes(key))) {
+    throw new Error("invalid");
+  }
+  const fields = [
+    ["name", MAX_CUSTOMER_NAME],
+    ["address", MAX_CUSTOMER_ADDRESS],
+    ["contact", MAX_CUSTOMER_CONTACT],
+  ] as const;
+  const result: { name?: string; address?: string; contact?: string } = {};
+  for (const [field, maxLength] of fields) {
+    if (!Object.hasOwn(value, field)) continue;
+    const supplied = value[field];
+    if (typeof supplied !== "string" || !supplied.trim() || supplied.length > maxLength || !authoredValueContains(context.artisanTexts, supplied)) {
+      throw new Error("invalid");
+    }
+    result[field] = supplied.trim();
+  }
+  return result;
+}
+
+function authoredValueContains(texts: readonly string[], value: string): boolean {
+  const normalize = (text: string) => text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  const normalizedValue = normalize(value);
+  return texts.some((text) => normalize(text).includes(normalizedValue));
 }
 
 function cloneQuote(quote: QuoteData): QuoteData {

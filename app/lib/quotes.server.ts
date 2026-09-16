@@ -144,7 +144,7 @@ function capturedResultIds(value: unknown, before: QuoteData, after: QuoteData, 
 function changedFieldsFrom(value: unknown): string[] | undefined {
   const fields = valueRecord(value)?.changedFields;
   if (fields === undefined) return undefined;
-  if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string" || !/^(title|discount|section:[A-Za-z0-9][A-Za-z0-9_-]{0,127})$/.test(field))) {
+  if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string" || !/^(customer|title|discount|section:[A-Za-z0-9][A-Za-z0-9_-]{0,127})$/.test(field))) {
     throw new RequestFailure(502, "assistant_invalid_response");
   }
   return fields;

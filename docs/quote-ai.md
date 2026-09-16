@@ -2,11 +2,11 @@
 
 Easy Quote has no approval to process real Artisan Business or Customer data with hosted AI. `QUOTE_AI_ENABLED` stays `false` in normal development and deployment. The only live experiment allowed now is the isolated fictional-data workflow below.
 
-The server owns provider, model, credentials, and request limits. An Artisan never supplies an endpoint, credential, provider, or model. Pi's Google provider factory registers the Gemini Developer API and its catalog. `QUOTE_AI_PROVIDER=google` and `QUOTE_AI_MODEL=gemini-2.5-flash` are the initial test values. A model change selects another model already in that registered catalog and requires a restart. An unknown provider or model fails. There is no endpoint setting and no fallback provider or model.
+The server owns provider, model, credentials, and request limits. An Artisan never supplies an endpoint, credential, provider, or model. Pi's Google provider factory registers the Gemini Developer API and its catalog. `QUOTE_AI_PROVIDER=google` and `QUOTE_AI_MODEL=gemini-3.5-flash-lite` are the initial test values. A model change selects another model already in that registered catalog and requires a restart. An unknown provider or model fails. There is no endpoint setting and no fallback provider or model.
 
 ## What can leave Easy Quote
 
-The assistant request may include the Artisan's current message, the bounded conversation needed to answer it, and permitted Quote work content. It must not include dedicated Customer or Artisan Business names, addresses, contacts, VAT identifier, Quote reference, dates, work-site address, or terms. The restriction does not anonymize a message. An Artisan can still paste personal, confidential, or commercial information into a work description or chat message.
+The assistant request may include the Artisan's current message, the bounded conversation needed to answer it, and permitted Quote work content. Saved Customer and Artisan Business fields, VAT identifier, Quote reference, dates, work-site address, and terms are not added to the provider context. If the Artisan includes Customer name, address, or contact details in the current message, the message may contain and transmit them so the assistant can copy them into the current Quote only. No reusable Customer record is exposed. The restriction does not anonymize a message.
 
 Do not write raw conversations, Quote descriptions, provider payloads, or provider responses to application logs, traces, or error-reporting breadcrumbs. The assistant cannot publish, send, or accept a Quote. The Artisan must review quantities, prices, technical content, and applied changes before Publication.
 
@@ -16,7 +16,7 @@ The root loader sends only the enabled state, public provider name, and processi
 
 `@earendil-works/pi-ai` supplies the provider connection and `@earendil-works/pi-agent-core` runs the tool loop in this backend. No coding-agent harness, local extensions, filesystem sessions, or shell tools are loaded. Each request creates its own agent and temporary Working Draft.
 
-Only `read_work`, `add_quote_line`, and `supply_missing_line_fields` are registered. Tools receive the authenticated draft from the server, not business or Quote IDs from the model. New lines get application UUIDs. Follow-up may fill empty fields only on lines captured in this flow. Server-owned capture eligibility survives reopening and Undo. A manual line edit revokes its eligibility; unrelated lines retain theirs. Publication clears eligibility for the next Working Draft.
+Only `read_work`, `set_customer_info`, `add_quote_line`, and `supply_missing_line_fields` are registered. `set_customer_info` can copy explicit Customer name, address, and contact details from the Artisan's message into the current Quote; it cannot create or modify a reusable Customer record. Tools receive the authenticated draft from the server, not business or Quote IDs from the model. New lines get application UUIDs. Follow-up may fill empty fields only on lines captured in this flow. Server-owned capture eligibility survives reopening and Undo. A manual line edit revokes its eligibility; unrelated lines retain theirs. Publication clears eligibility for the next Working Draft.
 
 Numeric mutations require evidence from the current Artisan message, retained Artisan messages, or the same numeric field on an original Working Draft line. Assistant replies cannot establish evidence. Numeric matching does not prove that the model understood a technical reference or chose the intended work. Ambiguity calls for focused clarification, and the Artisan must review applied content. Quantities and prices remain missing unless supplied. There are no section, discount, duplication, or Publication tools.
 
@@ -42,7 +42,7 @@ The fictional workflow requires `QUOTE_AI_FICTIONAL_TERMS_REVIEW_REFERENCE`. Thi
 | --- | --- | --- |
 | `QUOTE_AI_ENABLED` | `true` only after approval | `true` |
 | `QUOTE_AI_PROVIDER` | A registered provider, currently `google` | `google` |
-| `QUOTE_AI_MODEL` | A model in that provider's pi catalog | `gemini-2.5-flash` |
+| `QUOTE_AI_MODEL` | A model in that provider's pi catalog | `gemini-3.5-flash-lite` |
 | `GEMINI_API_KEY` | Runtime secret, never browser-visible | Shell-only runtime secret |
 | `QUOTE_AI_TIMEOUT_MS` | Integer `1000` through `45000`, default `20000` | Same |
 | `QUOTE_AI_NO_TRAINING_CONFIRMED` | Exactly `true` after verification | Exactly `false` |

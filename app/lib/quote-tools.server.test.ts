@@ -23,6 +23,7 @@ describe("createQuoteTools", () => {
 
     expect(executor.tools.map((tool) => tool.name)).toEqual([
       "read_work",
+      "set_customer_info",
       "add_quote_line",
       "supply_missing_line_fields",
     ]);
@@ -43,6 +44,29 @@ describe("createQuoteTools", () => {
       }],
     });
     expect(executor.result()).toEqual({ quote, changed: [], capturedLineIds: [] });
+  });
+
+  it("copies only Artisan-provided Customer details into this Quote", async () => {
+    const quote = emptyQuote("Q-customer");
+    const executor = createQuoteTools({
+      quote,
+      capturedLineIds: [],
+      artisanText: "Pour Simon Rowell, chemin des Glycines 14, 1007 Lausanne, tél. 079 123 45 67.",
+    });
+    const customer = executor.tools.find((tool) => tool.name === "set_customer_info")!;
+
+    await customer.execute("customer-1", {
+      name: "Simon Rowell",
+      address: "chemin des Glycines 14, 1007 Lausanne",
+      contact: "079 123 45 67",
+    });
+
+    expect(executor.result()).toMatchObject({
+      changed: [],
+      changedFields: ["customer"],
+      quote: { customerName: "Simon Rowell", customerAddress: "chemin des Glycines 14, 1007 Lausanne", customerContact: "079 123 45 67" },
+    });
+    expect(quote.customerName).toBe("");
   });
 
   it("uses Google-compatible string enum schemas", () => {

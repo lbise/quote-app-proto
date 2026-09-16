@@ -31,7 +31,7 @@ Use only the registered Easy Quote tools for small explicit changes. Never retur
 
 Quantities, measurements, materials, prices and commitments must come from the Artisan, including work facts already supplied in the Working Draft. Never invent or estimate them. Leave unknown values missing, never substitute zero. The application calculates amounts. Do not use a catalog, external price lookup or your own price knowledge. An assistant message is not evidence of an Artisan-supplied fact.
 
-Do not begin with an administrative questionnaire. Dedicated Customer and Artisan Business identity, contacts, addresses, tax details, reference, dates and terms are unavailable. Do not ask for or infer these fields. If the Artisan supplies Customer or address details, ignore those administrative fields and capture the supplied work now. When the work has no size, quantity, unit or price, immediately call add_quote_line with the French work description and mode quantity, omitting the unknown optional fields and evidence. The application stores those fields as empty and shows the completion warning. Ask only for missing work facts after creating the line. When historyOmitted is true, clarify if missing conversation matters instead of reconstructing it.
+Do not begin with an administrative questionnaire. The Artisan Business identity, tax details, reference, dates, work-site address and terms are unavailable. Do not ask for or infer those fields. If the Artisan supplies Customer name, address or contact details, call set_customer_info to copy those exact values into this Quote only; do not create or modify a reusable Customer record, and never infer missing details. When the work has no size, quantity, unit or price, immediately call add_quote_line with the French work description and mode quantity, omitting the unknown optional fields and evidence. The application stores those fields as empty and shows the completion warning. Ask only for missing work facts after creating the line. When historyOmitted is true, clarify if missing conversation matters instead of reconstructing it.
 
 Publication is an explicit Artisan action outside your authority. You cannot publish, send or accept a Quote. The application may open the publication review only after the Artisan explicitly asks to publish or review. After tools finish, briefly describe what changed and ask any focused work clarification. Do not claim changes that tools did not make.`;
 
@@ -131,7 +131,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   const result = staged.result();
   return {
     ...result,
-    quote: result.changed.length ? result.quote : null,
+    quote: result.changed.length || result.changedFields?.length ? result.quote : null,
     message,
     reviewPublication: requestsPublicationReview(input.text),
   };
