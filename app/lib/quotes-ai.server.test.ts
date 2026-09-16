@@ -170,6 +170,49 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect((await undone.json()).draft.lines).toEqual([]);
   });
 
+  it("corrects existing lines, undoes the compound turn, and copies a section with unknown measurements", async () => {
+    let detail = await createDraft();
+    const baseline = {
+      ...complete(detail.draft.reference),
+      vatRegistered: false,
+      vatId: "",
+      sections: [{ id: "living", title: "Séjour" }, { id: "bedroom", title: "Chambre" }],
+      lines: [
+        { id: "living-wall", sectionId: "living", description: "Habillage mural en chêne", mode: "quantity", quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "bedroom-wall", sectionId: "bedroom", description: "Habillage mural en chêne", mode: "quantity", quantity: "8", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "bedroom-tablet", sectionId: "bedroom", description: "Pose de la tablette", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "150.00" },
+      ],
+    };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: baseline })).json();
+    expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 95_000, total: 95_000, complete: true });
+
+    const correction = scriptedModel([
+      toolTurn(
+        fauxToolCall("update_quote_line", { lineId: "living-wall", fields: { unitPrice: "45.00" }, evidence: [{ field: "unitPrice", text: "45" }] }),
+        fauxToolCall("update_quote_line", { lineId: "bedroom-wall", fields: { unitPrice: "45.00" }, evidence: [{ field: "unitPrice", text: "45" }] }),
+      ),
+      fauxAssistantMessage("Prix unitaires corrigés pour les deux habillages; quantités conservées."),
+    ]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Passe les deux prix unitaires à 45 CHF par m².", locale: "fr" }, undefined, correction.handler)).json();
+    expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 105_000, total: 105_000, complete: true });
+    expect(detail.messages.at(-1)).toMatchObject({ changed: ["living-wall", "bedroom-wall"] });
+
+    detail = await (await request({ action: "undo", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID() })).json();
+    expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 95_000, total: 95_000, complete: true });
+    expect(detail.messages.at(-1).en).toContain("Earlier messages describe the previous state");
+
+    const copy = scriptedModel([
+      toolTurn(fauxToolCall("duplicate_quote_section", { sectionId: "bedroom", measurementPolicy: "unknown" })),
+      fauxAssistantMessage("Chambre copiée; unité et prix conservés, quantité inconnue laissée vide."),
+    ]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Copie Chambre au Bureau, je ne connais pas la surface.", locale: "fr" }, undefined, copy.handler)).json();
+    expect(detail.draft.sections).toHaveLength(3);
+    expect(detail.draft.lines).toHaveLength(5);
+    expect(detail.draft.lines[3]).toMatchObject({ quantity: "", unit: "m²", unitPrice: "40.00", amount: "" });
+    expect(detail.draft.lines[4]).toMatchObject({ amount: "150.00" });
+    expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 110_000, total: null, complete: false });
+  });
+
   it("keeps staged tool changes out of PostgreSQL when a later tool call fails", async () => {
     const detail = await createDraft();
     const model = scriptedModel([

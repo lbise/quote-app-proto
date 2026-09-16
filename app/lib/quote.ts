@@ -84,6 +84,19 @@ const maxLines = 1_000;
 const maxLineCents = 1_000_000_000_000n;
 const maxScaledInput = BigInt(Number.MAX_SAFE_INTEGER);
 
+/** Place a line at the end of its section (or the unsectioned group). */
+export function appendQuoteLineToSection(lines: QuoteLine[], line: QuoteLine, sections: Pick<QuoteSection, "id">[]): QuoteLine[] {
+  const withoutLine = lines.filter((candidate) => candidate.id !== line.id);
+  const destination = line.sectionId === "" ? -1 : sections.findIndex((section) => section.id === line.sectionId);
+  let insertAt = withoutLine.length;
+  for (let index = 0; index < withoutLine.length; index += 1) {
+    const rank = withoutLine[index].sectionId === "" ? -1 : sections.findIndex((section) => section.id === withoutLine[index].sectionId);
+    if (rank > destination) { insertAt = index; break; }
+  }
+  withoutLine.splice(insertAt, 0, line);
+  return withoutLine;
+}
+
 export function emptyQuote(reference: string, defaults: Partial<QuoteData> = {}): QuoteData {
   const blank: QuoteData = {
     reference,

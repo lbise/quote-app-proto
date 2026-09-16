@@ -8,7 +8,7 @@ import { Textarea } from '../ui/textarea';
 import { Message, MessageContent, MessageHeader } from '../ui/message';
 import { Bubble, BubbleContent } from '../ui/bubble';
 import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '../ui/message-scroller';
-import { calculateQuote, money, type QuoteLine } from '../../lib/quote';
+import { appendQuoteLineToSection, calculateQuote, money, type QuoteLine } from '../../lib/quote';
 import { quoteLineId } from '../../lib/random-id';
 import { LineEditor, ManualEditor } from './manual-editor';
 import { RecordsEditor } from './records-editor';
@@ -22,26 +22,6 @@ import { useBlocker, useRouteLoaderData } from 'react-router';
 
 const clone = <T,>(value: T): T => structuredClone(value);
 const formatMoney = (value: number | null) => value === null ? '—' : money(value).replace(/\u202f/g, '’').replace(/\u00a0CHF$/, '');
-
-function sectionRank(sectionId: string, sections: { id: string }[]) {
-  if (!sectionId) return -1;
-  const rank = sections.findIndex((section) => section.id === sectionId);
-  return rank === -1 ? Number.MAX_SAFE_INTEGER : rank;
-}
-
-function appendToSection(lines: QuoteLine[], line: QuoteLine, sections: { id: string }[]) {
-  const withoutLine = lines.filter((candidate) => candidate.id !== line.id);
-  const destination = sectionRank(line.sectionId, sections);
-  let insertAt = withoutLine.length;
-  for (let index = 0; index < withoutLine.length; index += 1) {
-    if (sectionRank(withoutLine[index].sectionId, sections) > destination) {
-      insertAt = index;
-      break;
-    }
-  }
-  withoutLine.splice(insertAt, 0, line);
-  return withoutLine;
-}
 
 export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: { initial: QuoteRecord; locale: 'en' | 'fr'; onList: () => void; onLanguage: (locale: 'en' | 'fr') => void }) {
   const state = useQuote(initial);
@@ -92,11 +72,15 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   }
   function openModal(name: typeof modal) { returnLineId.current = null; returnFocus.current = document.activeElement as HTMLElement; setModal(name); }
   function edit(line: QuoteLine) { returnLineId.current = line.id; returnFocus.current = document.activeElement as HTMLElement; setEditLine(clone(line)); }
-  function reveal(id: string) {
+  function reveal(id: string, focusEdit = false) {
     const line = quote.lines.find(l => l.id === id);
     if (line) setSectionId(line.sectionId);
     setNarrowPanel('quote');
-    setTimeout(() => document.getElementById(`line-${id}`)?.scrollIntoView({ block: 'center' }), 0);
+    setTimeout(() => {
+      const target = document.getElementById(`line-${id}`);
+      target?.scrollIntoView({ block: 'center' });
+      if (focusEdit) target?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+    }, 0);
   }
   function revealField(field: string) {
     setNarrowPanel('quote');
@@ -171,7 +155,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
           <Message align={message.role === 'artisan' ? 'end' : 'start'} className={message.role === 'note' ? 'qp-note-message' : ''}><MessageContent>
             <MessageHeader>{message.role === 'artisan' ? t('Vous', 'You') : message.role === 'note' ? t('Historique', 'History') : 'Easy Quote'}</MessageHeader>
             <Bubble variant={message.role === 'artisan' ? 'secondary' : 'ghost'}><BubbleContent>{message[locale]}</BubbleContent></Bubble>
-            {!!message.changed?.length && <div className="qp-change-links"><span><Check />{message.changed.length} {t('lignes modifiées', 'lines changed')}</span>{message.changed?.some(id => quote.lines.some(line => line.id === id)) && <Button variant="link" size="sm" onClick={() => reveal(message.changed!.find(id => quote.lines.some(line => line.id === id))!)}>{t('Voir dans le devis', 'View in Quote')}<ArrowRight data-icon="inline-end" /></Button>}</div>}
+            {!!message.changed?.length && <div className="qp-change-links"><span><Check />{message.changed.length} {t('lignes modifiées', 'lines changed')}</span>{message.changed?.some(id => quote.lines.some(line => line.id === id)) && <Button variant="link" size="sm" onClick={() => reveal(message.changed!.find(id => quote.lines.some(line => line.id === id))!, true)}>{t('Voir dans le devis', 'View in Quote')}<ArrowRight data-icon="inline-end" /></Button>}</div>}
             {!!message.changedFields?.length && <div className="qp-change-links"><span><Check />{t('Détails du devis modifiés', 'Quote details changed')}</span><Button variant="link" size="sm" onClick={() => revealField(message.changedFields![0])}>{t('Voir les détails modifiés', 'View changed details')}<ArrowRight data-icon="inline-end" /></Button></div>}
           </MessageContent></Message>
         </MessageScrollerItem>)}
@@ -271,10 +255,10 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     {editLine && <LineEditor line={editLine} sections={quote.sections} locale={locale} onClose={closeModal} onApply={line => {
       const previous = quote.lines.find(candidate => candidate.id === line.id);
       const next = { ...quote, lines: previous && previous.sectionId !== line.sectionId
-        ? appendToSection(quote.lines, line, quote.sections)
+        ? appendQuoteLineToSection(quote.lines, line, quote.sections)
         : quote.lines.some(candidate => candidate.id === line.id)
           ? quote.lines.map(candidate => candidate.id === line.id ? line : candidate)
-          : appendToSection(quote.lines, line, quote.sections) };
+          : appendQuoteLineToSection(quote.lines, line, quote.sections) };
       apply(next, [line.id]);
     }} />}
     {modal === 'details' && <ManualEditor quote={quote} locale={locale} lockedReference={revisions.length > 0} onClose={closeModal} onApply={q => apply(q)} />}

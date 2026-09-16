@@ -138,6 +138,36 @@ describe("pi Quote assistant model boundary", () => {
     })]);
   });
 
+  it("refines existing lines and repeats a section through the targeted tools", async () => {
+    const work = {
+      ...emptyQuote("Q-refine"),
+      sections: [{ id: "bedroom", title: "Chambre" }],
+      lines: [
+        { id: "wall", sectionId: "bedroom", description: "Habillage mural", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "tablet", sectionId: "bedroom", description: "Pose de tablette", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "150.00" },
+      ],
+    };
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("read_work", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([
+        fauxToolCall("update_quote_line", { lineId: "wall", fields: { unitPrice: "45.00" }, evidence: [{ field: "unitPrice", text: "45" }] }),
+        fauxToolCall("duplicate_quote_section", { sectionId: "bedroom", measurementPolicy: "unknown" }),
+      ], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Updated the cladding price and copied Chambre with its unknown area left blank.")]),
+    ]);
+    const result = await generateQuoteChange({ ...input(), quote: work, text: "Set the cladding price to 45 CHF and copy Chambre; I do not know the area." }, boundary);
+    expect(result.changed).toHaveLength(3);
+    expect(result.quote?.lines).toEqual([
+      expect.objectContaining({ id: "wall", unitPrice: "45.00" }),
+      expect.objectContaining({ id: "tablet", amount: "150.00" }),
+      expect.objectContaining({ quantity: "", unit: "m²", unitPrice: "45.00" }),
+      expect.objectContaining({ amount: "150.00" }),
+    ]);
+    expect(result.changedFields).toEqual([expect.stringMatching(/^section:section-/)]);
+    expect(result.message).toContain("fixed amount retained: CHF 150.00");
+    expect(result.message).toContain("quantity left blank (measurement unknown)");
+  });
+
   it("captures Customer details supplied alongside the work", async () => {
     const { boundary } = modelBoundary([
       fauxAssistantMessage([fauxToolCall("set_customer_info", {
@@ -171,6 +201,10 @@ describe("pi Quote assistant model boundary", () => {
     const { boundary, contexts } = modelBoundary([fauxAssistantMessage([fauxText("Which room needs painting?")])]);
     const result = await generateQuoteChange(input(), boundary);
     expect(result).toMatchObject({ quote: null, changed: [], message: "Which room needs painting?", reviewPublication: false });
-    expect(contexts[0].tools?.map((tool) => tool.name)).toEqual(["read_work", "set_customer_info", "add_quote_line", "supply_missing_line_fields"]);
+    expect(contexts[0].tools?.map((tool) => tool.name)).toEqual([
+      "read_work", "set_customer_info", "add_quote_line", "supply_missing_line_fields",
+      "update_quote_line", "create_quote_section", "rename_quote_section", "move_quote_line",
+      "duplicate_quote_line", "duplicate_quote_section",
+    ]);
   });
 });

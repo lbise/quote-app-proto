@@ -26,14 +26,23 @@ describe("createQuoteTools", () => {
       "set_customer_info",
       "add_quote_line",
       "supply_missing_line_fields",
+      "update_quote_line",
+      "create_quote_section",
+      "rename_quote_section",
+      "move_quote_line",
+      "duplicate_quote_line",
+      "duplicate_quote_section",
     ]);
 
     const read = executor.tools[0]!;
     const response = await read.execute("call-1", {});
 
     expect(response.details).toEqual({
+      sections: [],
       lines: [{
+        number: 1,
         id: "manual-line",
+        sectionId: "",
         description: "Existing manual work",
         mode: "fixed",
         quantity: "",
@@ -144,6 +153,116 @@ describe("createQuoteTools", () => {
         { id: "captured", quantity: "2.000", unit: "h", unitPrice: "0.00" },
       ] },
     });
+  });
+
+  it("corrects populated and manually created lines only with explicit numeric evidence", async () => {
+    const quote = {
+      ...emptyQuote("Q-correction"),
+      lines: [
+        { id: "manual", sectionId: "", description: "Habillage mural", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+      ],
+    };
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Passe la description à Habillage mural en chêne et le prix unitaire à 45 CHF par m²." });
+    const update = executor.tools.find((tool) => tool.name === "update_quote_line")!;
+
+    await update.execute("correction", {
+      lineId: "manual",
+      fields: { description: "Habillage mural en chêne", unitPrice: "45.00" },
+      evidence: [{ field: "unitPrice", text: "45" }],
+    });
+    expect(executor.result()).toMatchObject({
+      changed: ["manual"],
+      quote: { lines: [{ id: "manual", description: "Habillage mural en chêne", quantity: "12", unitPrice: "45.00" }] },
+    });
+
+    const rejected = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Corrige cette ligne." });
+    await expect(rejected.tools.find((tool) => tool.name === "update_quote_line")!.execute("missing-evidence", {
+      lineId: "manual", fields: { unitPrice: "45.00" }, evidence: [],
+    })).rejects.toThrow("Tool input rejected.");
+
+    const cleared = createQuoteTools({ quote, capturedLineIds: [], artisanText: "La surface est inconnue." });
+    await cleared.tools.find((tool) => tool.name === "update_quote_line")!.execute("clear", {
+      lineId: "manual", fields: { quantity: "" }, clearFields: ["quantity"], evidence: [],
+    });
+    expect(cleared.result().quote?.lines[0].quantity).toBe("");
+    const unmarked = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Corrige cette ligne." });
+    await expect(unmarked.tools.find((tool) => tool.name === "update_quote_line")!.execute("clear-without-intent", {
+      lineId: "manual", fields: { quantity: "" }, evidence: [],
+    })).rejects.toThrow("Tool input rejected.");
+    const unrelated = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Prix sans TVA, garde la quantité." });
+    await expect(unrelated.tools.find((tool) => tool.name === "update_quote_line")!.execute("clear-with-unrelated-text", {
+      lineId: "manual", fields: { unitPrice: "" }, clearFields: ["unitPrice"], evidence: [],
+    })).rejects.toThrow("Tool input rejected.");
+  });
+
+  it("creates, renames, groups and moves work through stable application IDs", async () => {
+    const quote = {
+      ...emptyQuote("Q-sections"),
+      sections: [{ id: "living", title: "Séjour" }, { id: "office", title: "Bureau" }],
+      lines: [{ id: "line-1", sectionId: "living", description: "Pose", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "100.00" }],
+    };
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Ajoute la finition à 25 CHF." });
+    const create = executor.tools.find((tool) => tool.name === "create_quote_section")!;
+    const rename = executor.tools.find((tool) => tool.name === "rename_quote_section")!;
+    const add = executor.tools.find((tool) => tool.name === "add_quote_line")!;
+    const move = executor.tools.find((tool) => tool.name === "move_quote_line")!;
+
+    await create.execute("create", { title: "Finition" });
+    const createdSection = executor.result().quote!.sections[2];
+    await rename.execute("rename", { sectionId: "office", title: "Bureau principal" });
+    await add.execute("add", { description: "Finition", mode: "fixed", amount: "25.00", sectionId: createdSection.id, evidence: [{ field: "amount", text: "25" }] });
+    await move.execute("move", { lineId: "line-1", sectionId: "" });
+
+    expect(executor.result()).toMatchObject({
+      changed: [expect.any(String), "line-1"],
+      changedFields: [`section:${createdSection.id}`, "section:office"],
+      quote: { sections: [{ id: "living", title: "Séjour" }, { id: "office", title: "Bureau principal" }, { id: createdSection.id, title: "Finition" }] },
+    });
+    const lines = executor.result().quote!.lines;
+    expect(lines[0]).toMatchObject({ id: "line-1", sectionId: "" });
+    expect(lines[1]).toMatchObject({ sectionId: createdSection.id, description: "Finition" });
+  });
+
+  it("duplicates lines and sections with fresh IDs and clears unknown measurements", async () => {
+    const quote = {
+      ...emptyQuote("Q-copy"),
+      sections: [{ id: "bedroom", title: "Chambre" }],
+      lines: [
+        { id: "cladding", sectionId: "bedroom", description: "Habillage mural de 12 m² en chêne", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "tablet", sectionId: "bedroom", description: "Pose de tablette", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "150.00" },
+      ],
+    };
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Copie la Chambre au Bureau; la surface est inconnue." });
+    const duplicateSection = executor.tools.find((tool) => tool.name === "duplicate_quote_section")!;
+    await duplicateSection.execute("section-copy", { sectionId: "bedroom", measurementPolicy: "unknown" });
+
+    const result = executor.result();
+    expect(result.quote?.sections).toEqual([{ id: "bedroom", title: "Chambre" }, { id: expect.stringMatching(/^section-/), title: "Chambre copie" }]);
+    const copies = result.quote!.lines.slice(2);
+    expect(copies).toHaveLength(2);
+    expect(copies[0]).toMatchObject({ sectionId: result.quote!.sections[1].id, quantity: "", unit: "m²", unitPrice: "40.00", amount: "" });
+    expect(copies[0].description).not.toContain("12 m²");
+
+    const words = createQuoteTools({
+      quote: { ...quote, lines: [{ ...quote.lines[0], description: "Pose sur 12 mètres carrés, dimensions 30/60 mm" }] },
+      capturedLineIds: [], artisanText: "Copie avec surface inconnue.",
+    });
+    await words.tools.find((tool) => tool.name === "duplicate_quote_line")!.execute("words-copy", { lineId: "cladding", measurementPolicy: "unknown" });
+    expect(words.result().quote?.lines[1].description).not.toMatch(/12 mètres carrés|30\/60 mm/);
+    const mass = createQuoteTools({
+      quote: { ...quote, lines: [{ ...quote.lines[0], description: "Peinture de 12 litres et 5 kilogrammes" }] },
+      capturedLineIds: [], artisanText: "Copie avec quantité inconnue.",
+    });
+    await mass.tools.find((tool) => tool.name === "duplicate_quote_line")!.execute("mass-copy", { lineId: "cladding", measurementPolicy: "unknown" });
+    expect(mass.result().quote?.lines[1].description).not.toMatch(/12 litres|5 kilogrammes/);
+    expect(copies[1]).toMatchObject({ sectionId: result.quote!.sections[1].id, amount: "150.00" });
+    expect(new Set(result.changed)).toEqual(new Set(copies.map((line) => line.id)));
+
+    const lineCopy = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Copie cette ligne." });
+    const duplicateLine = lineCopy.tools.find((tool) => tool.name === "duplicate_quote_line")!;
+    await duplicateLine.execute("line-copy", { lineId: "tablet" });
+    expect(lineCopy.result().quote?.lines).toHaveLength(3);
+    expect(lineCopy.result().quote?.lines[2]).toMatchObject({ id: expect.not.stringMatching("tablet"), amount: "150.00", sectionId: "bedroom" });
   });
 
   it("accepts trusted Artisan history and an exact original line value as evidence", async () => {

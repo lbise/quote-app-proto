@@ -465,7 +465,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
         await assertReference(transaction, businessId, id!, previous.reference, published.length > 0);
       }
       await transaction.update(quote).set({ draft: previous, undoDraft: null, capturedLineIds: trustedCapturedLineIds(record.undoCapturedLineIds, previous), undoCapturedLineIds: null, title: previous.title, reference: previous.reference, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
-      await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id!, role: "note", fr: "Dernière modification annulée.", en: "Latest change undone." });
+      await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id!, role: "note", fr: "Dernière modification annulée. Les messages précédents décrivent l’état antérieur.", en: "Latest change undone. Earlier messages describe the previous state." });
     } else if (action === "publish") {
       if (record.pending) throw new RequestFailure(409, "assistant_pending");
       const checked = asQuote(requireDraft(record), false);
