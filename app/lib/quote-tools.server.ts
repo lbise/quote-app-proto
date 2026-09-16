@@ -681,11 +681,11 @@ function assertEvidence(value: unknown, context: EvidenceContext, supplied: Reco
       if (matchingEvidence) throw new Error("invalid");
       continue;
     }
-    if (!matchingEvidence || !numericEvidenceMatches(suppliedValue, matchingEvidence.text)) throw new Error("invalid");
+    if (!matchingEvidence || !numericEvidenceMatches(suppliedValue, matchingEvidence.text, field)) throw new Error("invalid");
     if (matchingEvidence.sourceLineId !== undefined) {
       const sourceLine = context.originalLines.get(matchingEvidence.sourceLineId);
       if (!sourceLine || normalizedDecimal(sourceLine[field]) !== normalizedDecimal(suppliedValue)) throw new Error("invalid");
-    } else if (!context.artisanTexts.some((text) => evidenceAppears(text, matchingEvidence.text) && numericEvidenceMatches(suppliedValue, text))) {
+    } else if (!context.artisanTexts.some((text) => evidenceAppears(text, matchingEvidence.text) && numericEvidenceMatches(suppliedValue, text, field))) {
       throw new Error("invalid");
     }
   }
@@ -696,9 +696,20 @@ function evidenceAppears(text: string, evidence: string): boolean {
   return compact(text).includes(compact(evidence));
 }
 
-function numericEvidenceMatches(value: string, evidence: string): boolean {
+function numericEvidenceMatches(value: string, evidence: string, field?: EvidenceField): boolean {
   const expected = normalizedDecimal(value);
-  return expected !== undefined && [...evidencedNumbers(evidence)].some((candidate) => normalizedDecimal(candidate) === expected);
+  if (expected === undefined) return false;
+  if ([...evidencedNumbers(evidence)].some((candidate) => normalizedDecimal(candidate) === expected)) return true;
+  return field === "quantity" && derivedWallAreaMatches(expected, evidence);
+}
+
+function derivedWallAreaMatches(expected: string, evidence: string): boolean {
+  const text = evidence.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+  const match = /(\d+(?:[.,]\d+)?)\s*m?\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*m?\s*[,:]?\s*(?:sur|with|and|hauteur(?:\s+de)?|height(?:\s+of)?)\s+(\d+(?:[.,]\d+)?)\s*m?(?:\s+(?:de\s+)?(?:plafond|ceiling|high|hauteur))?/.exec(text);
+  if (!match) return false;
+  const [length, width, height] = match.slice(1).map(Number);
+  if (![length, width, height].every(Number.isFinite)) return false;
+  return normalizedDecimal((2 * (length + width) * height).toFixed(3)) === expected;
 }
 
 function* evidencedNumbers(text: string): Iterable<string> {

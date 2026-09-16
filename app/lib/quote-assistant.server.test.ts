@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type Context } from "@earendil-works/pi-ai";
 
-import { emptyQuote } from "./quote";
+import { calculateQuote, emptyQuote } from "./quote";
 import { generateQuoteChange, type QuoteAIModelBoundary } from "./quote-assistant.server";
 
 function modelBoundary(responses: ReturnType<typeof fauxAssistantMessage>[]) {
@@ -121,9 +121,13 @@ describe("pi Quote assistant model boundary", () => {
       fauxAssistantMessage([fauxToolCall("add_quote_line", {
         description: "Repeindre la chambre d’Eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond",
         mode: "quantity",
+        quantity: "36",
         unit: "m²",
         unitPrice: "12.50",
-        evidence: [{ field: "unitPrice", text: "12.50chf" }],
+        evidence: [
+          { field: "quantity", text: "2x4m sur 3m de plafond" },
+          { field: "unitPrice", text: "12.50chf" },
+        ],
       })], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("J’ai ajouté la ligne; la surface reste à confirmer.")]),
     ]);
@@ -136,8 +140,9 @@ describe("pi Quote assistant model boundary", () => {
       description: "Repeindre la chambre d’Eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond",
       unit: "m²",
       unitPrice: "12.50",
-      quantity: "",
+      quantity: "36",
     });
+    expect(calculateQuote(result.quote)).toMatchObject({ subtotal: 45_000 });
   });
 
   it("creates a line with empty commercial fields when the Artisan gives only work details", async () => {
