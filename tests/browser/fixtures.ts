@@ -106,6 +106,38 @@ export async function createLongQuote(artisan: Artisan): Promise<QuoteDetail> {
   return saved.data as QuoteDetail;
 }
 
+export async function createSectionedQuote(artisan: Artisan): Promise<QuoteDetail> {
+  const detail = await createEmptyQuote(artisan);
+  const quote = {
+    ...detail.draft,
+    title: "Agencements fictifs",
+    customerName: "Maison Exemple SA",
+    customerAddress: "Rue Exemple 8\n1000 Lausanne",
+    customerContact: "",
+    businessName: "Atelier Exemple Sàrl",
+    businessAddress: "Rue Exemple 1\n1000 Lausanne",
+    businessContact: "bonjour@example.test",
+    vatRegistered: true,
+    vatId: "CHE-000.000.000 TVA",
+    issueDate: "2026-09-01",
+    siteAddress: "Rue Exemple 8\n1000 Lausanne",
+    terms: "Prix en CHF.",
+    sections: [
+      { id: "section-living", title: "Séjour" },
+      { id: "section-bedroom", title: "Chambre" },
+      { id: "section-office", title: "Bureau" },
+    ],
+    lines: [
+      { id: "line-living-1", sectionId: "section-living", description: "Habillage mural en chêne", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "100.00" },
+      { id: "line-living-2", sectionId: "section-living", description: "Pose des panneaux", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "50.00" },
+      { id: "line-bedroom-1", sectionId: "section-bedroom", description: "Tablette murale", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "75.00" },
+    ],
+  };
+  const saved = await requestQuote(artisan, { action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote });
+  if (!saved.ok) throw new Error(`Browser sectioned Quote seed save failed with ${saved.status}.`);
+  return saved.data as QuoteDetail;
+}
+
 export async function createCompleteQuote(artisan: Artisan, amount = "100.00"): Promise<QuoteDetail> {
   const detail = await createEmptyQuote(artisan);
   const quote = {

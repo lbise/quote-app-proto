@@ -1,4 +1,8 @@
 /** UUID v4, including HTTP LAN/Tailscale pages where crypto.randomUUID is unavailable. */
+export function quoteLineId() {
+  return `line-${randomUUID()}`
+}
+
 export function randomUUID(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
 

@@ -117,6 +117,76 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(await undone.json()).toMatchObject({ draft: { title: first.title } });
   });
 
+  it("persists section structure and deliberate copies through reopen and one structural undo", async () => {
+    const created = await request({ action: "create", requestId: crypto.randomUUID() });
+    let detail = await created.json();
+    const original = {
+      ...complete(detail.draft.reference),
+      sections: [
+        { id: "section-a", title: "Séjour" },
+        { id: "section-b", title: "Chambre" },
+      ],
+      lines: [
+        { id: "line-a", sectionId: "section-a", description: "Habillage mural", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "100.00" },
+        { id: "line-b", sectionId: "section-b", description: "Tablette", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "50.00" },
+      ],
+    };
+    const firstSave = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: original });
+    expect(firstSave.status).toBe(200);
+    detail = await firstSave.json();
+
+    const structural = {
+      ...original,
+      sections: [
+        { id: "section-b", title: "Chambre nord" },
+        { id: "section-a", title: "Séjour" },
+      ],
+      lines: [
+        { ...original.lines[1], id: "line-b-copy", sectionId: "section-b" },
+        original.lines[1],
+        original.lines[0],
+      ],
+    };
+    const changed = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: structural });
+    expect(changed.status).toBe(200);
+    detail = await changed.json();
+    expect(detail.draft).toMatchObject({
+      sections: structural.sections,
+      lines: structural.lines,
+    });
+    expect(new Set(detail.draft.lines.map((line: { id: string }) => line.id)).size).toBe(3);
+
+    const reopened = await request(undefined, detail.id);
+    expect((await reopened.json()).draft).toMatchObject({ sections: structural.sections, lines: structural.lines });
+    const undone = await request({ action: "undo", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID() });
+    expect((await undone.json()).draft).toMatchObject({ sections: original.sections, lines: original.lines });
+  });
+
+  it("publishes authoritative section subtotals and global line numbering", async () => {
+    const created = await request({ action: "create", requestId: crypto.randomUUID() });
+    let detail = await created.json();
+    const quote = {
+      ...complete(detail.draft.reference),
+      sections: [
+        { id: "section-a", title: "Séjour" },
+        { id: "section-b", title: "Chambre" },
+      ],
+      lines: [
+        { id: "line-a", sectionId: "section-a", description: "Habillage", mode: "quantity", quantity: "1.005", unit: "m", unitPrice: "10.00", amount: "" },
+        { id: "line-b", sectionId: "section-b", description: "Tablette", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "20.00" },
+      ],
+    };
+    const saved = await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote });
+    detail = await saved.json();
+    const published = await request({ action: "publish", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID() });
+    expect(published.status).toBe(200);
+    expect((await published.json()).revisions[0].calculation).toMatchObject({
+      lines: [{ id: "line-a", number: 1, amount: 1005 }, { id: "line-b", number: 2, amount: 2000 }],
+      sections: [{ id: "section-a", subtotal: 1005, incomplete: false }, { id: "section-b", subtotal: 2000, incomplete: false }],
+      subtotal: 3005,
+    });
+  });
+
   it("serializes duplicate customer creation keys and rejects changed payloads", async () => {
     const requestId = crypto.randomUUID();
     const customer = { name: "Maison Exemple", address: "Rue Exemple 1", contact: "Camille" };
