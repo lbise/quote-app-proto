@@ -116,18 +116,21 @@ describe("pi Quote assistant model boundary", () => {
     await expect(generateQuoteChange(input(), boundary)).rejects.toThrow("could not complete");
     expect(fake.getPendingResponseCount()).toBe(1);
   });
-  it("captures a French line when the Artisan writes the CHF price without a space", async () => {
+  it("calculates typed room dimensions and accepts compact CHF pricing", async () => {
     const { boundary } = modelBoundary([
       fauxAssistantMessage([fauxToolCall("add_quote_line", {
         description: "Repeindre la chambre d’Eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond",
         mode: "quantity",
-        quantity: "36",
+        quantityCalculation: {
+          kind: "room_wall_area",
+          length: "2",
+          width: "4",
+          height: "3",
+          source: "2x4m sur 3m de plafond",
+        },
         unit: "m²",
         unitPrice: "12.50",
-        evidence: [
-          { field: "quantity", text: "2x4m sur 3m de plafond" },
-          { field: "unitPrice", text: "12.50chf" },
-        ],
+        evidence: [{ field: "unitPrice", text: "12.50chf" }],
       })], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("J’ai ajouté la ligne; la surface reste à confirmer.")]),
     ]);

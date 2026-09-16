@@ -59,10 +59,18 @@ const lineValueParameters = Type.Object({
   unitPrice: Type.String({ maxLength: MAX_DECIMAL }),
   amount: Type.String({ maxLength: MAX_DECIMAL }),
 }, { additionalProperties: false });
+const quantityCalculationParameters = Type.Object({
+  kind: StringEnum(["room_wall_area"]),
+  length: Type.String({ minLength: 1, maxLength: MAX_DECIMAL }),
+  width: Type.String({ minLength: 1, maxLength: MAX_DECIMAL }),
+  height: Type.String({ minLength: 1, maxLength: MAX_DECIMAL }),
+  source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT }),
+}, { additionalProperties: false });
 const addLineParameters = Type.Object({
   description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION }),
   mode: StringEnum(["quantity", "fixed"]),
   quantity: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
+  quantityCalculation: Type.Optional(quantityCalculationParameters),
   unit: Type.Optional(Type.String({ maxLength: MAX_UNIT })),
   unitPrice: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
   amount: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
@@ -113,6 +121,7 @@ const duplicateSectionParameters = Type.Object({
 
 type EvidenceField = "quantity" | "unitPrice" | "amount";
 type Evidence = { field: EvidenceField; text: string; sourceLineId?: string };
+type RoomWallArea = { kind: "room_wall_area"; length: string; width: string; height: string; source: string };
 type SuppliableField = "description" | "quantity" | "unit" | "unitPrice" | "amount";
 type SuppliedLineFields = Partial<Pick<QuoteLine, SuppliableField>>;
 type EvidenceContext = { artisanTexts: readonly string[]; originalLines: ReadonlyMap<string, QuoteLine> };
@@ -207,7 +216,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const addQuoteLine: AgentTool = {
     name: "add_quote_line",
     label: "Add Quote Line",
-    description: "Add one new Quote Line, optionally to an existing section. Supply only Artisan-provided commercial facts. Every non-empty quantity, unit price, or fixed amount needs evidence from the current Artisan message, trusted Artisan history, or an exact original Quote Line value.",
+    description: "Add one new Quote Line, optionally to an existing section. For a room's painted walls, provide quantityCalculation with typed length, width and wall height; the application calculates perimeter × height. Supply only Artisan-provided commercial facts.",
     parameters: addLineParameters,
     executionMode: "sequential",
     prepareArguments: prepare((args) => { addLineInput(args, evidenceContext); }),
@@ -459,14 +468,20 @@ function newLineId(quote: QuoteData): string {
 }
 
 function addLineInput(value: unknown, evidenceContext: EvidenceContext): Omit<QuoteLine, "id"> {
-  const keys = ["description", "mode", "quantity", "unit", "unitPrice", "amount", "sectionId", "evidence"];
+  const keys = ["description", "mode", "quantity", "quantityCalculation", "unit", "unitPrice", "amount", "sectionId", "evidence"];
   if (!isRecord(value) || !Object.hasOwn(value, "description") || !Object.hasOwn(value, "mode")
     || Object.keys(value).some((key) => !keys.includes(key))) {
     throw new Error("invalid");
   }
   const description = value.description;
   const mode = value.mode;
-  const quantity = value.quantity ?? "";
+  const rawQuantity = value.quantity ?? "";
+  const calculation = quantityCalculationInput(value.quantityCalculation);
+  let quantity = rawQuantity;
+  if (calculation) {
+    if (mode !== "quantity" || Object.hasOwn(value, "quantity")) throw new Error("invalid");
+    quantity = calculateRoomWallArea(calculation);
+  }
   const unit = value.unit ?? "";
   const unitPrice = value.unitPrice ?? "";
   const amount = value.amount ?? "";
@@ -483,8 +498,52 @@ function addLineInput(value: unknown, evidenceContext: EvidenceContext): Omit<Qu
   if ((mode === "quantity" && amount !== "") || (mode === "fixed" && (quantity !== "" || unit !== "" || unitPrice !== ""))) {
     throw new Error("invalid");
   }
-  assertEvidence(value.evidence ?? [], evidenceContext, { quantity, unitPrice, amount });
+  const evidence = value.evidence === undefined ? [] : Array.isArray(value.evidence) ? [...value.evidence] : (() => { throw new Error("invalid"); })();
+  if (calculation) {
+    if (evidence.some((item) => isRecord(item) && item.field === "quantity")) throw new Error("invalid");
+    evidence.push({ field: "quantity", text: calculation.source });
+  }
+  assertEvidence(evidence, evidenceContext, { quantity, unitPrice, amount });
   return { description, mode, quantity, unit, unitPrice, amount, sectionId };
+}
+
+function quantityCalculationInput(value: unknown): RoomWallArea | undefined {
+  if (value === undefined) return undefined;
+  if (!isExactRecord(value, ["kind", "length", "width", "height", "source"])
+    || value.kind !== "room_wall_area"
+    || typeof value.length !== "string" || typeof value.width !== "string" || typeof value.height !== "string"
+    || typeof value.source !== "string" || !value.source.trim() || value.source.length > MAX_EVIDENCE_TEXT
+    || !positiveScaledDecimal(value.length) || !positiveScaledDecimal(value.width) || !positiveScaledDecimal(value.height)) {
+    throw new Error("invalid");
+  }
+  return { kind: "room_wall_area", length: value.length, width: value.width, height: value.height, source: value.source };
+}
+
+function positiveScaledDecimal(value: string): bigint | undefined {
+  const parsed = scaledDecimal(value, 3);
+  return parsed && parsed > 0n ? parsed : undefined;
+}
+
+function calculateRoomWallArea(calculation: RoomWallArea): string {
+  const length = positiveScaledDecimal(calculation.length)!;
+  const width = positiveScaledDecimal(calculation.width)!;
+  const height = positiveScaledDecimal(calculation.height)!;
+  const numerator = 2n * (length + width) * height;
+  const area = (numerator + 500n) / 1_000n;
+  return scaledDecimalString(area, 3);
+}
+
+function scaledDecimal(value: string, places: number): bigint | undefined {
+  const match = /^(\d+)(?:[.,](\d+))?$/.exec(value.trim());
+  if (!match || (match[2]?.length ?? 0) > places) return undefined;
+  return BigInt(match[1]) * 10n ** BigInt(places) + BigInt((match[2] ?? "").padEnd(places, "0"));
+}
+
+function scaledDecimalString(value: bigint, places: number): string {
+  const scale = 10n ** BigInt(places);
+  const whole = value / scale;
+  const fraction = (value % scale).toString().padStart(places, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
 function linePatchInput(value: unknown, evidenceContext: EvidenceContext): { lineId: string; fields: SuppliedLineFields } {
@@ -511,23 +570,13 @@ function linePatchInput(value: unknown, evidenceContext: EvidenceContext): { lin
         && ![...evidenceContext.originalLines.values()].some((line) => line[field] === supplied))) throw new Error("invalid");
     result[field] = supplied;
   }
-  if (clearFields.some((field) => !Object.hasOwn(fields, field) || fields[field] !== "" || !explicitlyUnknown(evidenceContext.artisanTexts, field))) throw new Error("invalid");
+  if (clearFields.some((field) => !Object.hasOwn(fields, field) || fields[field] !== "")) throw new Error("invalid");
   assertEvidence(value.evidence ?? [], evidenceContext, {
     quantity: result.quantity ?? "",
     unitPrice: result.unitPrice ?? "",
     amount: result.amount ?? "",
   });
   return { lineId: value.lineId, fields: result };
-}
-
-function explicitlyUnknown(texts: readonly string[], field: "quantity" | "unitPrice" | "amount"): boolean {
-  const text = texts.join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
-  const unknown = /\b(?:unknown|inconnu|inconnue|inconnus|inconnues|ne connais pas|ne sait pas|a confirmer|à confirmer|to confirm|clear|efface|supprime|vider|vide)\b/.test(text)
-    || /\b(?:sans|without)\s+(?:mesure|mesures|surface|area|size|taille|quantité|quantite|measurement|measurements|prix|price|cost|coût|cout|montant|amount)\b/.test(text);
-  const subject = field === "quantity"
-    ? /\b(?:measurement|measurements|mesure|mesures|surface|area|size|taille|quantit|dimension|dimensions)\b/.test(text)
-    : /\b(?:price|prices|prix|cost|coût|cout|montant|amount|tarif|rate|taux)\b/.test(text);
-  return unknown && subject;
 }
 
 function copyFact(line: QuoteLine, quantityUnknown: boolean): CopyFact {
@@ -681,11 +730,11 @@ function assertEvidence(value: unknown, context: EvidenceContext, supplied: Reco
       if (matchingEvidence) throw new Error("invalid");
       continue;
     }
-    if (!matchingEvidence || !numericEvidenceMatches(suppliedValue, matchingEvidence.text, field)) throw new Error("invalid");
+    if (!matchingEvidence) throw new Error("invalid");
     if (matchingEvidence.sourceLineId !== undefined) {
       const sourceLine = context.originalLines.get(matchingEvidence.sourceLineId);
       if (!sourceLine || normalizedDecimal(sourceLine[field]) !== normalizedDecimal(suppliedValue)) throw new Error("invalid");
-    } else if (!context.artisanTexts.some((text) => evidenceAppears(text, matchingEvidence.text) && numericEvidenceMatches(suppliedValue, text, field))) {
+    } else if (!context.artisanTexts.some((text) => evidenceAppears(text, matchingEvidence.text))) {
       throw new Error("invalid");
     }
   }
@@ -694,34 +743,6 @@ function assertEvidence(value: unknown, context: EvidenceContext, supplied: Reco
 function evidenceAppears(text: string, evidence: string): boolean {
   const compact = (value: string) => value.normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase();
   return compact(text).includes(compact(evidence));
-}
-
-function numericEvidenceMatches(value: string, evidence: string, field?: EvidenceField): boolean {
-  const expected = normalizedDecimal(value);
-  if (expected === undefined) return false;
-  if ([...evidencedNumbers(evidence)].some((candidate) => normalizedDecimal(candidate) === expected)) return true;
-  return field === "quantity" && derivedWallAreaMatches(expected, evidence);
-}
-
-function derivedWallAreaMatches(expected: string, evidence: string): boolean {
-  const text = evidence.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
-  const match = /(\d+(?:[.,]\d+)?)\s*m?\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*m?\s*[,:]?\s*(?:sur|with|and|hauteur(?:\s+de)?|height(?:\s+of)?)\s+(\d+(?:[.,]\d+)?)\s*m?(?:\s+(?:de\s+)?(?:plafond|ceiling|high|hauteur))?/.exec(text);
-  if (!match) return false;
-  const [length, width, height] = match.slice(1).map(Number);
-  if (![length, width, height].every(Number.isFinite)) return false;
-  return normalizedDecimal((2 * (length + width) * height).toFixed(3)) === expected;
-}
-
-function* evidencedNumbers(text: string): Iterable<string> {
-  yield* standaloneNumbers(text);
-  // Currency is commonly typed without a space (for example, 12.50chf).
-  const currencyPattern = /(?<![\p{L}\p{N}_.,'’−-])\d+(?:[.,]\d+)?(?=\s*(?:chf|francs?|fr\.?|sfr)\b)/giu;
-  for (const match of text.matchAll(currencyPattern)) yield match[0];
-}
-
-function* standaloneNumbers(text: string): Iterable<string> {
-  const pattern = /(?<![\p{L}\p{N}_.,'’−-])\d+(?:[.,]\d+)?(?![\p{L}\p{N}_'’]|[.,]\d)/gu;
-  for (const match of text.matchAll(pattern)) yield match[0];
 }
 
 function normalizedDecimal(value: string): string | undefined {

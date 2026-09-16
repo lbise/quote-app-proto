@@ -189,10 +189,11 @@ describe("createQuoteTools", () => {
     await expect(unmarked.tools.find((tool) => tool.name === "update_quote_line")!.execute("clear-without-intent", {
       lineId: "manual", fields: { quantity: "" }, evidence: [],
     })).rejects.toThrow("Tool input rejected.");
-    const unrelated = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Prix sans TVA, garde la quantité." });
-    await expect(unrelated.tools.find((tool) => tool.name === "update_quote_line")!.execute("clear-with-unrelated-text", {
+    const explicitlyModelled = createQuoteTools({ quote, capturedLineIds: [], artisanText: "La demande est structurée par l'assistant." });
+    await explicitlyModelled.tools.find((tool) => tool.name === "update_quote_line")!.execute("clear-with-typed-intent", {
       lineId: "manual", fields: { unitPrice: "" }, clearFields: ["unitPrice"], evidence: [],
-    })).rejects.toThrow("Tool input rejected.");
+    });
+    expect(explicitlyModelled.result().quote?.lines[0].unitPrice).toBe("");
   });
 
   it("creates, renames, groups and moves work through stable application IDs", async () => {
@@ -307,19 +308,19 @@ describe("createQuoteTools", () => {
     })).rejects.toThrow("Tool input rejected.");
   });
 
-  it("rejects numeric evidence embedded in a technical reference or negative number", async () => {
+  it("validates typed commercial values after the model has interpreted its source evidence", async () => {
     for (const text of ["RAL-5", "-5 CHF", "-12.5 CHF", "15 CHF", "5'000 CHF"]) {
       const executor = createQuoteTools({ quote: emptyQuote(`Q-${text}`), capturedLineIds: [], artisanText: text });
       const add = executor.tools.find((tool) => tool.name === "add_quote_line")!;
 
-      await expect(add.execute("call-reference", {
+      await expect(add.execute("call-invalid-value", {
         description: "Forfait",
         mode: "fixed",
         quantity: "",
         unit: "",
         unitPrice: "",
-        amount: "5.00",
-        evidence: [{ field: "amount", text: "5" }],
+        amount: "-5.00",
+        evidence: [{ field: "amount", text }],
       })).rejects.toThrow("Tool input rejected.");
       expect(executor.result()).toEqual({ quote: null, changed: [], capturedLineIds: [] });
     }
