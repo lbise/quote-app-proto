@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLoaderData, useNavigate, useRouteLoaderData, useSearchParams } from 'react-router';
+import { useLoaderData, useNavigate, useSearchParams } from 'react-router';
 import { ArrowRight, FileText, Plus, TriangleAlert } from 'lucide-react';
 import type { Route } from './+types/quotes';
 import { requireApprovedArtisan } from '../lib/auth.server';
@@ -13,8 +13,6 @@ import QuoteWorkspace from '../components/quotes/workspace';
 import { quoteRequest, type QuoteList, type QuoteRecord } from '../components/quotes/use-quote';
 import { QuoteHeader } from '../components/quotes/quote-header';
 import { RecordsEditor } from '../components/quotes/records-editor';
-import { AssistantDisclosure } from '../components/quotes/assistant-disclosure';
-import type { QuoteAIDisclosure } from '../lib/quote-ai-disclosure';
 import '../components/quotes/quotes.css';
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -28,7 +26,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
 
 export default function Quotes() {
   const initial = useLoaderData<typeof loader>();
-  const { quoteAI } = useRouteLoaderData('root') as { quoteAI: QuoteAIDisclosure };
   const [locale, setLocale] = useState(initial.locale);
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -41,7 +38,6 @@ export default function Quotes() {
   const [createId, setCreateId] = useState(() => randomUUID());
   const [filter, setFilter] = useState('');
   const [recordsOpen, setRecordsOpen] = useState(false);
-  const [privacy, setPrivacy] = useState(false);
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
 
   useEffect(() => {
@@ -70,8 +66,7 @@ export default function Quotes() {
   }
   if (record && id === record.id) return <QuoteWorkspace key={record.id} initial={record} locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} />;
   return <div className="qp-app qp-variant-b" lang={locale}>
-    <QuoteHeader locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} onRecords={() => setRecordsOpen(true)} onPrivacy={() => setPrivacy(v => !v)} />
-    {privacy && <AssistantDisclosure locale={locale} processing={quoteAI} onClose={() => setPrivacy(false)} />}
+    <QuoteHeader locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} onRecords={() => setRecordsOpen(true)} />
     <main className="qp-quote-list">
       <div className="qp-list-heading"><div><p>{t('Votre atelier', 'Your workshop')}</p><h1>{t('Mes devis', 'My Quotes')}</h1></div><Button disabled={creating} onClick={() => void create()}><Plus data-icon="inline-start" />{t('Nouveau devis', 'New Quote')}</Button></div>
       {error && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{t('Chargement impossible', 'Could not load')}</AlertTitle><AlertDescription>{t('Vérifiez votre connexion puis réessayez.', 'Check your connection and retry.')}<Button variant="outline" onClick={() => setAttempt(v => v + 1)}>{t('Réessayer', 'Retry')}</Button></AlertDescription></Alert>}

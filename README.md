@@ -14,10 +14,11 @@ Start the local PostgreSQL service, install dependencies and apply the migration
 docker compose up -d postgres
 npm ci
 cp .env.example .env
+# Set GEMINI_API_KEY in .env or the shell before starting the app.
 npm run db:migrate
 ```
 
-Start the development server on localhost with `npm run dev`, or bind it to the machine's private interfaces with `npm run dev:network`. Server-side development commands load `.env`; the file is ignored by Git and excluded from Docker images. Production uses runtime environment variables instead.
+Start the development server on localhost with `npm run dev`, or bind it to the machine's private interfaces with `npm run dev:network`. The assistant is always configured and the server checks its provider, model and API key at startup. Server-side development commands load `.env`; the file is ignored by Git and excluded from Docker images. Production uses runtime environment variables instead.
 
 The example environment uses captured mail (`EMAIL_DELIVERY=fake`) and `AUTH_ALLOWED_EMAILS=*`, so local development never sends real messages. Captured messages are held in the server process and are not exposed by an application endpoint. Use a specific address instead of `*` when testing the allowlist behavior.
 

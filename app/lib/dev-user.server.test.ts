@@ -62,7 +62,7 @@ it.runIf(Boolean(process.env.TEST_DATABASE_URL))('creates a verified local Artis
   const email = `dev-command-${crypto.randomUUID()}@example.test`;
   const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
   const connection = connectDatabase(process.env.TEST_DATABASE_URL!);
-  const localConfig = `# Keep unrelated configuration\nDATABASE_URL=${process.env.TEST_DATABASE_URL}\nAUTH_ALLOWED_EMAILS=another@example.test\nQUOTE_AI_ENABLED=false\n`;
+  const localConfig = `# Keep unrelated configuration\nDATABASE_URL=${process.env.TEST_DATABASE_URL}\nAUTH_ALLOWED_EMAILS=another@example.test\n`;
   try {
     const result = await runSetup(localConfig, [email, password, password, 'http://192.168.1.20:5173']);
     expect(result.code, result.output).toBe(0);
@@ -76,7 +76,6 @@ it.runIf(Boolean(process.env.TEST_DATABASE_URL))('creates a verified local Artis
     expect(config.BETTER_AUTH_URL).toBe('http://192.168.1.20:5173');
     expect(config.AUTH_TRUSTED_ORIGINS).toContain('http://192.168.1.20:5173');
     expect(config.AUTH_TRUSTED_ORIGINS).toContain('http://localhost:5173');
-    expect(config.QUOTE_AI_ENABLED).toBe('false');
     expect(config.BETTER_AUTH_SECRET.length).toBeGreaterThanOrEqual(32);
 
     process.env.AUTH_ALLOWED_EMAILS = config.AUTH_ALLOWED_EMAILS;

@@ -49,7 +49,9 @@ export default defineConfig({
       // database also permits unique fixture accounts across repeated runs.
       AUTH_ALLOWED_EMAILS: "browser@example.com *",
       EMAIL_DELIVERY: "fake",
-      QUOTE_AI_ENABLED: "false",
+      QUOTE_AI_PROVIDER: "google",
+      QUOTE_AI_MODEL: "gemini-2.5-flash",
+      GEMINI_API_KEY: "browser-test-key",
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "browser-test-secret-browser-test-secret",
     },
   },

@@ -1,10 +1,10 @@
 # Gemini model selection
 
-Checked 2026-09-15. This is a model choice for Easy Quote's isolated, fictional-data initial-capture test. It does not approve Google or any other provider for real Artisan Business or Customer data.
+Checked 2026-09-15. This is a model choice for Easy Quote's development assistant. It does not approve Google or any other provider for real Artisan Business or Customer data.
 
 ## Recommendation
 
-Use `gemini-3.5-flash-lite` instead of `gemini-2.5-flash` when the fictional workflow next changes model. It is a stable, registered model that matches this narrow job: short bilingual French or English chat, structured custom-tool calls, no web or live interaction, and an Artisan reviewing every change. Google calls it low-latency and cost-effective for high-volume agentic work and simple extraction. [Model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
+Use `gemini-3.5-flash-lite` instead of `gemini-2.5-flash` for the development assistant. It is a stable, registered model that matches this narrow job: short bilingual French or English chat, structured custom-tool calls, no web or live interaction, and an Artisan reviewing every change. Google calls it low-latency and cost-effective for high-volume agentic work and simple extraction. [Model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
 
 Do not use an alias such as `gemini-flash-lite-latest`. A pinned ID makes a model change deliberate and testable.
 
@@ -39,4 +39,4 @@ The installed `@earendil-works/pi-ai` 0.85.1 Google catalog registers all four e
 
 The free tier does not reopen the production question. Google's terms say unpaid Gemini API quota is an Unpaid Service: Google may use submitted content and responses to improve products, and human reviewers may process them. They also say an API client made available to users in the EEA, Switzerland, or UK may use only Paid Services. Paid Gemini API access requires a Cloud project with active billing; Google says it does not use paid prompts or responses to improve products, but logs them for a limited period for safety, security, and legal obligations. [Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms)
 
-Easy Quote has no production provider approval or real-data processing approval. Keep `QUOTE_AI_ENABLED` in its existing gated state and use only the documented fictional-data workflow until the provider, plan, region, retention, and data-processing review is complete. This research changed no application configuration or `.env` file.
+Easy Quote now configures the assistant in every environment so the development team can use it directly. That does not approve Google or the selected plan for real Artisan Business or Customer data. Review the provider, plan, region, retention and data-processing terms before sending real data. This research changed no application configuration or `.env` file.

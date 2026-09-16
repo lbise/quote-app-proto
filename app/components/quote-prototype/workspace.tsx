@@ -250,8 +250,21 @@ export default function QuotePrototype() {
         {variant !== 'B' && <details className="qp-prompt-examples" open={messages.length < 6}><summary>{t('Essayer une demande', 'Try a request')}<ChevronDown /></summary>{exampleRequests}</details>}
         <form className="qp-composer" onSubmit={e => { e.preventDefault(); runAssistant(input); }}>
           <label htmlFor="assistant-message">{t('Votre message', 'Your message')}</label>
-          <Textarea id="assistant-message" placeholder={t('Ajoutez une précision, un prix, une correction…', 'Add a detail, a price, a correction…')} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runAssistant(input); } }} />
-          <div className="qp-composer-footer"><span>{t('Texte uniquement · Ctrl + Entrée', 'Text only · Ctrl + Enter')}</span><Button type="submit" disabled={!input.trim() || ai === 'processing'} aria-label={t('Envoyer le message', 'Send message')}><ArrowUp /></Button></div>
+          <Textarea id="assistant-message" placeholder={t('Ajoutez une précision, un prix, une correction…', 'Add a detail, a price, a correction…')} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => {
+            if (e.key !== 'Enter') return;
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              const target = e.currentTarget;
+              const start = target.selectionStart;
+              const end = target.selectionEnd;
+              setInput(`${input.slice(0, start)}\n${input.slice(end)}`);
+              requestAnimationFrame(() => target.setSelectionRange(start + 1, start + 1));
+              return;
+            }
+            e.preventDefault();
+            if (input.trim() && ai !== 'processing') runAssistant(input);
+          }} />
+          <div className="qp-composer-footer"><span>{t('Entrée pour envoyer · Ctrl + Entrée pour une nouvelle ligne', 'Enter to send · Ctrl + Enter for a new line')}</span><Button type="submit" disabled={!input.trim() || ai === 'processing'} aria-label={t('Envoyer le message', 'Send message')}><ArrowUp /></Button></div>
         </form>
         {variant !== 'B' && <p className="qp-ai-disclosure">{t('Assistant simulé. Aucune donnée transmise à une IA.', 'Simulated assistant. No data is sent to an AI.')}</p>}
       </>}

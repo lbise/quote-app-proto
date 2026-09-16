@@ -2,8 +2,6 @@ import type { QuoteData } from "../../app/lib/quote";
 import type { QuoteRecord } from "../../app/components/quotes/use-quote";
 import { createEmptyQuote, expect, setInterfaceLanguage, test } from "./fixtures";
 
-test.use({ fictionalAssistantDisclosure: true });
-
 type Locale = "en" | "fr";
 type AssistantPayload = { action?: string; requestId: string; text: string; locale: Locale };
 
@@ -15,8 +13,8 @@ const clarification = {
 
 function labels(locale: Locale) {
   return locale === "fr"
-    ? { message: "Votre message", send: "Envoyer le message", continue: "Continuer et envoyer", retry: "Réessayer", undo: "Annuler", saved: "Enregistré", changed: "Modifié", changedCount: "lignes modifiées" }
-    : { message: "Your message", send: "Send message", continue: "Continue and send", retry: "Retry", undo: "Undo", saved: "Saved", changed: "Changed", changedCount: "lines changed" };
+    ? { message: "Votre message", send: "Envoyer le message", retry: "Réessayer", undo: "Annuler", saved: "Enregistré", changed: "Modifié", changedCount: "lignes modifiées" }
+    : { message: "Your message", send: "Send message", retry: "Retry", undo: "Undo", saved: "Saved", changed: "Changed", changedCount: "lines changed" };
 }
 
 function capturedLine(): QuoteData["lines"][number] {
@@ -57,9 +55,6 @@ async function sendFirstMessage(page: import("@playwright/test").Page, locale: L
   const textLabels = labels(locale);
   await page.getByLabel(textLabels.message).fill(text);
   await page.getByRole("button", { name: textLabels.send }).click();
-  // The dialog closes synchronously after dispatch; forcing avoids waiting for its
-  // focus-restoration animation while retaining a browser-dispatched click.
-  await page.getByRole("button", { name: textLabels.continue }).click({ force: true });
 }
 
 for (const locale of ["en", "fr"] as const) {

@@ -17,16 +17,12 @@ import { provisionArtisanBusiness, getArtisanForUser } from "./artisan.server";
 import { type Database, getDatabase } from "./db.server";
 import { account, artisanBusiness, session, user, verification } from "./db/schema";
 import { sendAuthEmail } from "./mail.server";
-import {
-  assertQuoteAIConfiguration,
-  isFictionalQuoteAITest,
-  isFictionalTestIdentity,
-} from "./quote-ai-config.server";
+import { assertQuoteAIConfiguration } from "./quote-ai-config.server";
 
 let authInstance: ReturnType<typeof createAuth> | undefined;
 
 function emailCanAccessThisInstance(email: string): boolean {
-  return isEmailAllowed(email) && (!isFictionalQuoteAITest() || isFictionalTestIdentity(email));
+  return isEmailAllowed(email);
 }
 
 function createAuth(database: Database = getDatabase()) {
@@ -160,8 +156,7 @@ export async function getSession(request: Request) {
 export async function requireApprovedArtisan(request: Request) {
   const current = await getSession(request);
   if (!current) throw new Response("Authentication required.", { status: 401 });
-  if (!hasApprovedAccess(current.user) ||
-    (isFictionalQuoteAITest() && !isFictionalTestIdentity(current.user.email))) {
+  if (!hasApprovedAccess(current.user)) {
     throw new Response("Access is not available.", { status: 403 });
   }
 

@@ -237,7 +237,7 @@ This table defines the supplementary copy to approve. Existing unrelated layout 
 | Add / Apply / Done / Cancel / Close | Ajouter / Appliquer / Terminer / Annuler / Fermer |
 | Undo last change | Annuler la dernière modification |
 | Changed / View in Quote | Modifié / Voir dans le devis |
-| Assistant data processing / Continue and send | Traitement par l'assistant / Continuer et envoyer |
+| Assistant data and privacy icon | Icône données et confidentialité de l'assistant |
 | Loading… / Saving… / Retry | Chargement… / Enregistrement… / Réessayer |
 
 Give line actions their current line number and section actions their section name in accessible labels. Use Undo last change for the workspace action to distinguish it from Cancel in a dialog. Generated French commercial names remain `Nouvelle section` and the suffix `copie` even in the English interface. Interface switching changes controls and future assistant replies, not prior conversation messages or French Quote content.
@@ -265,7 +265,7 @@ Give line actions their current line number and section actions their section na
 | Delete section "{name}" and its {count} lines? You can still cancel all changes before choosing Done. | Supprimer la section "{name}" et ses {count} lignes ? Vous pouvez encore annuler tous les changements avant de choisir Terminer. |
 | Use the arrow buttons to reorder sections. In a section name, Alt+Up or Alt+Down also works. | Utilisez les boutons fléchés pour réordonner les sections. Dans un nom de section, Alt+Haut ou Alt+Bas fonctionne aussi. |
 | Use Section in the line editor to move work to another section. | Utilisez Section dans l'éditeur de ligne pour déplacer le travail vers une autre section. |
-| Text only. Ctrl+Enter or Cmd+Enter to send. | Texte uniquement. Ctrl+Entrée ou Cmd+Entrée pour envoyer. |
+| Enter to send. Ctrl+Enter or Cmd+Enter for a new line. | Entrée pour envoyer. Ctrl+Entrée ou Cmd+Entrée pour une nouvelle ligne. |
 
 For deletion, interpolate the current section name and line count. Use the empty-section message for zero lines, the singular message for one and the plural message for two or more. For the R5 example, `{name}` is `Chambre` and `{count}` is `2`.
 
@@ -273,9 +273,9 @@ Existing numeric validation remains field-specific. Blank means missing, never z
 
 ### Hosted-AI disclosure
 
-Retain `assistant-disclosure.tsx` and its first-send gate, with Close as a path back to manual work and Continue and send as the explicit first-send action.
+Retain `assistant-disclosure.tsx` as an optional warning opened by the right-aligned data and privacy icon in the chat header. It must not block sending a message.
 
-Issue #16 supersedes this review's original OpenAI-specific privacy copy. The current bilingual component and [hosted AI configuration](quote-ai.md) describe pi-backed processing, the configured provider, and the isolated fictional-data Google exception. Unpaid experiments do not establish no-training approval or production readiness. Real-data processing requires a separate recorded provider review. Do not restore the earlier OpenAI retention statement for another provider.
+Issue #16 supersedes this review's original OpenAI-specific privacy copy. The current bilingual component and [hosted AI configuration](quote-ai.md) describe pi-backed processing and the configured provider. The assistant is available in development, but provider terms still determine how submitted content is handled. Do not restore the earlier OpenAI retention statement for another provider.
 
 Applied changes save automatically. Review them and use Undo last change if needed. The assistant cannot publish, send or accept a Quote. Manual editing remains available without AI.
 

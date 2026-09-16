@@ -17,55 +17,8 @@ type QuoteDetail = {
 
 type QuoteResponse = { ok: boolean; status: number; data: unknown };
 
-// Browser tests exercise the enabled assistant UI against fake /api/quotes
-// responses. This replaces only the root-loader disclosure in the browser's
-// authenticated HTML document; the server remains QUOTE_AI_ENABLED=false.
-// React Router streams loader data as a devalue table rather than ordinary
-// JSON. Decode its streamed table rather than depending on its generated index
-// names, then replace only the browser's public processing disclosure.
-function fictionalDisclosureDocument(body: string): string {
-  const match = body.match(/streamController\.enqueue\(("(?:\\.|[^"\\])*")\)/);
-  if (!match) throw new Error("Browser root loader did not contain streamed data.");
-
-  const table = JSON.parse(JSON.parse(match[1])) as unknown[];
-  const quoteAI = table.indexOf("quoteAI");
-  const disclosure = table[quoteAI + 1];
-  if (quoteAI < 0 || !disclosure || typeof disclosure !== "object" || Array.isArray(disclosure)) {
-    throw new Error("Browser root loader did not contain Quote AI disclosure data.");
-  }
-
-  let enabled = false;
-  let mode = false;
-  for (const [reference, value] of Object.entries(disclosure)) {
-    if (!reference.startsWith("_") || typeof value !== "number") continue;
-    const key = table[Number(reference.slice(1))];
-    if (key === "enabled" || key === "mode" || key === "providerName") {
-      // Primitive entries can be shared by unrelated loader fields. Point this
-      // disclosure field at a fresh entry instead of changing the shared value.
-      table.push(key === "enabled" ? true : key === "mode" ? "fictional-test" : "Google Gemini Developer API");
-      (disclosure as Record<string, unknown>)[reference] = table.length - 1;
-      if (key === "enabled") enabled = true;
-      if (key === "mode") mode = true;
-    }
-  }
-  if (!enabled || !mode) throw new Error("Browser root loader Quote AI disclosure was malformed.");
-
-  const next = JSON.stringify(JSON.stringify(table) + "\n");
-  return body.replace(match[1], next);
-}
-
-async function installFictionalAssistantDisclosure(context: import("@playwright/test").BrowserContext) {
-  await context.route("**/quotes**", async (route) => {
-    const request = route.request();
-    if (request.method() !== "GET" || request.resourceType() !== "document") {
-      await route.continue();
-      return;
-    }
-    const response = await route.fetch();
-    const body = await response.text();
-    await route.fulfill({ response, body: fictionalDisclosureDocument(body) });
-  });
-}
+// Browser tests exercise the assistant UI against fake /api/quotes responses.
+// The server still uses a harmless test credential and no live model calls are made.
 
 export async function setInterfaceLanguage(page: Page, locale: "en" | "fr") {
   const response = await page.evaluate(async (value) => {
@@ -180,8 +133,7 @@ type BrowserAuth = {
   storageState: Awaited<ReturnType<APIRequestContext["storageState"]>>;
 };
 
-export const test = base.extend<{ artisan: Artisan; fictionalAssistantDisclosure: boolean }, { browserAuth: BrowserAuth }>({
-  fictionalAssistantDisclosure: [false, { option: true }],
+export const test = base.extend<{ artisan: Artisan }, { browserAuth: BrowserAuth }>({
   browserAuth: [async ({}, use, workerInfo) => {
     const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5180";
     const databaseUrl = process.env.BROWSER_TEST_DATABASE_URL;
@@ -216,9 +168,8 @@ export const test = base.extend<{ artisan: Artisan; fictionalAssistantDisclosure
       await api.dispose();
     }
   }, { scope: "worker" }],
-  artisan: async ({ browser, browserAuth, fictionalAssistantDisclosure }, use) => {
+  artisan: async ({ browser, browserAuth }, use) => {
     const context = await browser.newContext({ locale: "en-US", storageState: browserAuth.storageState });
-    if (fictionalAssistantDisclosure) await installFictionalAssistantDisclosure(context);
     const page = await context.newPage();
     try {
       // The shared fixture user may have changed language in a preceding test.

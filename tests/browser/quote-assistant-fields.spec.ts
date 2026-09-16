@@ -1,7 +1,5 @@
 import { createCompleteQuote, expect, test } from './fixtures';
 
-test.use({ fictionalAssistantDisclosure: true });
-
 test('assistant changes to the title, discount and sections are visible beside the Quote', async ({ artisan }) => {
   const seeded = await createCompleteQuote(artisan);
   const { page } = artisan;
@@ -21,7 +19,6 @@ test('assistant changes to the title, discount and sections are visible beside t
   });
   await page.getByLabel('Your message').fill('Use the title Bibliothèque du salon, a Salon section and a 3% discount.');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
-  await page.getByRole('button', { name: 'Continue and send', exact: true }).click();
   await expect(page.getByText('Title changed', { exact: true })).toBeVisible();
   await expect(page.getByText('Section changed', { exact: true })).toBeVisible();
   await expect(page.getByText('Discount changed', { exact: true })).toBeVisible();

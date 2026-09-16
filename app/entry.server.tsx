@@ -9,8 +9,8 @@ import { renderToPipeableStream } from "react-dom/server";
 
 import { assertQuoteAIConfiguration } from "./lib/quote-ai-config.server";
 
-// Validate enabled outbound processing when the server module initializes, not
-// when an Artisan first sends a message.
+// Validate outbound processing when the server module initializes, not when an
+// Artisan first sends a message.
 assertQuoteAIConfiguration();
 
 export const streamTimeout = 5_000;

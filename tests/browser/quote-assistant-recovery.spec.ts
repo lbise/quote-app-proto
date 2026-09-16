@@ -1,11 +1,9 @@
 import { createCompleteQuote, expect, setInterfaceLanguage, test } from "./fixtures";
 
-test.use({ fictionalAssistantDisclosure: true });
-
 for (const locale of ["en", "fr"] as const) {
   const labels = locale === "fr"
-    ? { message: "Votre message", send: "Envoyer le message", continue: "Continuer et envoyer", processing: "Je prépare la modification. Vous pouvez continuer à éditer.", edit: "Modifier la ligne 1", amount: "Montant", apply: "Appliquer", saved: "Enregistré", stale: "Votre correction est conservée" }
-    : { message: "Your message", send: "Send message", continue: "Continue and send", processing: "Preparing the change. You can keep editing.", edit: "Edit line 1", amount: "Amount", apply: "Apply", saved: "Saved", stale: "Your edit is preserved" };
+    ? { message: "Votre message", send: "Envoyer le message", processing: "Je prépare la modification. Vous pouvez continuer à éditer.", edit: "Modifier la ligne 1", amount: "Montant", apply: "Appliquer", saved: "Enregistré", stale: "Votre correction est conservée" }
+    : { message: "Your message", send: "Send message", processing: "Preparing the change. You can keep editing.", edit: "Edit line 1", amount: "Amount", apply: "Apply", saved: "Saved", stale: "Your edit is preserved" };
 
   test(`a delayed assistant response becomes stale when the Artisan keeps editing in the ${locale} interface`, async ({ artisan }) => {
     const seeded = await createCompleteQuote(artisan);
@@ -27,7 +25,6 @@ for (const locale of ["en", "fr"] as const) {
 
     await page.getByLabel(labels.message).fill("Change the title.");
     await page.getByRole("button", { name: labels.send }).click();
-    await page.getByRole("button", { name: labels.continue }).click();
     await assistantRequest;
     await expect(page.getByText(labels.processing)).toBeVisible();
 

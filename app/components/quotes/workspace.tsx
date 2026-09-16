@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, CheckCheck, Copy, FileText, List, LockKeyhole, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Settings2, Trash2, TriangleAlert } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, CheckCheck, Copy, FileText, List, LockKeyhole, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Settings2, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -49,8 +49,6 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   const { record, save, ai, error, changed, changedFields, busy, apply, flush, mutate, applyCustomer, lastRequest } = state;
   const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
   const [input, setInput] = useState('');
-  const [aiDisclosed, setAiDisclosed] = useState(false);
-  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [editLine, setEditLine] = useState<QuoteLine | null>(null);
   const [modal, setModal] = useState<'details' | 'publish' | 'sections' | 'records' | 'privacy' | null>(null);
   const [sectionId, setSectionId] = useState('');
@@ -127,7 +125,6 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     }, 0);
   }
   async function sendMessage(text: string, retry = false) {
-    if (!aiDisclosed) { setPendingMessage(text); openModal('privacy'); return; }
     setInput('');
     const next = await state.runAssistant(text, locale, retry);
     showAssistantResult(next);
@@ -166,7 +163,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   </nav>;
 
   const chat = <section className="qp-conversation" aria-label={t('Conversation avec l’assistant', 'Conversation with assistant')}>
-    <header className="qp-panel-heading"><div className="qp-assistant-heading"><MessageSquare /><div><h2>{t('Préparons votre devis', 'Prepare your Quote')}</h2></div></div></header>
+    <header className="qp-panel-heading"><div className="qp-assistant-heading"><MessageSquare /><div><h2>{t('Préparons votre devis', 'Prepare your Quote')}</h2></div></div><Button variant="ghost" size="icon-sm" onClick={() => openModal('privacy')} aria-label={t('Données envoyées à l’assistant', 'Assistant data and privacy')} title={t('Données envoyées à l’assistant', 'Assistant data and privacy')}><ShieldCheck /></Button></header>
     <MessageScrollerProvider key={recordId} autoScroll defaultScrollPosition="last-anchor" scrollPreviousItemPeek={0}><MessageScroller className="qp-chat-scroller">
       <MessageScrollerViewport><MessageScrollerContent className="qp-chat-content">
         
@@ -187,8 +184,21 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
       {readOnly ? <div className="qp-chat-locked"><LockKeyhole /><p>{t('Cette révision est figée. Créez un brouillon pour poursuivre.', 'This revision is frozen. Create a draft to continue.')}</p></div> : <>
         <form className="qp-composer" onSubmit={e => { e.preventDefault(); void sendMessage(input); }}>
           <label htmlFor="assistant-message">{t('Votre message', 'Your message')}</label>
-          <Textarea id="assistant-message" placeholder={t('Ajoutez une précision, un prix, une correction…', 'Add a detail, a price, a correction…')} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void sendMessage(input); } }} />
-          <div className="qp-composer-footer"><span>{t('Texte uniquement · Ctrl + Entrée', 'Text only · Ctrl + Enter')}</span><Button type="submit" disabled={!input.trim() || ai === 'processing'} aria-label={t('Envoyer le message', 'Send message')}><ArrowUp /></Button></div>
+          <Textarea id="assistant-message" placeholder={t('Ajoutez une précision, un prix, une correction…', 'Add a detail, a price, a correction…')} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => {
+            if (e.key !== 'Enter') return;
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              const target = e.currentTarget;
+              const start = target.selectionStart;
+              const end = target.selectionEnd;
+              setInput(`${input.slice(0, start)}\n${input.slice(end)}`);
+              requestAnimationFrame(() => target.setSelectionRange(start + 1, start + 1));
+              return;
+            }
+            e.preventDefault();
+            if (input.trim() && ai !== 'processing') void sendMessage(input);
+          }} />
+          <div className="qp-composer-footer"><span>{t('Entrée pour envoyer · Ctrl + Entrée pour une nouvelle ligne', 'Enter to send · Ctrl + Enter for a new line')}</span><Button type="submit" disabled={!input.trim() || ai === 'processing'} aria-label={t('Envoyer le message', 'Send message')}><ArrowUp /></Button></div>
         </form>
       </>}
     </div>
@@ -252,7 +262,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
 
 
   return <div className="qp-app qp-variant-b" data-narrow-panel={narrowPanel} lang={locale}>
-    <QuoteHeader locale={locale} onLanguage={onLanguage} onList={onList} quote={quote} onRecords={() => openModal('records')} onPrivacy={() => openModal('privacy')} />
+    <QuoteHeader locale={locale} onLanguage={onLanguage} onList={onList} quote={quote} onRecords={() => openModal('records')} />
     {error && <Alert variant="destructive" className="qp-request-error"><TriangleAlert /><AlertTitle>{t('Action non enregistrée', 'Action not saved')}</AlertTitle><AlertDescription>{error === 'reference_in_use' ? t('Cette référence appartient déjà à un autre devis. Modifiez-la dans les coordonnées du devis.', 'Another Quote already uses this reference. Change it in Details & terms.') : error.includes('conflict') || error.includes('stale') ? t('Ce devis a changé dans une autre fenêtre. Vos modifications restent visibles. Copiez-les avant de recharger.', 'This Quote changed in another window. Your edits remain visible. Copy them before reloading.') : t('Vos modifications restent visibles. Vérifiez les valeurs et votre connexion, puis réessayez.', 'Your edits remain visible. Check the values and your connection, then retry.')}</AlertDescription></Alert>}
     <main className="qp-workspace"><h1 className="sr-only">{t('Préparer un devis', 'Prepare a Quote')}</h1>
       <div className="qp-narrow-tabs"><Button variant={narrowPanel === 'chat' ? 'secondary' : 'ghost'} onClick={() => setNarrowPanel('chat')} aria-pressed={narrowPanel === 'chat'}><MessageSquare data-icon="inline-start" />{t('Conversation', 'Conversation')}</Button><Button variant={narrowPanel === 'quote' ? 'secondary' : 'ghost'} onClick={() => setNarrowPanel('quote')} aria-pressed={narrowPanel === 'quote'}><FileText data-icon="inline-start" />{t('Devis', 'Quote')}</Button></div>
@@ -270,11 +280,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     {modal === 'details' && <ManualEditor quote={quote} locale={locale} lockedReference={revisions.length > 0} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'sections' && !readOnly && <SectionsEditor quote={quote} locale={locale} onApply={q => apply(q)} onClose={closeModal} />}
     {modal === 'records' && <RecordsEditor quote={readOnly ? null : quote} locale={locale} onApplyCustomer={applyCustomer} onClose={closeModal} />}
-    {modal === 'privacy' && <AssistantDisclosure locale={locale} processing={quoteAI} onClose={() => { setPendingMessage(null); closeModal(); }} onContinue={pendingMessage ? () => {
-      const text = pendingMessage;
-      setAiDisclosed(true); setPendingMessage(null); setInput(''); closeModal();
-      void state.runAssistant(text, locale).then(showAssistantResult);
-    } : undefined} />}
+    {modal === 'privacy' && <AssistantDisclosure locale={locale} processing={quoteAI} onClose={closeModal} />}
     {modal === 'publish' && <Dialog open onOpenChange={open => { if (!open) closeModal(); }}><DialogContent className="qp-modal" showCloseButton={false}><DialogHeader><DialogTitle>{t('Relire avant publication', 'Review before publication')}</DialogTitle><DialogDescription>{t('La publication fige le contenu. Elle n’envoie pas le devis.', 'Publication freezes the content. It does not send the Quote.')}</DialogDescription></DialogHeader>
       <div className="qp-publication-summary"><FileText /><h2>{quote.title}</h2><p>{quote.customerName || t('Destinataire manquant', 'Missing Customer')}</p><strong>CHF {formatMoney(sum.total)}</strong><p>{quote.reference} · {t('Révision', 'Revision')} {revisions.length + 1}</p></div>
       <ul className="qp-publication-checks"><li>{sum.total !== null ? <Check /> : <TriangleAlert />}{t('Toutes les lignes sont chiffrées', 'Every line is priced')}</li><li>{!missingAdmin ? <Check /> : <TriangleAlert />}{t('Coordonnées et informations requises', 'Contact details and required information')}</li><li>{save === 'saved' ? <Check /> : <TriangleAlert />}{t('Modifications enregistrées', 'Changes saved')}</li><li>{ai !== 'processing' ? <Check /> : <TriangleAlert />}{t('Aucune modification IA en attente', 'No AI change pending')}</li></ul>

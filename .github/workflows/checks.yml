@@ -62,7 +62,9 @@ jobs:
         run: npm run test:browser
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
-          QUOTE_AI_ENABLED: "false"
+          QUOTE_AI_PROVIDER: google
+          QUOTE_AI_MODEL: gemini-2.5-flash
+          GEMINI_API_KEY: test-only-key
 
       - name: Test deployment scripts
         run: sh tests/deployment/validate-release.test.sh

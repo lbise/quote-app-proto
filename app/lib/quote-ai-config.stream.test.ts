@@ -21,24 +21,15 @@ vi.mock("@earendil-works/pi-ai/providers/google", () => ({ googleProvider: mocke
 
 import { configuredQuoteAI } from "./quote-ai-config.server";
 
-const fictionalGoogle = {
-  QUOTE_AI_ENABLED: "true",
+const google = {
   QUOTE_AI_PROVIDER: "google",
   QUOTE_AI_MODEL: "gemini-2.5-flash",
   GEMINI_API_KEY: "selected-key",
-  QUOTE_AI_FICTIONAL_TEST_MODE: "true",
-  QUOTE_AI_NO_TRAINING_CONFIRMED: "false",
-  DATABASE_URL: "postgresql://easy_quote@127.0.0.1:55433/easy_quote_fictional",
-  BETTER_AUTH_URL: "http://127.0.0.1:5175",
-  AUTH_TRUSTED_ORIGINS: "http://127.0.0.1:5175",
-  AUTH_ALLOWED_EMAILS: "fictional-artisan@example.test",
-  QUOTE_AI_FICTIONAL_TEST_IDENTITIES: "fictional-artisan@example.test",
-  QUOTE_AI_FICTIONAL_TERMS_REVIEW_REFERENCE: "LEGAL-TEST-001",
 };
 
 describe("configured Quote AI stream", () => {
   it("pins the selected credential and provider environment on models.streamSimple", () => {
-    const configured = configuredQuoteAI(fictionalGoogle);
+    const configured = configuredQuoteAI(google);
     const context = { messages: [] };
     const options = { apiKey: "ambient-key", env: { GEMINI_API_KEY: "ambient-key" }, maxTokens: 100 };
 
