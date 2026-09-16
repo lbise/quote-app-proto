@@ -7,7 +7,8 @@ import { getAuth } from "./auth.server";
 import { artisan, businessDefaults, customer, quote, quoteMessage, quoteRequest, quoteRevision } from "./db/schema";
 import { type Database, getDatabase } from "./db.server";
 import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
-import { generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
+import { QuoteAIError, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
+import type { QuoteAssistantDiagnostic } from "./quote-assistant-debug";
 import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -24,6 +25,12 @@ const MAX_TEXT = 8_000;
 const MAX_QUOTE_BYTES = 220_000;
 const AI_LEASE_MS = 60_000; // Greater than the provider's bounded 45-second timeout.
 const defaultFields = ["businessName", "businessAddress", "businessContact", "vatRegistered", "vatId", "terms"] as const;
+
+function assistantDiagnostic(error: unknown, requestId: string, fallback: QuoteAssistantDiagnostic): { diagnostic: QuoteAssistantDiagnostic } | undefined {
+  if (process.env.QUOTE_AI_DEBUG !== "true") return undefined;
+  const diagnostic = error instanceof QuoteAIError ? error.diagnostic : fallback;
+  return { diagnostic: { ...diagnostic, requestId } };
+}
 
 export type QuoteHandlerDependencies = { database?: Database; auth?: SessionAuth; modelBoundary?: QuoteAIModelBoundary; now?: () => Date };
 
@@ -524,9 +531,9 @@ async function assistant(database: Database, businessId: string, body: Body, mod
   if (!input) throw new RequestFailure(500, "request_failed");
 
   let result: Awaited<ReturnType<typeof generateQuoteChange>>;
-  try { result = await generateQuoteChange(input, modelBoundary); } catch {
+  try { result = await generateQuoteChange(input, modelBoundary); } catch (error) {
     await failAssistant(database, businessId, id, requestId, now);
-    throw new RequestFailure(502, "assistant_unavailable");
+    throw new RequestFailure(502, "assistant_unavailable", assistantDiagnostic(error, requestId, { phase: "model", code: "assistant_failed" }));
   }
   let next: QuoteData | null;
   let changedFields: string[] | undefined;
@@ -535,9 +542,9 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     next = result.quote ? asQuote(result.quote, true).draft : null;
     changedFields = changedFieldsFrom(result);
     if (next) resultCapturedLineIds = capturedResultIds(result.capturedLineIds, input.quote, next, input.capturedLineIds);
-  } catch {
+  } catch (error) {
     await failAssistant(database, businessId, id, requestId, now);
-    throw new RequestFailure(502, "assistant_invalid_response");
+    throw new RequestFailure(502, "assistant_invalid_response", assistantDiagnostic(error, requestId, { phase: "validation", code: "invalid_assistant_result" }));
   }
 
   let detail: QuoteDetail | undefined;

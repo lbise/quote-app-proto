@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { QuoteCalculation, QuoteData } from "../../lib/quote";
+import type { QuoteAssistantDiagnostic } from "../../lib/quote-assistant-debug";
 import { randomUUID } from "../../lib/random-id";
 
 export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
@@ -17,26 +18,41 @@ export type QuoteRecord = {
 export type QuoteList = { quotes: { id: string; reference: string; title: string; customerName: string; hasDraft: boolean; revision: number; updatedAt: string }[] };
 
 export class RequestError extends Error {
-  constructor(public status: number, public code: string) { super(code); }
+  constructor(public status: number, public code: string, public details?: unknown) { super(code); }
 }
 export async function quoteRequest<T>(body?: Record<string, unknown>, id?: string): Promise<T> {
   const response = await fetch(`/api/quotes${id ? `?id=${encodeURIComponent(id)}` : ""}`, body ? {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   } : { cache: "no-store" });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new RequestError(response.status, data.error ?? "request_failed");
+  if (!response.ok) throw new RequestError(response.status, data.error ?? "request_failed", data.details);
   return data as T;
 }
 
 type SaveAction = { quote: QuoteData; requestId: string; sequence: number; expectedVersion?: number };
 
 /** Serialises saves without blocking editing. A failed request stays queued with its retry key. */
+export function assistantDiagnosticFrom(failure: unknown): QuoteAssistantDiagnostic | null {
+  if (!(failure instanceof RequestError) || !failure.details || typeof failure.details !== "object") return null;
+  const diagnostic = (failure.details as { diagnostic?: unknown }).diagnostic;
+  if (!diagnostic || typeof diagnostic !== "object") return null;
+  const value = diagnostic as Partial<QuoteAssistantDiagnostic>;
+  if ((value.phase !== "model" && value.phase !== "tool" && value.phase !== "validation" && value.phase !== "persistence") || typeof value.code !== "string") return null;
+  return {
+    phase: value.phase,
+    code: value.code,
+    ...(typeof value.tool === "string" ? { tool: value.tool } : {}),
+    ...(typeof value.requestId === "string" ? { requestId: value.requestId } : {}),
+  };
+}
+
 export function useQuote(initial: QuoteRecord) {
   const [record, setRecord] = useState(initial);
   const [quote, setQuote] = useState(initial.draft ?? initial.revisions.at(-1)!.quote);
   const [save, setSave] = useState<"saved" | "saving" | "error">("saved");
   const [ai, setAi] = useState<"idle" | "processing" | "error" | "stale">(initial.pending ? "processing" : initial.assistantRequest?.status === 'failed' ? 'error' : initial.assistantRequest?.status === 'stale' ? 'stale' : 'idle');
   const [error, setError] = useState<string | null>(null);
+  const [debug, setDebug] = useState<QuoteAssistantDiagnostic | null>(null);
   const [changed, setChanged] = useState<string[]>([]);
   const [changedFields, setChangedFields] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -169,7 +185,7 @@ export function useQuote(initial: QuoteRecord) {
     const baseVersion = replay ? previous.baseVersion : current.current.version;
     const requestLocale = replay ? previous.locale ?? locale : locale;
     lastRequest.current = { text, requestId, baseVersion, locale: requestLocale };
-    setAi("processing"); setError(null);
+    setAi("processing"); setError(null); setDebug(null);
     if (!retry || ai === 'stale') setRecord(previous => ({ ...previous, messages: [...previous.messages, { role: 'artisan', fr: text, en: text }] }));
     try {
       const next = await quoteRequest<QuoteRecord>({ action: "assistant", id: initial.id, expectedVersion: baseVersion, requestId, text, locale: requestLocale });
@@ -183,6 +199,7 @@ export function useQuote(initial: QuoteRecord) {
     } catch (failure) {
       const stale = failure instanceof RequestError && failure.status === 409;
       setAi(stale ? "stale" : "error");
+      if (!stale) setDebug(assistantDiagnosticFrom(failure));
       // Reload only persisted conversation/status, never a newer local edit.
       try {
         const next = await quoteRequest<QuoteRecord>(undefined, initial.id);
@@ -192,5 +209,5 @@ export function useQuote(initial: QuoteRecord) {
     }
   }
 
-  return { record, quote, save, ai, error, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, lastRequest };
+  return { record, quote, save, ai, error, debug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, lastRequest };
 }

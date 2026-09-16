@@ -62,7 +62,11 @@ describe("pi Quote assistant model boundary", () => {
       fauxAssistantMessage([fauxToolCall("add_quote_line", { description: "Peinture", mode: "quantity", quantity: 2, unit: "", unitPrice: "", amount: "", evidence: [{ field: "quantity", text: "2" }] })], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("Added.")]),
     ]);
-    await expect(generateQuoteChange({ ...input(), text: "Paint 2 walls." }, boundary)).rejects.toThrow("could not complete");
+    const failure = generateQuoteChange({ ...input(), text: "Paint 2 walls." }, boundary);
+    await expect(failure).rejects.toThrow("could not complete");
+    await expect(failure).rejects.toMatchObject({
+      diagnostic: { phase: "tool", code: "invalid_tool_arguments", tool: "add_quote_line" },
+    });
   });
 
   it("bounds accumulated work context in bytes before sending the next model request", async () => {

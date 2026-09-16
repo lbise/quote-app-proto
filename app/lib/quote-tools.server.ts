@@ -24,6 +24,12 @@ export type QuoteToolsResult = {
   copyFacts?: CopyFact[];
 };
 
+export type QuoteToolsDiagnostic = { phase: "tool"; code: string; tool?: string };
+
+class ToolValidationError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
+
 export type CreateQuoteToolsInput = {
   quote: QuoteData;
   capturedLineIds: readonly string[];
@@ -133,6 +139,7 @@ const patchableFields = suppliableFields;
 export function createQuoteTools(input: CreateQuoteToolsInput): {
   tools: AgentTool[];
   result(): QuoteToolsResult;
+  diagnostic(): QuoteToolsDiagnostic | undefined;
 } {
   assertInitialInput(input);
   const staged = cloneQuote(input.quote);
@@ -145,23 +152,28 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const changedFields = new Set<string>();
   const copyFacts: CopyFact[] = [];
   let poisoned = false;
+  let lastErrorCode: string | undefined;
 
-  const reject = (): never => {
+  const reject = (code = "invalid_tool_input"): never => {
     poisoned = true;
+    lastErrorCode = code;
     throw new Error("Tool input rejected.");
   };
 
   const mutate = async (signal: AbortSignal | undefined, operation: () => Mutation) => {
-    if (poisoned || signal?.aborted) reject();
+    if (poisoned) reject();
+    if (signal?.aborted) reject("tool_aborted");
     try {
       const mutation = operation();
-      if (calculateQuote(staged).errors.length > 0 || workPayloadBytes(staged) > MAX_WORK_PAYLOAD_BYTES) reject();
+      if (calculateQuote(staged).errors.length > 0) reject("invalid_quote_calculation");
+      if (workPayloadBytes(staged) > MAX_WORK_PAYLOAD_BYTES) reject("work_payload_limit");
       for (const id of mutation.changed ?? []) changed.add(id);
       for (const field of mutation.changedFields ?? []) changedFields.add(field);
       const details = { changed: mutation.changed ?? [], changedFields: mutation.changedFields ?? [] };
       return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
     } catch {
       poisoned = true;
+      lastErrorCode ??= "tool_execution_failed";
       throw new Error("Tool input rejected.");
     }
   };
@@ -171,8 +183,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
       if (poisoned) reject();
       validate(args);
       return args;
-    } catch {
-      return reject();
+    } catch (error) {
+      lastErrorCode = error instanceof ToolValidationError ? error.code : "invalid_tool_arguments";
+      return reject(lastErrorCode);
     }
   };
 
@@ -384,6 +397,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
           }),
         } : {}),
       },
+    diagnostic: () => poisoned ? { phase: "tool", code: lastErrorCode ?? "tool_input_rejected" } : undefined,
   };
 }
 
@@ -514,7 +528,7 @@ function quantityCalculationInput(value: unknown): RoomWallArea | undefined {
     || typeof value.length !== "string" || typeof value.width !== "string" || typeof value.height !== "string"
     || typeof value.source !== "string" || !value.source.trim() || value.source.length > MAX_EVIDENCE_TEXT
     || !positiveScaledDecimal(value.length) || !positiveScaledDecimal(value.width) || !positiveScaledDecimal(value.height)) {
-    throw new Error("invalid");
+    throw new ToolValidationError("invalid_quantity_calculation");
   }
   return { kind: "room_wall_area", length: value.length, width: value.width, height: value.height, source: value.source };
 }
