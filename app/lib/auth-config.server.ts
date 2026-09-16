@@ -35,10 +35,13 @@ export function authBaseUrl(): string {
 }
 
 export function trustedOrigins(): string[] {
-  return (process.env.AUTH_TRUSTED_ORIGINS ?? authBaseUrl())
+  const configured = (process.env.AUTH_TRUSTED_ORIGINS ?? "")
     .split(/[\s,;]+/)
     .map((origin) => origin.trim())
     .filter(Boolean);
+  // Always trust the canonical application URL, even when additional origins
+  // are configured. This keeps Better Auth aligned with BETTER_AUTH_URL.
+  return [...new Set([authBaseUrl(), ...configured])];
 }
 
 export function assertAuthConfiguration(): void {

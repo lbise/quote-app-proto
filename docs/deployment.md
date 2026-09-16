@@ -28,14 +28,14 @@ The image contains no runtime secrets. Set the following only in Dokploy's appli
 - `BETTER_AUTH_SECRET`: at least 32 random characters.
 - `BETTER_AUTH_URL`: the canonical HTTPS application URL (`https://easy-quote.voidstation.ch` in production); it is used for origin checks and verification/reset links.
 - `AUTH_ALLOWED_EMAILS`: space, comma or newline separated normalized tester addresses. An empty value denies all new registrations and protected access.
-- `AUTH_TRUSTED_ORIGINS`: optional additional HTTPS origins, space separated.
+- `AUTH_TRUSTED_ORIGINS`: optional additional HTTPS origins, space separated. Include `https://dev.voidstation.ch` when serving the development deployment from that domain.
 - `EMAIL_DELIVERY=smtp`, `SMTP_HOST=mail.infomaniak.com`, `SMTP_PORT=587`, `SMTP_USER=auth@voidstation.ch`, `SMTP_PASSWORD` (dedicated device/app password), and `SMTP_FROM=auth@voidstation.ch`.
 
 For the current production deployment, use:
 
 ```env
 BETTER_AUTH_URL=https://easy-quote.voidstation.ch
-AUTH_TRUSTED_ORIGINS=https://easy-quote.voidstation.ch
+AUTH_TRUSTED_ORIGINS=https://easy-quote.voidstation.ch https://dev.voidstation.ch
 SMTP_USER=auth@voidstation.ch
 SMTP_FROM=auth@voidstation.ch
 ```

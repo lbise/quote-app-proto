@@ -9,5 +9,6 @@ export default {
   // of truth there. Keep an explicit production allowlist.
   allowedActionOrigins: process.env.NODE_ENV === "production" ? [
     "easy-quote.voidstation.ch",
+    "dev.voidstation.ch",
   ] : ["**"],
 } satisfies Config;

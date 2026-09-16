@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   browserLanguage,
   hasApprovedAccess,
+  trustedOrigins,
   isEmailAllowed,
   normalizeEmail,
   parseLocaleCookie,
@@ -27,5 +28,23 @@ describe("auth configuration", () => {
   it("accepts only the application locale cookie", () => {
     expect(parseLocaleCookie("other=value; easy_quote_locale=en; Path=/")).toBe("en");
     expect(parseLocaleCookie("easy_quote_locale=de")).toBeUndefined();
+  });
+
+  it("keeps the canonical Better Auth URL trusted alongside configured origins", () => {
+    const previousUrl = process.env.BETTER_AUTH_URL;
+    const previousOrigins = process.env.AUTH_TRUSTED_ORIGINS;
+    process.env.BETTER_AUTH_URL = "https://dev.voidstation.ch";
+    process.env.AUTH_TRUSTED_ORIGINS = "https://easy-quote.voidstation.ch";
+    try {
+      expect(trustedOrigins()).toEqual([
+        "https://dev.voidstation.ch",
+        "https://easy-quote.voidstation.ch",
+      ]);
+    } finally {
+      if (previousUrl === undefined) delete process.env.BETTER_AUTH_URL;
+      else process.env.BETTER_AUTH_URL = previousUrl;
+      if (previousOrigins === undefined) delete process.env.AUTH_TRUSTED_ORIGINS;
+      else process.env.AUTH_TRUSTED_ORIGINS = previousOrigins;
+    }
   });
 });
