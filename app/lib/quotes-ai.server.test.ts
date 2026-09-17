@@ -248,9 +248,10 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Les deux prix unitaires à 45", locale: "fr" }, undefined, resolved.handler)).json();
     expect(detail.draft.title).toBe("Titre manuel actuel");
     expect(detail.draft.lines).toEqual([
-      expect.objectContaining({ id: "living-wall", unitPrice: "45.00", amount: "540.00" }),
-      expect.objectContaining({ id: "bedroom-wall", unitPrice: "45.00", amount: "360.00" }),
+      expect.objectContaining({ id: "living-wall", unitPrice: "45.00" }),
+      expect.objectContaining({ id: "bedroom-wall", unitPrice: "45.00" }),
     ]);
+    expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 90_000, total: 90_000, complete: true });
   });
 
   it("exercises section creation, renaming, moving, line copying and section copying through HTTP", async () => {
