@@ -213,6 +213,93 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 110_000, total: null, complete: false });
   });
 
+  it("clarifies an ambiguous target without mutation, then resolves against the current draft", async () => {
+    let detail = await createDraft();
+    const baseline = {
+      ...complete(detail.draft.reference),
+      vatRegistered: false,
+      vatId: "",
+      sections: [{ id: "living", title: "Séjour" }, { id: "bedroom", title: "Chambre" }],
+      lines: [
+        { id: "living-wall", sectionId: "living", description: "Habillage mural", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "bedroom-wall", sectionId: "bedroom", description: "Habillage mural", mode: "quantity" as const, quantity: "8", unit: "m²", unitPrice: "40.00", amount: "" },
+      ],
+    };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: baseline })).json();
+    const beforeDraft = structuredClone(detail.draft);
+    const beforeVersion = detail.version;
+    const ambiguous = scriptedModel([fauxAssistantMessage("Voulez-vous modifier la ligne 1, la ligne 2 ou les deux ? Aucune modification appliquée.")]);
+    const clarified = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Passe l'habillage à 45", locale: "fr" }, undefined, ambiguous.handler);
+    expect(clarified.status).toBe(200);
+    detail = await clarified.json();
+    expect(detail.draft).toEqual(beforeDraft);
+    expect(detail.version).toBe(beforeVersion);
+    expect(detail.canUndo).toBe(true);
+
+    const manuallyEdited = { ...detail.draft, title: "Titre manuel actuel" };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: manuallyEdited })).json();
+    const resolved = scriptedModel([
+      toolTurn(
+        fauxToolCall("update_quote_line", { lineId: "living-wall", fields: { unitPrice: "45.00" }, evidence: [{ field: "unitPrice", text: "45" }] }),
+        fauxToolCall("update_quote_line", { lineId: "bedroom-wall", fields: { unitPrice: "45.00" }, evidence: [{ field: "unitPrice", text: "45" }] }),
+      ),
+      fauxAssistantMessage("Prix des deux lignes passés à 45 CHF par m²."),
+    ]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Les deux prix unitaires à 45", locale: "fr" }, undefined, resolved.handler)).json();
+    expect(detail.draft.title).toBe("Titre manuel actuel");
+    expect(detail.draft.lines).toEqual([
+      expect.objectContaining({ id: "living-wall", unitPrice: "45.00", amount: "540.00" }),
+      expect.objectContaining({ id: "bedroom-wall", unitPrice: "45.00", amount: "360.00" }),
+    ]);
+  });
+
+  it("exercises section creation, renaming, moving, line copying and section copying through HTTP", async () => {
+    let detail = await createDraft();
+    const baseline = {
+      ...complete(detail.draft.reference),
+      vatRegistered: false,
+      vatId: "",
+      sections: [{ id: "living", title: "Séjour" }, { id: "bedroom", title: "Chambre" }, { id: "office", title: "Bureau" }],
+      lines: [
+        { id: "living-wall", sectionId: "living", description: "Habillage mural", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "bedroom-wall", sectionId: "bedroom", description: "Habillage mural 8 m²", mode: "quantity" as const, quantity: "8", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "bedroom-tablet", sectionId: "bedroom", description: "Pose de la tablette", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "150.00" },
+      ],
+    };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: baseline })).json();
+
+    const created = scriptedModel([toolTurn(fauxToolCall("create_quote_section", { title: "Entrée" })), fauxAssistantMessage("Section Entrée créée.")]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Crée une section Entrée", locale: "fr" }, undefined, created.handler)).json();
+    const entrance = detail.draft.sections.find((section: { title: string }) => section.title === "Entrée");
+    expect(entrance).toBeTruthy();
+
+    const renamed = scriptedModel([toolTurn(fauxToolCall("rename_quote_section", { sectionId: "office", title: "Atelier" })), fauxAssistantMessage("Bureau renommé Atelier.")]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Renomme Bureau en Atelier", locale: "fr" }, undefined, renamed.handler)).json();
+    expect(detail.draft.sections).toContainEqual({ id: "office", title: "Atelier" });
+
+    const moved = scriptedModel([toolTurn(fauxToolCall("move_quote_line", { lineId: "living-wall", sectionId: "office" })), fauxAssistantMessage("Ligne déplacée dans Atelier.")]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Déplace la ligne vers Atelier", locale: "fr" }, undefined, moved.handler)).json();
+    expect(detail.draft.lines.at(-1)).toMatchObject({ id: "living-wall", sectionId: "office" });
+
+    const copiedLine = scriptedModel([toolTurn(fauxToolCall("duplicate_quote_line", { lineId: "bedroom-wall", sectionId: "office", measurementPolicy: "unknown" })), fauxAssistantMessage("Ligne copiée; prix conservé et quantité inconnue laissée vide.")]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Copie cette ligne dans Atelier, surface inconnue", locale: "fr" }, undefined, copiedLine.handler)).json();
+    const lineCopy = detail.draft.lines.find((line: { id: string; sectionId: string; quantity: string }) => line.id !== "bedroom-wall" && line.sectionId === "office" && line.quantity === "");
+    expect(lineCopy).toMatchObject({ unit: "m²", unitPrice: "40.00" });
+    expect(lineCopy.description).not.toContain("8 m²");
+    expect(detail.messages.at(-1).fr).toContain("quantité inconnue");
+
+    const copiedSection = scriptedModel([toolTurn(fauxToolCall("duplicate_quote_section", { sectionId: "bedroom", measurementPolicy: "unknown" })), fauxAssistantMessage("Chambre copiée; prix et forfait conservés, quantité inconnue laissée vide.")]);
+    detail = await (await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Copie Chambre, surface inconnue", locale: "fr" }, undefined, copiedSection.handler)).json();
+    const copiedSectionIndex = detail.draft.sections.findIndex((section: { title: string }) => section.title === "Chambre copie");
+    expect(copiedSectionIndex).toBeGreaterThanOrEqual(0);
+    const copiedSectionId = detail.draft.sections[copiedSectionIndex].id;
+    const copiedWall = detail.draft.lines.find((line: { sectionId: string; description: string }) => line.sectionId === copiedSectionId && line.description.includes("Habillage"));
+    expect(copiedWall).toMatchObject({ quantity: "", unit: "m²", unitPrice: "40.00" });
+    expect(copiedWall.description).not.toContain("8 m²");
+    expect(detail.messages.at(-1).fr).toContain("prix");
+    expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 110_000, total: null, complete: false });
+  });
+
   it("keeps staged tool changes out of PostgreSQL when a later tool call fails", async () => {
     const detail = await createDraft();
     const model = scriptedModel([
