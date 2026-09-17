@@ -170,6 +170,12 @@ describe("pi Quote assistant model boundary", () => {
       locale: "fr",
       text: "Je veux repeindre la chambre d'eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond. Prix au m2 12.50chf",
     }, boundary);
+    expect(result.debug).toEqual({
+      toolCalls: [expect.objectContaining({
+        name: "add_quote_line",
+        arguments: expect.objectContaining({ mode: "quantity", quantityCalculation: expect.objectContaining({ length: "2", width: "4", height: "3" }) }),
+      })],
+    });
     expect(result.quote?.lines[0]).toMatchObject({
       description: "Repeindre la chambre d’Eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond",
       unit: "m²",

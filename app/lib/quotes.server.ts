@@ -8,7 +8,7 @@ import { artisan, businessDefaults, customer, quote, quoteMessage, quoteRequest,
 import { type Database, getDatabase } from "./db.server";
 import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
 import { QuoteAIError, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
-import type { QuoteAssistantDiagnostic } from "./quote-assistant-debug";
+import type { QuoteAssistantDiagnostic, QuoteAssistantSuccessDebug } from "./quote-assistant-debug";
 import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -30,6 +30,11 @@ function assistantDiagnostic(error: unknown, requestId: string, fallback: QuoteA
   if (process.env.QUOTE_AI_DEBUG !== "true") return undefined;
   const diagnostic = error instanceof QuoteAIError ? error.diagnostic : fallback;
   return { diagnostic: { ...diagnostic, requestId } };
+}
+
+function assistantSuccessDebug(debug: QuoteAssistantSuccessDebug | undefined, requestId: string): { assistantDebug: QuoteAssistantSuccessDebug } | undefined {
+  if (process.env.QUOTE_AI_DEBUG !== "true" || !debug?.toolCalls.length) return undefined;
+  return { assistantDebug: { ...debug, requestId } };
 }
 
 export type QuoteHandlerDependencies = { database?: Database; auth?: SessionAuth; modelBoundary?: QuoteAIModelBoundary; now?: () => Date };
@@ -586,7 +591,11 @@ async function assistant(database: Database, businessId: string, body: Body, mod
   });
   if (stale) throw new RequestFailure(409, "assistant_stale");
   if (!detail) throw new RequestFailure(500, "request_failed");
-  return { ...detail, ...(result.reviewPublication ? { reviewPublication: true } : {}) };
+  return {
+    ...detail,
+    ...assistantSuccessDebug(result.debug, requestId),
+    ...(result.reviewPublication ? { reviewPublication: true } : {}),
+  };
 }
 
 async function failAssistant(database: Database, businessId: string, id: string, requestId: string, now: Date) {

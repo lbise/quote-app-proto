@@ -2,7 +2,7 @@ import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import type { QuoteData } from "./quote";
-import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest } from "./quote-assistant-debug";
+import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest, QuoteAssistantSuccessDebug, QuoteAssistantToolCall } from "./quote-assistant-debug";
 import { configuredQuoteAI } from "./quote-ai-config.server";
 import { createQuoteTools, type CopyFact } from "./quote-tools.server";
 
@@ -21,6 +21,8 @@ export type QuoteAIResult = {
   capturedLineIds: string[];
   changedFields?: string[];
   reviewPublication: boolean;
+  /** Transient tool activity; the request handler exposes this only in debug mode. */
+  debug?: QuoteAssistantSuccessDebug;
 };
 
 /** Server-only injection at the model transport, never at the tool executor. */
@@ -121,7 +123,8 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   let failed = false;
   let rounds = 0;
   let toolCalls = 0;
-  const toolCallsById = new Map<string, { name: string; arguments: unknown }>();
+  const toolCallsById = new Map<string, QuoteAssistantToolCall>();
+  const successfulToolCalls: QuoteAssistantToolCall[] = [];
   let lastToolName: string | undefined;
   let lastModelRequest: QuoteAssistantLlmRequest | undefined;
   let diagnostic: QuoteAssistantDiagnostic = { phase: "model", code: "assistant_failed" };
@@ -207,14 +210,17 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
         agent.abort();
       }
     }
-    if (event.type === "tool_execution_end" && event.isError) {
+    if (event.type === "tool_execution_end") {
       const toolCall = toolCallsById.get(event.toolCallId);
-      diagnostic = {
-        phase: "tool",
-        code: staged.diagnostic()?.code ?? "tool_rejected",
-        tool: event.toolName,
-        ...(toolCall ? { toolCall } : {}),
-      };
+      if (!event.isError && toolCall) successfulToolCalls.push(toolCall);
+      if (event.isError) {
+        diagnostic = {
+          phase: "tool",
+          code: staged.diagnostic()?.code ?? "tool_rejected",
+          tool: event.toolName,
+          ...(toolCall ? { toolCall } : {}),
+        };
+      }
     }
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -254,5 +260,6 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     quote: result.changed.length || result.changedFields?.length ? result.quote : null,
     message,
     reviewPublication: requestsPublicationReview(input.text),
+    ...(successfulToolCalls.length ? { debug: { toolCalls: successfulToolCalls } } : {}),
   };
 }

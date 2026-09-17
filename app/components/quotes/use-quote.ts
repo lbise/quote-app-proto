@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { QuoteCalculation, QuoteData } from "../../lib/quote";
-import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest } from "../../lib/quote-assistant-debug";
+import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest, QuoteAssistantSuccessDebug } from "../../lib/quote-assistant-debug";
 import { randomUUID } from "../../lib/random-id";
 
 export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
@@ -14,6 +14,8 @@ export type QuoteRecord = {
   canUndo: boolean;
   assistantRequest?: { requestId: string; text: string; status: 'pending' | 'complete' | 'failed' | 'stale'; baseVersion: number } | null;
   reviewPublication?: boolean;
+  /** Present only in a debug-enabled assistant action response; never persisted. */
+  assistantDebug?: QuoteAssistantSuccessDebug;
 };
 export type QuoteList = { quotes: { id: string; reference: string; title: string; customerName: string; hasDraft: boolean; revision: number; updatedAt: string }[] };
 
@@ -52,6 +54,16 @@ export function assistantDiagnosticFrom(failure: unknown): QuoteAssistantDiagnos
   };
 }
 
+function assistantSuccessDebugFrom(value: unknown): QuoteAssistantSuccessDebug | null {
+  if (!value || typeof value !== "object") return null;
+  const debug = value as { toolCalls?: unknown; requestId?: unknown };
+  if (!Array.isArray(debug.toolCalls) || !debug.toolCalls.every((call) => call && typeof call === "object" && typeof (call as { name?: unknown }).name === "string")) return null;
+  return {
+    toolCalls: debug.toolCalls.map((call) => ({ name: (call as { name: string }).name, arguments: (call as { arguments?: unknown }).arguments })),
+    ...(typeof debug.requestId === "string" ? { requestId: debug.requestId } : {}),
+  };
+}
+
 export function useQuote(initial: QuoteRecord) {
   const [record, setRecord] = useState(initial);
   const [quote, setQuote] = useState(initial.draft ?? initial.revisions.at(-1)!.quote);
@@ -59,6 +71,7 @@ export function useQuote(initial: QuoteRecord) {
   const [ai, setAi] = useState<"idle" | "processing" | "error" | "stale">(initial.pending ? "processing" : initial.assistantRequest?.status === 'failed' ? 'error' : initial.assistantRequest?.status === 'stale' ? 'stale' : 'idle');
   const [error, setError] = useState<string | null>(null);
   const [debug, setDebug] = useState<QuoteAssistantDiagnostic | null>(null);
+  const [toolDebug, setToolDebug] = useState<QuoteAssistantSuccessDebug | null>(null);
   const [changed, setChanged] = useState<string[]>([]);
   const [changedFields, setChangedFields] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -191,7 +204,7 @@ export function useQuote(initial: QuoteRecord) {
     const baseVersion = replay ? previous.baseVersion : current.current.version;
     const requestLocale = replay ? previous.locale ?? locale : locale;
     lastRequest.current = { text, requestId, baseVersion, locale: requestLocale };
-    setAi("processing"); setError(null); setDebug(null);
+    setAi("processing"); setError(null); setDebug(null); setToolDebug(null);
     if (!retry || ai === 'stale') setRecord(previous => ({ ...previous, messages: [...previous.messages, { role: 'artisan', fr: text, en: text }] }));
     try {
       const next = await quoteRequest<QuoteRecord>({ action: "assistant", id: initial.id, expectedVersion: baseVersion, requestId, text, locale: requestLocale });
@@ -200,7 +213,7 @@ export function useQuote(initial: QuoteRecord) {
         if (next.version > current.current.version) accept(next, false);
         setAi("stale"); return null;
       }
-      accept(next, true); setChanged(next.messages.at(-1)?.changed ?? []); setChangedFields(next.messages.at(-1)?.changedFields ?? []); setAi("idle");
+      accept(next, true); setToolDebug(assistantSuccessDebugFrom(next.assistantDebug)); setChanged(next.messages.at(-1)?.changed ?? []); setChangedFields(next.messages.at(-1)?.changedFields ?? []); setAi("idle");
       return next;
     } catch (failure) {
       const stale = failure instanceof RequestError && failure.status === 409;
@@ -215,5 +228,5 @@ export function useQuote(initial: QuoteRecord) {
     }
   }
 
-  return { record, quote, save, ai, error, debug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, lastRequest };
+  return { record, quote, save, ai, error, debug, toolDebug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, lastRequest };
 }

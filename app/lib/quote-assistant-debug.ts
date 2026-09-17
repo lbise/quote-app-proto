@@ -9,11 +9,18 @@ export type QuoteAssistantLlmRequest = {
 };
 
 /** Diagnostic metadata returned only when explicitly enabled for debugging. */
+export type QuoteAssistantToolCall = { name: string; arguments: unknown };
+
+export type QuoteAssistantSuccessDebug = {
+  toolCalls: QuoteAssistantToolCall[];
+  requestId?: string;
+};
+
 export type QuoteAssistantDiagnostic = {
   phase: QuoteAssistantDiagnosticPhase;
   code: string;
   tool?: string;
-  toolCall?: { name: string; arguments: unknown };
+  toolCall?: QuoteAssistantToolCall;
   llmRequest?: QuoteAssistantLlmRequest;
   requestId?: string;
 };
