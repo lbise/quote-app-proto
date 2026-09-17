@@ -2,7 +2,7 @@ import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import type { QuoteData } from "./quote";
-import type { QuoteAssistantDiagnostic } from "./quote-assistant-debug";
+import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest } from "./quote-assistant-debug";
 import { configuredQuoteAI } from "./quote-ai-config.server";
 import { createQuoteTools, type CopyFact } from "./quote-tools.server";
 
@@ -123,11 +123,31 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   let toolCalls = 0;
   const toolCallsById = new Map<string, { name: string; arguments: unknown }>();
   let lastToolName: string | undefined;
+  let lastModelRequest: QuoteAssistantLlmRequest | undefined;
   let diagnostic: QuoteAssistantDiagnostic = { phase: "model", code: "assistant_failed" };
+  const diagnosticWithRequest = (value: QuoteAssistantDiagnostic): QuoteAssistantDiagnostic => lastModelRequest
+    ? { ...value, llmRequest: lastModelRequest }
+    : value;
   const agent = new Agent({
     initialState: { model: config.model, systemPrompt, tools: staged.tools, thinkingLevel: "off" },
     toolExecution: "sequential",
     streamFn: (model, context, options) => {
+      lastModelRequest = {
+        model: { provider: model.provider, id: model.id ?? "unknown" },
+        systemPrompt: context.systemPrompt ?? "",
+        messages: context.messages,
+        tools: (context.tools ?? []).map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
+        options: {
+          maxTokens: 4096,
+          maxRetries: 0,
+          cacheRetention: "none",
+          timeoutMs: config.timeoutMs,
+        },
+      };
       if (failed) throw new Error("The Quote assistant could not complete this request.");
       if (Buffer.byteLength(JSON.stringify(context)) > 200_000) {
         diagnostic = { phase: "model", code: "context_limit_exceeded" };
@@ -217,17 +237,17 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     agent.abort();
     if (timedOut) diagnostic = { phase: "model", code: "timeout" };
     else if (diagnostic.code === "assistant_failed") diagnostic = { phase: "model", code: "provider_request_failed" };
-    throw new QuoteAIError(diagnostic);
+    throw new QuoteAIError(diagnosticWithRequest(diagnostic));
   } finally {
     clearTimeout(timer);
   }
   const last = agent.state.messages.at(-1);
-  if (failed || !last || last.role !== "assistant" || last.stopReason !== "stop") throw new QuoteAIError(diagnostic);
+  if (failed || !last || last.role !== "assistant" || last.stopReason !== "stop") throw new QuoteAIError(diagnosticWithRequest(diagnostic));
   const modelMessage = last.content.filter((part) => part.type === "text").map((part) => part.text).join("\n").trim();
-  if (!modelMessage) throw new QuoteAIError({ phase: "validation", code: "empty_assistant_reply" }, "The Quote assistant returned an invalid reply.");
+  if (!modelMessage) throw new QuoteAIError(diagnosticWithRequest({ phase: "validation", code: "empty_assistant_reply" }), "The Quote assistant returned an invalid reply.");
   const result = staged.result();
   const message = [modelMessage, copyDisclosure(result.copyFacts ?? [], input.locale)].filter(Boolean).join("\n\n");
-  if (!message || message.length > 4000) throw new QuoteAIError({ phase: "validation", code: "invalid_assistant_reply" }, "The Quote assistant returned an invalid reply.");
+  if (!message || message.length > 4000) throw new QuoteAIError(diagnosticWithRequest({ phase: "validation", code: "invalid_assistant_reply" }), "The Quote assistant returned an invalid reply.");
   const { copyFacts: _copyFacts, ...publicResult } = result;
   return {
     ...publicResult,

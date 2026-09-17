@@ -73,6 +73,13 @@ describe("pi Quote assistant model boundary", () => {
           name: "add_quote_line",
           arguments: { description: "Peinture", mode: "quantity", quantity: 2, unit: "", unitPrice: "", amount: "", evidence: [{ field: "quantity", text: "2" }] },
         },
+        llmRequest: {
+          model: { provider: expect.any(String), id: expect.any(String) },
+          systemPrompt: expect.stringContaining("registered Easy Quote tools"),
+          messages: expect.any(Array),
+          tools: expect.arrayContaining([expect.objectContaining({ name: "add_quote_line", parameters: expect.any(Object) })]),
+          options: expect.objectContaining({ maxTokens: 4096, timeoutMs: expect.any(Number) }),
+        },
       },
     });
   });

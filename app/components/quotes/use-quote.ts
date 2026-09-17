@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { QuoteCalculation, QuoteData } from "../../lib/quote";
-import type { QuoteAssistantDiagnostic } from "../../lib/quote-assistant-debug";
+import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest } from "../../lib/quote-assistant-debug";
 import { randomUUID } from "../../lib/random-id";
 
 export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
@@ -44,6 +44,9 @@ export function assistantDiagnosticFrom(failure: unknown): QuoteAssistantDiagnos
     ...(typeof value.tool === "string" ? { tool: value.tool } : {}),
     ...(value.toolCall && typeof value.toolCall === "object" && typeof (value.toolCall as { name?: unknown }).name === "string"
       ? { toolCall: { name: (value.toolCall as { name: string }).name, arguments: (value.toolCall as { arguments?: unknown }).arguments } }
+      : {}),
+    ...(value.llmRequest && typeof value.llmRequest === "object" && Array.isArray((value.llmRequest as { messages?: unknown }).messages) && Array.isArray((value.llmRequest as { tools?: unknown }).tools)
+      ? { llmRequest: value.llmRequest as QuoteAssistantLlmRequest }
       : {}),
     ...(typeof value.requestId === "string" ? { requestId: value.requestId } : {}),
   };
