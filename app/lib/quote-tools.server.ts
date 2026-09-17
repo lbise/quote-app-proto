@@ -56,7 +56,7 @@ const emptyParameters = Type.Object({}, { additionalProperties: false });
 const evidenceParameters = Type.Array(Type.Object({
   field: StringEnum(["quantity", "unitPrice", "amount"]),
   text: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT }),
-  sourceLineId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  sourceLineId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Only use an existing original Quote Line ID returned by read_work. Omit this property for evidence from the current Artisan message or history; never use user or a role name." })),
 }, { additionalProperties: false }), { maxItems: MAX_EVIDENCE });
 const lineValueParameters = Type.Object({
   description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION }),
@@ -171,9 +171,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
       for (const field of mutation.changedFields ?? []) changedFields.add(field);
       const details = { changed: mutation.changed ?? [], changedFields: mutation.changedFields ?? [] };
       return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
-    } catch {
+    } catch (error) {
       poisoned = true;
-      lastErrorCode ??= "tool_execution_failed";
+      lastErrorCode = error instanceof ToolValidationError ? error.code : lastErrorCode ?? "tool_execution_failed";
       throw new Error("Tool input rejected.");
     }
   };
@@ -741,15 +741,16 @@ function assertEvidence(value: unknown, context: EvidenceContext, supplied: Reco
     const suppliedValue = supplied[field];
     const matchingEvidence = evidence.find((item) => item.field === field);
     if (!suppliedValue) {
-      if (matchingEvidence) throw new Error("invalid");
+      if (matchingEvidence) throw new ToolValidationError("evidence_without_supplied_value");
       continue;
     }
-    if (!matchingEvidence) throw new Error("invalid");
+    if (!matchingEvidence) throw new ToolValidationError("missing_evidence");
     if (matchingEvidence.sourceLineId !== undefined) {
       const sourceLine = context.originalLines.get(matchingEvidence.sourceLineId);
-      if (!sourceLine || normalizedDecimal(sourceLine[field]) !== normalizedDecimal(suppliedValue)) throw new Error("invalid");
+      if (!sourceLine) throw new ToolValidationError("unknown_evidence_source_line");
+      if (normalizedDecimal(sourceLine[field]) !== normalizedDecimal(suppliedValue)) throw new ToolValidationError("evidence_value_mismatch");
     } else if (!context.artisanTexts.some((text) => evidenceAppears(text, matchingEvidence.text))) {
-      throw new Error("invalid");
+      throw new ToolValidationError("evidence_not_found");
     }
   }
 }

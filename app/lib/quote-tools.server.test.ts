@@ -308,6 +308,17 @@ describe("createQuoteTools", () => {
     })).rejects.toThrow("Tool input rejected.");
   });
 
+  it("reports an unknown evidence source line separately from a value mismatch", async () => {
+    const executor = createQuoteTools({ quote: emptyQuote("Q-source"), capturedLineIds: [], artisanText: "Chambre de 2x4m sur 3m. Prix au m2 12.50chf." });
+    const add = executor.tools.find((tool) => tool.name === "add_quote_line")!;
+    await expect(add.execute("call-source", {
+      description: "Peinture", mode: "quantity", unit: "m²", unitPrice: "12.50",
+      quantityCalculation: { kind: "room_wall_area", length: "2", width: "4", height: "3", source: "Chambre de 2x4m sur 3m" },
+      evidence: [{ field: "unitPrice", text: "Prix au m2 12.50chf", sourceLineId: "user" }],
+    })).rejects.toThrow("Tool input rejected.");
+    expect(executor.diagnostic()?.code).toBe("unknown_evidence_source_line");
+  });
+
   it("validates typed commercial values after the model has interpreted its source evidence", async () => {
     for (const text of ["RAL-5", "-5 CHF", "-12.5 CHF", "15 CHF", "5'000 CHF"]) {
       const executor = createQuoteTools({ quote: emptyQuote(`Q-${text}`), capturedLineIds: [], artisanText: text });
