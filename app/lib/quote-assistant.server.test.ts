@@ -84,6 +84,18 @@ describe("pi Quote assistant model boundary", () => {
     });
   });
 
+  it("reports a missing required line description from a malformed tool call", async () => {
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("add_quote_line", {
+        mode: "quantity",
+        quantityCalculation: { kind: "room_wall_area", length: "2", width: "4", height: "3", source: "Chambre de 2x4m sur 3m" },
+        unit: "m²", unitPrice: "12.50", evidence: [{ field: "unitPrice", text: "Prix au m2 12.50chf" }],
+      })], { stopReason: "toolUse" }),
+    ]);
+    const failure = generateQuoteChange({ ...input(), text: "Chambre de 2x4m sur 3m. Prix au m2 12.50chf" }, boundary);
+    await expect(failure).rejects.toMatchObject({ diagnostic: { code: "missing_description", tool: "add_quote_line" } });
+  });
+
   it("bounds accumulated work context in bytes before sending the next model request", async () => {
     const { boundary, fake } = modelBoundary([
       fauxAssistantMessage(Array.from({ length: 10 }, () => fauxToolCall("read_work", {})), { stopReason: "toolUse" }),
