@@ -73,8 +73,8 @@ const quantityCalculationParameters = Type.Object({
   source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT, description: "Short exact excerpt from the Artisan message containing the dimensions." }),
 }, { additionalProperties: false, description: "For room wall area, use with mode exactly quantity and omit quantity. Do not include units in length, width or height." });
 const addLineParameters = Type.Object({
-  description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION, description: "Commercial French description of this one work item." }),
-  mode: StringEnum(["quantity", "fixed"], { description: "Must be exactly quantity or fixed. Never add markup, labels or another property name." }),
+  description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION, description: "REQUIRED. Always include a concise commercial French description of this one work item; never omit this property." }),
+  mode: StringEnum(["quantity", "fixed"], { description: "REQUIRED. Must be exactly quantity or fixed. Never add markup, labels or another property name." }),
   quantity: Type.Optional(Type.String({ maxLength: MAX_DECIMAL, description: "Plain decimal string only. Omit when quantityCalculation is present; the application calculates quantity." })),
   quantityCalculation: Type.Optional(quantityCalculationParameters),
   unit: Type.Optional(Type.String({ maxLength: MAX_UNIT, description: "Unit such as m²; do not put a unit into a numeric field." })),
@@ -82,7 +82,7 @@ const addLineParameters = Type.Object({
   amount: Type.Optional(Type.String({ maxLength: MAX_DECIMAL, description: "Plain decimal fixed amount string only, without CHF or other currency text." })),
   sectionId: Type.Optional(Type.String({ maxLength: 128 })),
   evidence: Type.Optional(evidenceParameters),
-}, { additionalProperties: false });
+}, { additionalProperties: false, description: "Required fields are description and mode. Always provide both. For a quantity line, include description, mode quantity, unit and any supplied price/calculation; omit only unknown optional values." });
 const supplyLineParameters = Type.Object({
   lineId: Type.String({ minLength: 1, maxLength: 128 }),
   fields: Type.Partial(lineValueParameters),
@@ -229,7 +229,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const addQuoteLine: AgentTool = {
     name: "add_quote_line",
     label: "Add Quote Line",
-    description: "Add one new Quote Line, optionally to an existing section. mode must be exactly quantity or fixed. For a room's painted walls, use mode exactly quantity, omit quantity, and provide quantityCalculation with kind exactly room_wall_area. Its length, width and height are plain positive decimal strings without units; the application calculates perimeter × height. Never put markup or property names in mode. Supply only Artisan-provided commercial facts.",
+    description: "Add one new Quote Line, optionally to an existing section. ALWAYS include the required description (a concise French commercial description) and mode. mode must be exactly quantity or fixed. For a room's painted walls, use mode exactly quantity, omit quantity, and provide quantityCalculation with kind exactly room_wall_area. Its length, width and height are plain positive decimal strings without units; the application calculates perimeter × height. Never put markup or property names in mode. Valid shape: {description: 'Peindre les murs de la chambre', mode: 'quantity', quantityCalculation: {kind: 'room_wall_area', length: '2', width: '4', height: '3', source: '...'}, unit: 'm²', unitPrice: '12.50', evidence: [{field: 'unitPrice', text: '...'}]}. Supply only Artisan-provided commercial facts.",
     parameters: addLineParameters,
     executionMode: "sequential",
     prepareArguments: prepare((args) => { addLineInput(args, evidenceContext); }),
@@ -483,10 +483,10 @@ function newLineId(quote: QuoteData): string {
 
 function addLineInput(value: unknown, evidenceContext: EvidenceContext): Omit<QuoteLine, "id"> {
   const keys = ["description", "mode", "quantity", "quantityCalculation", "unit", "unitPrice", "amount", "sectionId", "evidence"];
-  if (!isRecord(value) || !Object.hasOwn(value, "description") || !Object.hasOwn(value, "mode")
-    || Object.keys(value).some((key) => !keys.includes(key))) {
-    throw new Error("invalid");
-  }
+  if (!isRecord(value)) throw new ToolValidationError("invalid_tool_arguments");
+  if (!Object.hasOwn(value, "description")) throw new ToolValidationError("missing_description");
+  if (!Object.hasOwn(value, "mode")) throw new ToolValidationError("missing_mode");
+  if (Object.keys(value).some((key) => !keys.includes(key))) throw new ToolValidationError("unknown_tool_argument");
   const description = value.description;
   const mode = value.mode;
   const rawQuantity = value.quantity ?? "";
