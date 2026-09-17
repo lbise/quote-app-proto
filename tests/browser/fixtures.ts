@@ -91,6 +91,39 @@ export async function createSectionedQuote(artisan: Artisan): Promise<QuoteDetai
   return saved.data as QuoteDetail;
 }
 
+export async function createConversationQuote(artisan: Artisan): Promise<QuoteDetail> {
+  const detail = await createEmptyQuote(artisan);
+  const quote = {
+    ...detail.draft,
+    title: "Agencement intérieur",
+    customerName: "Maison Exemple SA",
+    customerAddress: "Rue Exemple 8\n1000 Lausanne",
+    customerContact: "",
+    businessName: "Atelier Exemple Sàrl",
+    businessAddress: "Rue Exemple 1\n1000 Lausanne",
+    businessContact: "bonjour@example.test",
+    vatRegistered: false,
+    vatId: "",
+    issueDate: "2026-09-01",
+    siteAddress: "Rue Exemple 8\n1000 Lausanne",
+    terms: "Prix en CHF.",
+    discountMode: "none" as const,
+    discount: "0",
+    sections: [
+      { id: "section-living", title: "Séjour" },
+      { id: "section-bedroom", title: "Chambre" },
+    ],
+    lines: [
+      { id: "living-cladding", sectionId: "section-living", description: "Habillage mural en chêne", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+      { id: "bedroom-cladding", sectionId: "section-bedroom", description: "Habillage mural en chêne", mode: "quantity" as const, quantity: "8", unit: "m²", unitPrice: "40.00", amount: "" },
+      { id: "bedroom-shelf", sectionId: "section-bedroom", description: "Pose de la tablette, fixations comprises", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "150.00" },
+    ],
+  };
+  const saved = await requestQuote(artisan, { action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote });
+  if (!saved.ok) throw new Error(`Browser conversation Quote seed save failed with ${saved.status}.`);
+  return saved.data as QuoteDetail;
+}
+
 export async function createCompleteQuote(artisan: Artisan, amount = "100.00"): Promise<QuoteDetail> {
   const detail = await createEmptyQuote(artisan);
   const quote = {
