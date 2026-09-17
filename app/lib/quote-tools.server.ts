@@ -66,20 +66,20 @@ const lineValueParameters = Type.Object({
   amount: Type.String({ maxLength: MAX_DECIMAL }),
 }, { additionalProperties: false });
 const quantityCalculationParameters = Type.Object({
-  kind: StringEnum(["room_wall_area"]),
-  length: Type.String({ minLength: 1, maxLength: MAX_DECIMAL }),
-  width: Type.String({ minLength: 1, maxLength: MAX_DECIMAL }),
-  height: Type.String({ minLength: 1, maxLength: MAX_DECIMAL }),
-  source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT }),
-}, { additionalProperties: false });
+  kind: StringEnum(["room_wall_area"], { description: "Use exactly room_wall_area for a rectangular room's painted walls." }),
+  length: Type.String({ minLength: 1, maxLength: MAX_DECIMAL, description: "Plain positive decimal in metres, for example 2 or 2.5. Do not include m or other units." }),
+  width: Type.String({ minLength: 1, maxLength: MAX_DECIMAL, description: "Plain positive decimal in metres, for example 4 or 4.5. Do not include m or other units." }),
+  height: Type.String({ minLength: 1, maxLength: MAX_DECIMAL, description: "Plain positive decimal in metres, for example 3 or 3.2. Do not include m or other units." }),
+  source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT, description: "Short exact excerpt from the Artisan message containing the dimensions." }),
+}, { additionalProperties: false, description: "For room wall area, use with mode exactly quantity and omit quantity. Do not include units in length, width or height." });
 const addLineParameters = Type.Object({
-  description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION }),
-  mode: StringEnum(["quantity", "fixed"]),
-  quantity: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
+  description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION, description: "Commercial French description of this one work item." }),
+  mode: StringEnum(["quantity", "fixed"], { description: "Must be exactly quantity or fixed. Never add markup, labels or another property name." }),
+  quantity: Type.Optional(Type.String({ maxLength: MAX_DECIMAL, description: "Plain decimal string only. Omit when quantityCalculation is present; the application calculates quantity." })),
   quantityCalculation: Type.Optional(quantityCalculationParameters),
-  unit: Type.Optional(Type.String({ maxLength: MAX_UNIT })),
-  unitPrice: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
-  amount: Type.Optional(Type.String({ maxLength: MAX_DECIMAL })),
+  unit: Type.Optional(Type.String({ maxLength: MAX_UNIT, description: "Unit such as m²; do not put a unit into a numeric field." })),
+  unitPrice: Type.Optional(Type.String({ maxLength: MAX_DECIMAL, description: "Plain decimal price string only, without CHF or other currency text." })),
+  amount: Type.Optional(Type.String({ maxLength: MAX_DECIMAL, description: "Plain decimal fixed amount string only, without CHF or other currency text." })),
   sectionId: Type.Optional(Type.String({ maxLength: 128 })),
   evidence: Type.Optional(evidenceParameters),
 }, { additionalProperties: false });
@@ -229,7 +229,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const addQuoteLine: AgentTool = {
     name: "add_quote_line",
     label: "Add Quote Line",
-    description: "Add one new Quote Line, optionally to an existing section. For a room's painted walls, provide quantityCalculation with typed length, width and wall height; the application calculates perimeter × height. Supply only Artisan-provided commercial facts.",
+    description: "Add one new Quote Line, optionally to an existing section. mode must be exactly quantity or fixed. For a room's painted walls, use mode exactly quantity, omit quantity, and provide quantityCalculation with kind exactly room_wall_area. Its length, width and height are plain positive decimal strings without units; the application calculates perimeter × height. Never put markup or property names in mode. Supply only Artisan-provided commercial facts.",
     parameters: addLineParameters,
     executionMode: "sequential",
     prepareArguments: prepare((args) => { addLineInput(args, evidenceContext); }),
