@@ -1,0 +1,501 @@
+[
+  {
+    "name": "set_customer_info",
+    "description": "Copy Customer name, address, or contact details supplied by the Artisan into this Quote only. Never infer a value and never create or modify a reusable Customer record.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "contact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "add_quote_line",
+    "description": "Add one new Quote Line, optionally to an existing section. ALWAYS include the required description (a concise French commercial description) and mode. mode must be exactly quantity or fixed. For a room's painted walls, use mode exactly quantity, omit quantity, and provide quantityCalculation with kind exactly room_wall_area. Its length, width and height are plain positive decimal strings without units; the application calculates perimeter × height. Never put markup or property names in mode. Valid shape: {description: 'Peindre les murs de la chambre', mode: 'quantity', quantityCalculation: {kind: 'room_wall_area', length: '2', width: '4', height: '3', source: '...'}, unit: 'm²', unitPrice: '12.50', evidence: [{field: 'unitPrice', text: '...'}]}. Supply only Artisan-provided commercial facts.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "description",
+        "mode"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "REQUIRED. Always include a concise commercial French description of this one work item; never omit this property."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "quantity",
+            "fixed"
+          ],
+          "description": "REQUIRED. Must be exactly quantity or fixed. Never add markup, labels or another property name."
+        },
+        "quantity": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Plain decimal string only. Omit when quantityCalculation is present; the application calculates quantity."
+        },
+        "quantityCalculation": {
+          "type": "object",
+          "required": [
+            "kind",
+            "length",
+            "width",
+            "height",
+            "source"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "room_wall_area"
+              ],
+              "description": "Use exactly room_wall_area for a rectangular room's painted walls."
+            },
+            "length": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "description": "Plain positive decimal in metres, for example 2 or 2.5. Do not include m or other units."
+            },
+            "width": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "description": "Plain positive decimal in metres, for example 4 or 4.5. Do not include m or other units."
+            },
+            "height": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "description": "Plain positive decimal in metres, for example 3 or 3.2. Do not include m or other units."
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Short exact excerpt from the Artisan message containing the dimensions."
+            }
+          },
+          "additionalProperties": false,
+          "description": "For room wall area, use with mode exactly quantity and omit quantity. Do not include units in length, width or height."
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Unit such as m²; do not put a unit into a numeric field."
+        },
+        "unitPrice": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Plain decimal price string only, without CHF or other currency text."
+        },
+        "amount": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Plain decimal fixed amount string only, without CHF or other currency text."
+        },
+        "sectionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "text"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "quantity",
+                  "unitPrice",
+                  "amount"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "sourceLineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "description": "Only use an existing original Quote Line ID provided in currentWorkingDraft context. Omit this property for evidence from the current Artisan message or history; never use user or a role name."
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Required fields are description and mode. Always provide both. For a quantity line, include description, mode quantity, unit and any supplied price/calculation; omit only unknown optional values."
+    }
+  },
+  {
+    "name": "supply_missing_line_fields",
+    "description": "Supply Artisan-provided values only for empty commercial fields on a captured Quote Line. Do not overwrite, refine, or target manual lines. Quantity-line amounts are calculated and cannot be supplied. Every quantity, unit price, or fixed amount needs evidence from the current Artisan message, trusted Artisan history, or an exact original Quote Line value.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "lineId",
+        "fields"
+      ],
+      "properties": {
+        "lineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fields": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "quantity": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "unit": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "unitPrice": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "amount": {
+              "type": "string",
+              "maxLength": 20
+            }
+          }
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "text"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "quantity",
+                  "unitPrice",
+                  "amount"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "sourceLineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "description": "Only use an existing original Quote Line ID provided in currentWorkingDraft context. Omit this property for evidence from the current Artisan message or history; never use user or a role name."
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "update_quote_line",
+    "description": "Correct one existing Quote Line. Use a stable line ID from currentWorkingDraft context. Numeric corrections require evidence from the Artisan; never invent a price or measurement.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "lineId",
+        "fields"
+      ],
+      "properties": {
+        "lineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fields": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "quantity": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "unit": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "unitPrice": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "amount": {
+              "type": "string",
+              "maxLength": 20
+            }
+          },
+          "minProperties": 1,
+          "additionalProperties": false
+        },
+        "clearFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "quantity",
+              "unitPrice",
+              "amount"
+            ]
+          },
+          "maxItems": 3,
+          "uniqueItems": true
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "text"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "quantity",
+                  "unitPrice",
+                  "amount"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "sourceLineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "description": "Only use an existing original Quote Line ID provided in currentWorkingDraft context. Omit this property for evidence from the current Artisan message or history; never use user or a role name."
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "create_quote_section",
+    "description": "Create a new French-named Quote Section. Section IDs are generated by the application.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "rename_quote_section",
+    "description": "Rename one existing Quote Section using its stable section ID.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "sectionId",
+        "title"
+      ],
+      "properties": {
+        "sectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "move_quote_line",
+    "description": "Move an existing Quote Line to a section or No section. Moving appends it to the destination group.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "lineId",
+        "sectionId"
+      ],
+      "properties": {
+        "lineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sectionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "duplicate_quote_line",
+    "description": "Duplicate one existing Quote Line with a fresh application ID. Copy values from the source; when measurements are unknown, use measurementPolicy unknown.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "lineId"
+      ],
+      "properties": {
+        "lineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sectionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "measurementPolicy": {
+          "type": "string",
+          "enum": [
+            "retain",
+            "unknown"
+          ]
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "duplicate_quote_section",
+    "description": "Duplicate a Quote Section and all its contained work with fresh application IDs. Use measurementPolicy unknown when copied quantities are not known.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "sectionId"
+      ],
+      "properties": {
+        "sectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "measurementPolicy": {
+          "type": "string",
+          "enum": [
+            "retain",
+            "unknown"
+          ]
+        },
+        "correctionOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+]
