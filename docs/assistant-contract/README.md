@@ -37,11 +37,11 @@ Recorded on 2026-09-18. After discussing the design, the product owner said, "ok
 
 The exact correction matcher and remaining tool definitions still need review.
 
-### One line-editing tool
+### Tool grouping clarification pending
 
-The product owner requested: "edit_lines replaces it" and "take all the work we did for edit_line and make it work with one or more changes at a time". The target contract has one `edit_lines` tool accepting a nonempty operations array, including a single-element array for one change. Do not register a separate `edit_line` alias or keep competing single-line tools after replacement. Reuse the reviewed grouped-evidence, internal recovery tracking and minimal-result conventions; do not design a second contract for batches. Validate the complete call before changing staged work.
+The earlier exchange about `edit_lines` replacing `edit_line` was misinterpreted by the agent. The product owner clarified: "what I ment is that edit_lines replaces edit_quote is that correct?" Do not treat the earlier exchange as approval of the proposed split or of a line-tool consolidation decision.
 
-The current runtime still has `add_quote_line`, `supply_missing_line_fields` and `update_quote_line`; #27 replaces them with `edit_lines`. This decision does not claim that runtime replacement has already happened. The previously reviewed `edit_quote` is distinct: it changes Quote-level fields, while `edit_lines` changes Quote Lines. Their shared contract conventions are reused, not their field lists. This records the consolidation decision, not approval of the remaining tool set.
+The proposal currently separates `edit_quote` for Quote-level fields from `edit_lines` for Quote Lines. Whether to retain that split or combine these capabilities remains under discussion. Shared grouped-evidence, internal recovery tracking and minimal-result conventions remain the agreed direction. No runtime replacement has happened.
 
 ### Still awaiting approval
 
