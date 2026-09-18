@@ -1,13 +1,13 @@
 # Assistant contract approval request
 
-Status: **proposed, not approved, not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. The issue had no approval comment when this packet was prepared.
+Status: **core system prompt approved; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
 
 The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosure or confirmation rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
 
 ## Review order
 
 1. [Current inventory](current-inventory.md), the instructions and behavior being replaced.
-2. [Exact proposed system prompt](proposed-system-prompt.txt).
+2. [Complete approved core system prompt](proposed-system-prompt.txt), with the language substitution recorded below.
 3. [Foundation tool definitions](foundation-tools.json), the nine implemented mutation tools proposed for #26, without `read_work`.
 4. [Complete future tool definitions](proposed-tools.json), six grouped tools for the complete agreed capability set. [Generator](build-proposed-tools.mjs) provides a less repetitive view of the exact same schemas. It is review tooling, not an application module.
 5. [Behavior and wire contract](#behavior-and-wire-contract), below, including outputs, errors, limits and confirmation.
@@ -16,12 +16,22 @@ The product owner must approve the actual artifacts below before implementation.
 
 ## Approval record
 
-No approval is recorded. Do not mark any of these approved based on generated implementation or an agent's review.
+### Core system prompt approved
 
-The product owner can approve this packet at a named commit in a comment on #26, or request changes. Record the approving person's identity, timestamp, commit, any exclusions, and the comment URL here after approval. Approval should explicitly cover:
+Recorded on 2026-09-18. The product owner approved the revised core prompt in this conversation with: "yes record the whole system prompt in the doc and let's continue". This followed review of the complete shortened prompt and the two replacements covering application-provided reference facts and Customer/business details. The full approved text is in [proposed-system-prompt.txt](proposed-system-prompt.txt); its original filename is retained for existing links. This is a human conversational approval record, not approval inferred from generated code. No GitHub approval-comment URL is recorded.
+
+The file contains the English-interface variant verbatim. For a French interface, substitute exactly `Reply in French.` for `Reply in English.`. The application chooses that sentence from the trusted interface setting, never from the language of Artisan input. New work descriptions and section titles remain French in both variants.
+
+The approved text permits application-supplied reference facts. It does not add Customer-name lookup, material-cost lookup, a database-access tool or permission to use real Customer data. Existing evidence validation remains required; any future reference-data source needs an explicit supported validation path. Customer selection and automatic matching are separate from this prompt approval.
+
+Removed explanations about current-state tracking, tool availability, copying, confirmation, recovery and commit status must not return as hidden system-prompt suffixes. Tool-specific instructions belong in reviewed tool definitions, correction instructions in rejected-call results and save status in application UI. Server-side safeguards remain unchanged.
+
+### Still awaiting approval
+
+Tool definitions, context/result contracts, recovery, limits, disclosures, confirmation and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
 
 - Full-draft data sharing, including Quote-local Customer/business details and terms.
-- Exact prompt, foundation schemas and staged registration below.
+- Foundation schemas and staged registration below.
 - Six-tool end-state contract, including mode changes, percentage adjustments and deletion confirmation.
 - Three turn-wide correction attempts, whole-turn discard and diagnostics.
 - Proposed size/execution limits and unsupported-request behavior.
@@ -29,15 +39,9 @@ The product owner can approve this packet at a named commit in a comment on #26,
 
 ## Staged registration
 
-The system message is exactly `proposed-system-prompt.txt`, followed by two newlines and the applicable paragraph below. There are no other dynamic system instructions. The application supplies dynamic data in the JSON wrapper described below, never by interpolating Quote prose into system text.
+The system message is exactly the approved core prompt with the explicit interface-language substitution described above. Do not append stage-specific paragraphs. The registration plan below remains a proposal; available tool definitions carry their own authority and restrictions. The application supplies dynamic data in the JSON wrapper described below, never by interpolating Quote prose into system text.
 
 ### #26 foundation
-
-Exact appended paragraph:
-
-```text
-This request uses the foundation tool set. You may copy supplied Customer details into this Quote, add lines, correct existing line descriptions and compatible numeric fields, create or rename sections, append a moved line to its destination, and duplicate lines or sections. Quote-level business, reference, dates, project, terms, VAT and discount edits, pricing-mode changes, bulk edits, ordering within a group and deletion are not available through these tools. You may see those fields as context but cannot change them. supply_missing_line_fields applies only to empty fields on captured lines identified in capturedLineIds; use update_quote_line for corrections to any existing line. For explicit unknown numeric values, use update_quote_line with empty field values and matching clearFields. For numeric evidence, sourceLineId may refer only to a line in the initial currentWorkingDraft, not to a new staged line. Omit sourceLineId for current or retained Artisan messages. When a request requires an unavailable operation, explain the limitation and direct the Artisan to manual editing instead of approximating it.
-```
 
 Register exactly the nine entries in `foundation-tools.json`. They retain existing field limits and supported operations, replace obsolete `read_work` references, and add optional `correctionOf`. The proposed supply_missing_line_fields.fields schema also explicitly rejects empty objects and unknown properties, matching its executor's existing restrictions. The current Type.Partial serialization drops the source object's additionalProperties option; the proposal closes that schema gap. Remove `read_work` completely. Full context, structured results, correction handling, call rollback, debug changes, faithful description/unit rewriting and removal of automatic Publication-review opening are #26 work. The old special-case missing-field tool remains temporarily; consolidation belongs to #27. No new bulk, commercial-field, pricing-mode or deletion capability is implied by context visibility.
 
@@ -45,21 +49,9 @@ The existing description/unit source-containment rule must stop requiring verbat
 
 ### #27 commercial edits
 
-Exact appended paragraph:
-
-```text
-This request supports commercial editing through edit_quote and edit_lines. Use those tools for initial capture, missing values and corrections, including manually entered or already populated fields. Structural capabilities remain limited to the registered create_quote_section, rename_quote_section, move_quote_line, duplicate_quote_line and duplicate_quote_section tools. These legacy structural tools move to the destination end and do not support arbitrary reordering or deletion. Ask the Artisan to use manual editing for unsupported structural requests. Commercial-tool evidence uses message IDs or current-work fields. Legacy structural tools use their own schemas.
-```
-
 Register `edit_quote` and `edit_lines` from `proposed-tools.json`, plus the five named structural tools from `foundation-tools.json`. Retire `set_customer_info`, `add_quote_line`, `supply_missing_line_fields` and `update_quote_line`. Do not register the future structural definitions yet. This replaces initial-capture/missing-field special cases with ordinary line edits without rebuilding existing copy behavior.
 
 ### #28 structural edits
-
-Exact appended paragraph:
-
-```text
-This request supports the complete registered targeted tool set. Use edit_quote for Quote-level fields, edit_lines for line content and prices, edit_sections for section titles, copy_work for copying, move_work for ordering and membership, and delete_work for deletion proposals. No tool authorizes Publication, Undo, reusable-record changes or creating a Quote or Working Draft. Confirmation-required turns remain staged until the Artisan confirms through the application UI.
-```
 
 Register exactly the six entries in `proposed-tools.json`, retiring the legacy structural names. No standalone confirmation tool exists. A future tool definition must not be registered merely because it appears in this packet.
 
@@ -251,4 +243,4 @@ Two schema inconsistencies were corrected and rechecked by the Spec reviewer. Cu
 
 ## Implementation stop
 
-This commit prepares review only. The unchecked execution, test and disclosure work in #26 remains open. Do not change runtime prompts, registration, context sharing or validation until the product owner approves a specific revision of this packet.
+This work records partial approval and prepares the remaining review. The unchecked execution, test and disclosure work in #26 remains open. Do not change runtime prompts, registration, context sharing or validation until the product owner approves the remaining contract required for implementation.
