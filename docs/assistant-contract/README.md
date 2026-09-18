@@ -37,6 +37,12 @@ Recorded on 2026-09-18. After discussing the design, the product owner said, "ok
 
 The exact correction matcher and remaining tool definitions still need review.
 
+### One line-editing tool
+
+The product owner requested: "edit_lines replaces it" and "take all the work we did for edit_line and make it work with one or more changes at a time". The target contract has one `edit_lines` tool accepting a nonempty operations array, including a single-element array for one change. Do not register a separate `edit_line` alias or keep competing single-line tools after replacement. Reuse the reviewed grouped-evidence, internal recovery tracking and minimal-result conventions; do not design a second contract for batches. Validate the complete call before changing staged work.
+
+The current runtime still has `add_quote_line`, `supply_missing_line_fields` and `update_quote_line`; #27 replaces them with `edit_lines`. This decision does not claim that runtime replacement has already happened. The previously reviewed `edit_quote` is distinct: it changes Quote-level fields, while `edit_lines` changes Quote Lines. Their shared contract conventions are reused, not their field lists. This records the consolidation decision, not approval of the remaining tool set.
+
 ### Still awaiting approval
 
 Tool definitions, including legacy foundation schemas and results, context/result contracts, recovery, limits, disclosures, confirmation and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
