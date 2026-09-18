@@ -1,7 +1,7 @@
 [
   {
     "name": "edit_quote",
-    "description": "Edit named commercial fields of this Working Draft only. Omitted fields stay unchanged; empty strings deliberately clear text or decimal fields. Customer and business details are Quote-local copies, never reusable records. The reference is locked after first Publication. Do not supply computed amounts, currency or a tax rate. Provide evidence for new commercial facts. The complete call validates before staging any change.",
+    "description": "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -216,7 +216,8 @@
             "additionalProperties": false
           },
           "minItems": 1,
-          "maxItems": 200
+          "maxItems": 200,
+          "description": "For each new nonempty commercial value, cite its source and use a path such as /fields/discount. Omit for deliberate clearing or unchanged values. Cite retained Artisan messages or current-work fields supplied by the application."
         },
         "correctionOf": {
           "type": "string",

@@ -27,14 +27,15 @@ const pricingFields = {
 };
 const tool = (name, description, properties, required) => ({ name, description, parameters: object({ ...properties, correctionOf }, required) });
 const tools = [
-  tool("edit_quote", "Edit named commercial fields of this Working Draft only. Omitted fields stay unchanged; empty strings deliberately clear text or decimal fields. Customer and business details are Quote-local copies, never reusable records. The reference is locked after first Publication. Do not supply computed amounts, currency or a tax rate. Provide evidence for new commercial facts. The complete call validates before staging any change.", {
+  tool("edit_quote", "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.", {
     fields: { ...object({
       reference: text(200), title: text(20000), issueDate: text(10, "YYYY-MM-DD or empty."), validUntil: text(10, "YYYY-MM-DD or empty."),
       siteAddress: text(20000), customerName: text(20000), customerAddress: text(20000), customerContact: text(20000),
       businessName: text(20000), businessAddress: text(20000), businessContact: text(20000), terms: text(20000),
       vatRegistered: { anyOf: [{ type: "boolean" }, { type: "null" }], description: "True applies the supported standard VAT treatment, false means not registered, null means unknown. Never infer registration." },
       vatId: text(20000), discountMode: choice("none", "percent", "fixed"), discount: clearableDecimal,
-    }, []), minProperties: 1 }, evidence,
+    }, []), minProperties: 1 },
+    evidence: { ...evidence, description: "For each new nonempty commercial value, cite its source and use a path such as /fields/discount. Omit for deliberate clearing or unchanged values. Cite retained Artisan messages or current-work fields supplied by the application." },
   }, ["fields"]),
   tool("edit_lines", "Add, correct or adjust explicitly selected Quote Lines, including manually entered lines. A call contains at most 50 operations and touches at most 50 lines. Operations validate together or change nothing. Add requires description and mode; unknown values stay empty. Updates omit unchanged fields and use empty strings to clear. Changing pricing mode clears obsolete fields and leaves unsupplied replacement prices missing. Adjust uses application decimal arithmetic and CHF half-up rounding, not model-computed replacement prices. No copying, moving or deleting through this tool. Provide evidence for new commercial facts and supplied adjustment percentages.", {
     operations: list({ anyOf: [
