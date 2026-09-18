@@ -144,7 +144,39 @@
                       "entity": {
                         "type": "string",
                         "enum": [
-                          "quote",
+                          "quote"
+                        ]
+                      },
+                      "field": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "excerpt": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "entity",
+                      "field",
+                      "excerpt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "current_work"
+                        ]
+                      },
+                      "entity": {
+                        "type": "string",
+                        "enum": [
                           "line",
                           "section"
                         ]
@@ -168,6 +200,7 @@
                     "required": [
                       "kind",
                       "entity",
+                      "id",
                       "field",
                       "excerpt"
                     ],
@@ -518,7 +551,39 @@
                       "entity": {
                         "type": "string",
                         "enum": [
-                          "quote",
+                          "quote"
+                        ]
+                      },
+                      "field": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "excerpt": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "entity",
+                      "field",
+                      "excerpt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "current_work"
+                        ]
+                      },
+                      "entity": {
+                        "type": "string",
+                        "enum": [
                           "line",
                           "section"
                         ]
@@ -542,6 +607,7 @@
                     "required": [
                       "kind",
                       "entity",
+                      "id",
                       "field",
                       "excerpt"
                     ],
@@ -688,7 +754,39 @@
                       "entity": {
                         "type": "string",
                         "enum": [
-                          "quote",
+                          "quote"
+                        ]
+                      },
+                      "field": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "excerpt": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "entity",
+                      "field",
+                      "excerpt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "current_work"
+                        ]
+                      },
+                      "entity": {
+                        "type": "string",
+                        "enum": [
                           "line",
                           "section"
                         ]
@@ -712,6 +810,7 @@
                     "required": [
                       "kind",
                       "entity",
+                      "id",
                       "field",
                       "excerpt"
                     ],
@@ -872,7 +971,39 @@
                       "entity": {
                         "type": "string",
                         "enum": [
-                          "quote",
+                          "quote"
+                        ]
+                      },
+                      "field": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "excerpt": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "entity",
+                      "field",
+                      "excerpt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "current_work"
+                        ]
+                      },
+                      "entity": {
+                        "type": "string",
+                        "enum": [
                           "line",
                           "section"
                         ]
@@ -896,6 +1027,7 @@
                     "required": [
                       "kind",
                       "entity",
+                      "id",
                       "field",
                       "excerpt"
                     ],

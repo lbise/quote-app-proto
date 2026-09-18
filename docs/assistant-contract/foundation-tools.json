@@ -206,7 +206,9 @@
               "type": "string",
               "maxLength": 20
             }
-          }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "correctionOf": {
           "type": "string",

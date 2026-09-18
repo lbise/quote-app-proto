@@ -39,7 +39,7 @@ Exact appended paragraph:
 This request uses the foundation tool set. You may copy supplied Customer details into this Quote, add lines, correct existing line descriptions and compatible numeric fields, create or rename sections, append a moved line to its destination, and duplicate lines or sections. Quote-level business, reference, dates, project, terms, VAT and discount edits, pricing-mode changes, bulk edits, ordering within a group and deletion are not available through these tools. You may see those fields as context but cannot change them. supply_missing_line_fields applies only to empty fields on captured lines identified in capturedLineIds; use update_quote_line for corrections to any existing line. For explicit unknown numeric values, use update_quote_line with empty field values and matching clearFields. For numeric evidence, sourceLineId may refer only to a line in the initial currentWorkingDraft, not to a new staged line. Omit sourceLineId for current or retained Artisan messages. When a request requires an unavailable operation, explain the limitation and direct the Artisan to manual editing instead of approximating it.
 ```
 
-Register exactly the nine entries in `foundation-tools.json`. They retain existing field limits and operation shapes, replace obsolete `read_work` references, and add optional `correctionOf`. Remove `read_work` completely. Full context, structured results, correction handling, call rollback, debug changes, faithful description/unit rewriting and removal of automatic Publication-review opening are #26 work. The old special-case missing-field tool remains temporarily; consolidation belongs to #27. No new bulk, commercial-field, pricing-mode or deletion capability is implied by context visibility.
+Register exactly the nine entries in `foundation-tools.json`. They retain existing field limits and supported operations, replace obsolete `read_work` references, and add optional `correctionOf`. The proposed supply_missing_line_fields.fields schema also explicitly rejects empty objects and unknown properties, matching its executor's existing restrictions. The current Type.Partial serialization drops the source object's additionalProperties option; the proposal closes that schema gap. Remove `read_work` completely. Full context, structured results, correction handling, call rollback, debug changes, faithful description/unit rewriting and removal of automatic Publication-review opening are #26 work. The old special-case missing-field tool remains temporarily; consolidation belongs to #27. No new bulk, commercial-field, pricing-mode or deletion capability is implied by context visibility.
 
 The existing description/unit source-containment rule must stop requiring verbatim text. Keep numeric evidence checks. Faithful translation remains a model obligation and human review task, not a claim that the validator proves semantic equivalence. Customer snapshot values still require supplied source text; changing address wording or clearing those fields is #27 work.
 
@@ -229,6 +229,25 @@ Use red-green vertical slices at these public boundaries after approval, without
 3. **Bilingual browser workflow.** Check existing editing, disclosure, visible failure/retry counters and outcomes, manual editing while processing, manual Undo and no automatic Publication dialog. In #28 add confirmation preview, safe focus, keyboard confirmation/cancel, manual-edit invalidation and mixed-turn atomicity. Scripted browser HTTP responses prove UI behavior only; PostgreSQL tests above prove execution and persistence.
 
 For each relevant slice, typecheck regularly and run its single test file. Once implemented, run the full unit/integration suite with an isolated PostgreSQL database and the browser suite. Use the sanitized representative joinery/civil/landscape fixtures, preserve multiline composite work, and test the complete 220,000-byte draft boundary, multibyte French and provider-serialization overhead. A deterministic model does not prove live-model interpretation quality; #29 and #30 own that evaluation.
+
+## Preparation checks and two-axis review
+
+Reviewed the approval packet against baseline `f331f0ea36a2de9bfd434c6a96df46ecbe4bca8b`. These checks do not constitute product-owner approval.
+
+### Standards
+
+No documented-standard violations. One naming finding in the schema generator was corrected: sectionIdOrNoSection and clearableDecimal now name their actual meanings.
+
+### Spec
+
+Two schema inconsistencies were corrected and rechecked by the Spec reviewer. Current-work evidence now forbids an ID for Quote fields and requires an ID for lines/sections. The foundation missing-fields schema now rejects empty objects and unknown properties; the inventory records the existing serialization gap accurately. No missing approval-preparation artifact or scope creep was found. Runtime acceptance criteria remain gated, not completed.
+
+### Validation
+
+- Typecheck passed before review and after corrections.
+- Existing full Vitest run: 65 passed, 39 skipped across four test files. Database-dependent integration coverage was not exercised in this environment.
+- Offline proposal schema acceptance/rejection checks passed, generated JSON matches its generator, local review links resolve and diff whitespace checks passed.
+- No new application tests, browser run or live-model call. No runtime changes or real-data provider approval.
 
 ## Implementation stop
 
