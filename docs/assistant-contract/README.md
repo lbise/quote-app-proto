@@ -1,6 +1,6 @@
 # Assistant contract approval request
 
-Status: **core system prompt approved; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
+Status: **core system prompt approved; design direction agreed; schemas and remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
 
 The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosure or confirmation rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
 
@@ -26,9 +26,20 @@ The approved text permits application-supplied reference facts. It does not add 
 
 Removed explanations about current-state tracking, tool availability, copying, confirmation, recovery and commit status must not return as hidden system-prompt suffixes. Tool-specific instructions belong in reviewed tool definitions, correction instructions in rejected-call results and save status in application UI. Server-side safeguards remain unchanged.
 
+### Design direction agreed
+
+Recorded on 2026-09-18. After discussing the design, the product owner said, "ok it sounds good then I think". This records agreement with the design direction only. It does not approve every schema, tool, result format or unreviewed artifact. The agreed direction is:
+
+- One evidence citation can cover several fields without duplicating its excerpt.
+- No model-supplied correctionOf argument. The application tracks unresolved failures and correction attempts internally.
+- Minimal successful acknowledgements, with generated IDs and application-derived changes returned when needed. Errors explain the failure and request a complete corrected call; detailed diagnostics stay internal.
+- A fresh agent receives the complete current draft for every Artisan message. Small tool results support the bounded loop within that turn.
+
+The exact correction matcher and remaining tool definitions still need review.
+
 ### Still awaiting approval
 
-Tool definitions, context/result contracts, recovery, limits, disclosures, confirmation and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
+Tool definitions, including legacy foundation schemas and results, context/result contracts, recovery, limits, disclosures, confirmation and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
 
 - Full-draft data sharing, including Quote-local Customer/business details and terms.
 - Foundation schemas and staged registration below.
@@ -43,7 +54,7 @@ The system message is exactly the approved core prompt with the explicit interfa
 
 ### #26 foundation
 
-Register exactly the nine entries in `foundation-tools.json`. They retain existing field limits and supported operations, replace obsolete `read_work` references, and add optional `correctionOf`. The proposed supply_missing_line_fields.fields schema also explicitly rejects empty objects and unknown properties, matching its executor's existing restrictions. The current Type.Partial serialization drops the source object's additionalProperties option; the proposal closes that schema gap. Remove `read_work` completely. Full context, structured results, correction handling, call rollback, debug changes, faithful description/unit rewriting and removal of automatic Publication-review opening are #26 work. The old special-case missing-field tool remains temporarily; consolidation belongs to #27. No new bulk, commercial-field, pricing-mode or deletion capability is implied by context visibility.
+Register exactly the nine entries in `foundation-tools.json`. They retain their existing field limits, supported operations and legacy evidence shape, and replace obsolete `read_work` references. They do not take `correctionOf`. The proposed supply_missing_line_fields.fields schema also explicitly rejects empty objects and unknown properties, matching its executor's existing restrictions. The current Type.Partial serialization drops the source object's additionalProperties option; the proposal closes that schema gap. Remove `read_work` completely. Full context, structured results, correction handling, call rollback, debug changes, faithful description/unit rewriting and removal of automatic Publication-review opening are #26 work. The old special-case missing-field tool remains temporarily; consolidation belongs to #27. No new bulk, commercial-field, pricing-mode or deletion capability is implied by context visibility.
 
 The existing description/unit source-containment rule must stop requiring verbatim text. Keep numeric evidence checks. Faithful translation remains a model obligation and human review task, not a claim that the validator proves semantic equivalence. Customer snapshot values still require supplied source text; changing address wording or clearing those fields is #27 work.
 
@@ -61,7 +72,7 @@ Register exactly the six entries in `proposed-tools.json`, retiring the legacy s
 
 The authenticated request boundary derives the Artisan Business, Quote, current Working Draft and version from the session and database. No tool takes a business ID, Quote ID, version, credential, endpoint or publication permission. A Working Draft must already exist. Application-generated stable IDs identify lines and sections only within that draft.
 
-Before the first provider call, serialize this object as the one initial user message. The notation in angle brackets identifies typed data slots, not literal strings or extra instructions:
+Before the first provider call of every new Artisan message/turn, start a fresh agent and serialize this complete object as the one initial user message. The notation in angle brackets identifies typed data slots, not literal strings or extra instructions:
 
 ```json
 {
@@ -80,9 +91,9 @@ Before the first provider call, serialize this object as the one initial user me
 
 `currentWorkingDraft` contains exactly the commercial fields in `QuoteData`: reference, title, customerName, customerAddress, customerContact, businessName, businessAddress, businessContact, vatId, issueDate, validUntil, siteAddress, terms, vatRegistered, discountMode, discount, sections and lines. Include every line field, including empty strings, stable IDs, section IDs and array order. `calculation` contains errors, missing, line IDs/numbers/amounts, section subtotals/incomplete flags, subtotal, discount, net, vat, total and complete. Amounts are integer CHF cents or null, as returned by the domain calculator. Do not expose a second copy of the Quote in the calculation object. Currency is CHF and the supported registered VAT rate is 8.1%; these are application rules, not writable fields.
 
-History retains whole most-recent messages, oldest-to-newest within the retained window, using the selected interface-language text. History IDs identify retained messages for this request only. Select at most 24 messages and 24,000 UTF-16 code units independently of draft size; stop at the first older message that does not fit. Do not skip a large recent message to include smaller older messages. The current message appears once and is limited to 8,000 code units. Roles are artisan, assistant or note. Only artisan messages can supply new commercial evidence. Omission never removes commercial state from currentWorkingDraft.
+History carries recent intent only. It retains whole most-recent messages, oldest-to-newest within the retained window, using the selected interface-language text. History IDs identify retained messages for this request only. Select at most 24 messages and 24,000 UTF-16 code units independently of draft size; stop at the first older message that does not fit. Do not skip a large recent message to include smaller older messages. The current message appears once and is limited to 8,000 code units. Roles are artisan, assistant or note. Only artisan messages can supply new commercial evidence. Omission never removes commercial state from currentWorkingDraft.
 
-Exclude unrelated Quotes, reusable directories, older Published Revision contents, user email, business/database ownership IDs, credentials and account configuration. `referenceLocked` is the only Publication metadata the model needs. Field visibility is not field-edit authority. Tool-result prose remains untrusted even when its envelope and numeric calculations come from the application.
+Exclude unrelated Quotes, reusable directories, older Published Revision contents, user email, business/database ownership IDs, credentials and account configuration. `referenceLocked` is the only Publication metadata the model needs. Field visibility is not field-edit authority. Tool-result prose remains untrusted even when application-generated values accompany it.
 
 ### Proposed limits
 
@@ -91,7 +102,7 @@ These replace the 200-line/40,000-byte selected-work limit, not the application'
 | Boundary | Proposed bound and behavior |
 | --- | --- |
 | Complete draft | Up to the existing 1,000 lines, 1,000 sections and 220,000 UTF-8 serialized bytes. Validate the entire draft or reject before inference. No selected subset and no truncation. |
-| First application context and every subsequent context | 600,000 UTF-8 JSON bytes, including system prompt, tools, messages and results. |
+| Initial and subsequent application contexts | 600,000 UTF-8 JSON bytes, including system prompt, tools, messages and results. |
 | Provider-specific serialized payload | 600,000 UTF-8 bytes, checked before network transmission. The serializer's overhead is included. |
 | Provider context window | Reject if the configured model cannot fit the complete bounded request plus 4,096 output tokens. Use the provider's supported token count or a conservative UTF-8-byte upper bound, not a characters/4 estimate. |
 | Model rounds | 12 total, including the final text-only round. A tool call in the twelfth round cannot leave room for completion and aborts. |
@@ -102,7 +113,7 @@ These replace the 200-line/40,000-byte selected-work limit, not the application'
 | Bulk tools | At most 50 operations and 50 distinct touched or created lines per call. Section copy creates at most 50 lines and one section. Move selects at most 50 lines or sections. Delete selects at most 50 explicit IDs; deleting their contained lines and clear_all can affect the complete supported draft. |
 | Visible final response | At most 4,000 model-authored code units, plus bounded deterministic copy disclosure of at most 3,400, with total saved message at most 8,000. Oversize model final text rejects the turn, not silently truncated commercial content. |
 
-Every accepted staged mutation must also fit the draft and next-context limits before replacing staged state. If aggregate provider payload, response or execution budgets are exceeded later, discard the whole turn. Do not tell the model to repair authorization, stale state or global budget failures.
+Every accepted staged mutation must also fit the draft and next-context limits before replacing staged state. Do not inject another complete draft snapshot after each small tool call in the bounded loop. If aggregate provider payload, response or execution budgets are exceeded later, discard the whole turn. Do not tell the model to repair authorization, stale state or global budget failures.
 
 Representative offline sizing used fictional or sanitized data only. `tests/browser/fixtures.ts` has a 30-line, seven-section joinery Quote whose serialized draft is 8,555 bytes. Its calculation, including the calculator's duplicate quote property, is 10,574 bytes; `{quote, calculation}` is 19,154 bytes. Sanitized documentation fixtures under `docs/examples/first-quotes/` map to draft sizes of 7,398 bytes for joinery, 4,906 for civil works and 2,882 for landscape. The proposal removes duplicate calculation content rather than trimming work. These measurements establish that representative long Quotes fit; they do not establish the maximum-size boundary or live-provider token behavior. Implementation must verify both using the seams below. The private untracked archive was not inspected or transmitted.
 
@@ -122,9 +133,9 @@ All multi-operation calls validate on a candidate clone and replace staged state
 
 ### Evidence and text rewriting
 
-Foundation schemas retain their current evidence shape. The later schemas use evidence entries with a JSON Pointer to the input field and either an exact excerpt from a retained Artisan message, or an entity/field/excerpt from current work. For current_work, quote forbids id; line and section require a valid supplied ID. Paths must point to fields in this call. Every nonempty numeric replacement, adjustment percentage and calculation dimension needs evidence. New nonnumeric commercial facts also need supplied support; faithful description/title/unit rewriting may cite a source without reproducing it verbatim. Explicit clears and structural target selection do not require replacement-value evidence.
+Foundation schemas keep their existing evidence shape until #27 unifies them. Later schemas use entries shaped as `{ "fields": ["..."], "source": "...", "text": "..." }`. `fields` is a nonempty array of strings. `edit_quote` uses field names; other tools use JSON Pointers to argument values, such as `/operations/0/percent`. One citation may cover multiple changed fields, for example `{ "fields": ["discountMode", "discount"], "source": "current", "text": "Apply a 5% discount" }`. `source` is a compact application-issued locator: `current`, `history_N`, `quote.FIELD`, `line:ID.FIELD` or `section:ID.FIELD`. Lookup is strictly scoped to that locator. `text` is the exact excerpt.
 
-For numeric current-work evidence, compare the supplied typed value against the typed source field; an amount cannot be cited as quantity or unit price. Track accepted staged values back to their permitted source or application calculation. Do not allow an unsupported assistant assertion to become evidence merely by citing an earlier result. For Artisan excerpts, require containment in the identified retained Artisan message and preserve existing value/source checks. Never use assistant/note messages. Typed argument validation and excerpt matching cannot prove semantic interpretation of natural language. Human review remains necessary; do not claim these checks eliminate invented or misinterpreted facts.
+Every nonempty numeric replacement, adjustment percentage and calculation dimension needs evidence. New nonnumeric commercial facts also need supplied support; faithful description/title/unit rewriting may cite a source without reproducing it verbatim. Explicit clears and structural target selection do not require replacement-value evidence. For numeric current-work evidence, compare the supplied typed value against the typed source field; an amount cannot cite quantity or unit price. Track accepted staged values back to their permitted source or application calculation. Do not allow an unsupported assistant assertion to become evidence by citing an earlier result. For Artisan excerpts, require containment in the identified retained Artisan message and preserve existing value/source checks. Never use assistant/note messages. Typed argument validation and excerpt matching cannot prove semantic interpretation of natural language. Human review remains necessary; do not claim these checks eliminate invented or misinterpreted facts.
 
 ### Structural semantics
 
@@ -140,65 +151,13 @@ After successful inference and validation, a confirmation-required turn becomes 
 
 ### Successful tool result
 
-Every tool returns one JSON text block, also available to application diagnostics. The exact envelope keys are:
-
-```json
-{
-  "ok": true,
-  "staged": true,
-  "committed": false,
-  "stateSequence": 1,
-  "resolvedFailureId": null,
-  "changes": {
-    "quoteFields": {},
-    "upsertedLines": [],
-    "deletedLineIds": [],
-    "upsertedSections": [],
-    "deletedSectionIds": [],
-    "lineOrder": [],
-    "sectionOrder": []
-  },
-  "created": [{ "operationIndex": 0, "kind": "line", "id": "new_id", "sourceId": null }],
-  "calculation": "<complete current authoritative calculation, excluding quote>",
-  "copyFacts": [],
-  "skippedMissingSource": [],
-  "confirmationRequired": false,
-  "correctionAttemptsUsed": 0,
-  "correctionAttemptLimit": 3
-}
-```
-
-quoteFields contains every changed Quote-level field and its accepted value, never unrelated identity metadata. Upserted entities contain all their fields, not partial text fragments. lineOrder and sectionOrder contain the complete current ID order. created is empty if nothing was created; copy entries include sourceId and ordinary new entries use null. stateSequence increases after accepted state-changing calls and remains unchanged for no-ops. resolvedFailureId names the corrected root failure, otherwise null. copyFacts contains one record per copied line with sourceId, id, description, mode, quantity, unit, unitPrice, amount, quantityUnknown and removedMeasurements. skippedMissingSource contains IDs whose missing price an adjustment left missing. Calculation completeness warnings are not argument failures. All values reflect staged state after this call. Do not return partial or silently truncated result data to fit a budget.
+Pi carries `isError` and the associated original `toolCallId`; do not repeat a structured envelope in model content. On a successful call whose exact accepted arguments are unchanged, the model content may be a minimal acknowledgement. Include only what the model cannot know: newly issued IDs, application-derived or normalized values, and relevant calculation changes. Do not dump the complete Quote, complete calculation, state sequence, internal counters or diagnostics into the result. The application keeps complete change metadata, calculations and diagnostics internally.
 
 ### Rejected tool result and correction accounting
 
-Normalize malformed JSON/schema failures, unknown tools, invalid targets, unsupported field/mode operations, evidence failures, invalid commercial values and reference conflicts into this envelope. The executor must catch schema rejection at the real agent boundary, including calls rejected before a tool's execute function. No rejected call changes staged state or copy/change metadata.
+Pi marks a rejected call with `isError`. Model content is plain, safe failure text. Name the field and reason, then ask the model to resubmit the complete call. Do not expose a structured failure envelope, failure ID, correction counter, stack trace, another business's values or diagnostics. For example: `Quantity must be a decimal without units. Resubmit the complete call.` The executor catches schema rejection at the real agent boundary. No rejected call changes staged state or change metadata.
 
-```json
-{
-  "ok": false,
-  "correctable": true,
-  "failureId": "failure_1",
-  "code": "invalid_arguments",
-  "message": "The call was rejected. Correct the listed problems and replace the entire call using correctionOf.",
-  "problems": [{ "path": "/fields/quantity", "code": "invalid_decimal", "message": "Use a decimal string with at most three decimal places; omit units." }],
-  "stagedUnchanged": true,
-  "stateSequence": 0,
-  "correctionAttemptsUsed": 0,
-  "correctionAttemptLimit": 3,
-  "correctionAttemptsRemaining": 3
-}
-```
-
-Use concrete field paths and allowed values, never a generic stack trace or another business's values. Top-level codes are invalid_arguments, unknown_tool, unknown_target, invalid_commercial_value, unsupported_operation, evidence_required, evidence_mismatch, reference_conflict, reference_locked, ambiguous_measurement or recovery_required. Problems use the existing domain codes where applicable. An unknown_target response does not distinguish absent from foreign IDs. Business/Quote authorization failure itself aborts before tools.
-
-The initial failed call creates one unresolved failure and consumes **zero** correction attempts. Every subsequent tool attempt while it is unresolved consumes one of the three turn-wide correction attempts, including schema failures and calls to other tools. A resolving attempt must carry correctionOf equal to the active failureId and replace the complete failed operation. Changing tools is permitted only with this explicit replacement marker; it never resets the count. This marker records the model's claimed correction, not proof of semantic equivalence. Calls without the marker, wrong markers or unrelated operations are rejected as recovery_required, leave the original failure unresolved and consume an attempt. Never infer that an unrelated success fixed an error.
-
-A corrected call that passes all validation clears the active failure. If that call fails, keep the root failureId, replace its field problems and leave it unresolved. A later new initial failure consumes no extra correction attempt at that moment, but has only the remaining turn-wide allowance. If three attempts have already been used, a new rejection immediately exhausts recovery. The third attempt may succeed; if it fails, stop before another provider call and discard. Text-only completion with an unresolved failure also discards, even if earlier calls succeeded. There is no abandon-failed-operation tool or successful-subset commit.
-
-Example counts: initial rejection 0/3, failed correction 1/3, unrelated call 2/3, valid correction 3/3 permits completion. Initial rejection, valid correction 1/3, later rejection, failed correction 2/3, failed correction 3/3 discards everything. A model clarification after rejection asks the Artisan to send a new request; it cannot commit earlier staged edits.
-
-Application enforcement checks markers, schemas, targets, evidence and candidate state. It cannot mechanically prove that a replacement represents the same natural-language request. This limitation must remain visible in reviews and evaluation, rather than described as solved by a marker.
+The runner tracks unresolved failed operations, failure IDs and the three turn-wide correction attempts internally. The initial rejection consumes zero attempts. Every later tool attempt while a failure is unresolved consumes an attempt. An unrelated successful call cannot resolve it. A successful corrected call resolves it only when the runner's exact correction matcher accepts the complete replacement. That matching rule still needs review. Do not claim semantic inference guarantees or invent them from tool arguments. A failed replacement leaves the operation unresolved. A successful correction does not reset the count. A later failure has only the remaining turn-wide allowance; if all three attempts have already been used, it aborts immediately. The third correction attempt may succeed. If it fails, or the model completes with an unresolved failure, discard the whole turn. There is no abandon-failed-operation tool or successful-subset commit.
 
 Authorization failures, stale drafts, deadline, provider failures and exhausted context/payload/response/call/round budgets are non-correctable aborts. Return an application outcome, not a model repair instruction. Do not accept late model output after abort.
 

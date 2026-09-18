@@ -10,22 +10,21 @@ const id = { type: "string", minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9
 const sectionIdOrNoSection = { ...text(128), description: "Existing Quote Section ID, or the empty string for No section." };
 const decimal = { ...text(20), pattern: "^[0-9]+([.,][0-9]+)?$", description: "Non-negative decimal without units. Application validation enforces field precision and range." };
 const clearableDecimal = { ...text(20), pattern: "^$|^[0-9]+([.,][0-9]+)?$", description: "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero." };
-const correctionOf = { type: "string", minLength: 1, maxLength: 128, description: "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts." };
-const evidence = list(object({
-  path: text(160, "JSON Pointer to the input field supported by this evidence, including its operation index."),
-  source: { anyOf: [
-    object({ kind: choice("artisan_message"), messageId: id, excerpt: { ...text(2000), minLength: 1 } }),
-    object({ kind: choice("current_work"), entity: choice("quote"), field: text(64), excerpt: { ...text(2000), minLength: 1 } }),
-    object({ kind: choice("current_work"), entity: choice("line", "section"), id, field: text(64), excerpt: { ...text(2000), minLength: 1 } }),
-  ] },
-}), 200);
+const evidence = {
+  ...list(object({
+    fields: { ...list({ ...text(160), minLength: 1 }, 200), uniqueItems: true, description: "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent." },
+    source: { ...text(256), minLength: 1, description: "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message." },
+    text: { ...text(2000), minLength: 1, description: "Exact excerpt from the identified source. One citation may support several fields." },
+  }), 200),
+  description: "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values.",
+};
 const roomWallArea = object({ kind: choice("room_wall_area"), length: decimal, width: decimal, height: decimal });
 const pricingFields = {
   description: text(20000, "Faithful French commercial wording of supplied work. Empty clears it and leaves the draft incomplete."),
   mode: choice("quantity", "fixed"), quantity: clearableDecimal, unit: text(100), unitPrice: clearableDecimal, amount: clearableDecimal,
   quantityCalculation: roomWallArea,
 };
-const tool = (name, description, properties, required) => ({ name, description, parameters: object({ ...properties, correctionOf }, required) });
+const tool = (name, description, properties, required) => ({ name, description, parameters: object(properties, required) });
 const tools = [
   tool("edit_quote", "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.", {
     fields: { ...object({
@@ -35,9 +34,9 @@ const tools = [
       vatRegistered: { anyOf: [{ type: "boolean" }, { type: "null" }], description: "True applies the supported standard VAT treatment, false means not registered, null means unknown. Never infer registration." },
       vatId: text(20000), discountMode: choice("none", "percent", "fixed"), discount: clearableDecimal,
     }, []), minProperties: 1 },
-    evidence: { ...evidence, description: "For each new nonempty commercial value, cite its source and use a path such as /fields/discount. Omit for deliberate clearing or unchanged values. Cite retained Artisan messages or current-work fields supplied by the application." },
+    evidence,
   }, ["fields"]),
-  tool("edit_lines", "Add, correct or adjust explicitly selected Quote Lines, including manually entered lines. A call contains at most 50 operations and touches at most 50 lines. Operations validate together or change nothing. Add requires description and mode; unknown values stay empty. Updates omit unchanged fields and use empty strings to clear. Changing pricing mode clears obsolete fields and leaves unsupplied replacement prices missing. Adjust uses application decimal arithmetic and CHF half-up rounding, not model-computed replacement prices. No copying, moving or deleting through this tool. Provide evidence for new commercial facts and supplied adjustment percentages.", {
+  tool("edit_lines", "Add or edit Quote Lines, or increase/decrease selected unit prices or fixed amounts by a supplied percentage. Add requires description and pricing mode. For edits, include only fields to change; use empty strings to clear values. On a pricing-mode change, supply any known replacement values; incompatible old fields are cleared. For room wall area, supply quantityCalculation instead of quantity. A call may contain up to 50 operations affecting up to 50 lines. Do not copy, move or delete lines with this tool.", {
     operations: list({ anyOf: [
       object({ op: choice("add"), sectionId: sectionIdOrNoSection, fields: object(pricingFields, ["description", "mode"]) }, ["op", "fields"]),
       object({ op: choice("update"), lineId: id, fields: { ...object(pricingFields, []), minProperties: 1 } }),

@@ -19,12 +19,6 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 300
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "additionalProperties": false
@@ -155,12 +149,6 @@
             "additionalProperties": false
           },
           "maxItems": 8
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "additionalProperties": false,
@@ -209,12 +197,6 @@
           },
           "additionalProperties": false,
           "minProperties": 1
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         },
         "evidence": {
           "type": "array",
@@ -308,12 +290,6 @@
           "maxItems": 3,
           "uniqueItems": true
         },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
-        },
         "evidence": {
           "type": "array",
           "items": {
@@ -364,12 +340,6 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4000
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "additionalProperties": false
@@ -394,12 +364,6 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4000
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "additionalProperties": false
@@ -423,12 +387,6 @@
         "sectionId": {
           "type": "string",
           "maxLength": 128
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "additionalProperties": false
@@ -458,12 +416,6 @@
             "retain",
             "unknown"
           ]
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "additionalProperties": false
@@ -489,12 +441,6 @@
             "retain",
             "unknown"
           ]
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "additionalProperties": false

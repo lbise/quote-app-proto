@@ -1,6 +1,6 @@
 # Proposed contract examples
 
-These are review examples, not executed tests or claims about live-model quality. IDs are fictional stable IDs. No provider receives these examples in addition to the approved prompt. Each example identifies its capability stage. Tool results use the envelope in README.md; abbreviated result descriptions below explain the expected effect rather than adding another wire format.
+These are review examples, not executed tests or claims about live-model quality. IDs are fictional stable IDs. No provider receives these examples in addition to the approved prompt. Each example identifies its capability stage. Results describe model-visible acknowledgements; full diagnostics remain internal.
 
 ## Initial capture without administrative questions, #26
 
@@ -56,7 +56,7 @@ Artisan: `Le prix de la ligne 1 est 14 CHF par m², pas 12.50.`
 }
 ```
 
-The result upserts the accepted full line and recalculates its amount to 50,400 cents. It does not require the line to be assistant-captured. The temporary supply_missing_line_fields tool is not used to overwrite a populated value. No read_work call precedes the correction.
+The application accepts the correction and returns the recalculated line amount of 50,400 cents. It does not repeat every unchanged line field. It does not require the line to be assistant-captured. The temporary supply_missing_line_fields tool is not used to overwrite a populated value. No read_work call precedes the correction.
 
 ## Copy with unknown measurements, #26
 
@@ -90,13 +90,12 @@ The current Artisan message supplies `36 m²`. A staged earlier section rename s
 }
 ```
 
-The runner returns ok false, failureId `failure_1`, invalid_arguments, problem `/fields/quantity`, stagedUnchanged true and 0/3 correction attempts used. The prior rename is still staged, not committed. The model corrects the complete call:
+Pi marks the result as an error. Its model-visible text says: `Quantity must be a decimal without units. Resubmit the complete call.` The prior rename is still staged, not committed. The model resubmits the complete call:
 
 ```json
 {
   "name": "update_quote_line",
   "arguments": {
-    "correctionOf": "failure_1",
     "lineId": "line_manual",
     "fields": { "quantity": "36" },
     "evidence": [{ "field": "quantity", "text": "36 m²" }]
@@ -104,9 +103,9 @@ The runner returns ok false, failureId `failure_1`, invalid_arguments, problem `
 }
 ```
 
-Success returns resolvedFailureId `failure_1` and 1/3 attempts used. After successful model completion, both changes commit in one transaction and share one manual Undo action.
+The runner keeps the unresolved operation, failure ID and correction count internally. If its exact correction matcher accepts this complete replacement, the quantity call succeeds. After successful model completion, both changes commit in one transaction and share one manual Undo action.
 
-If instead the model calls create_quote_section without correctionOf, the runner rejects it as recovery_required and counts 1/3. Two further rejected attempts produce 2/3 and 3/3, then discard both the failed quantity request and the earlier successful rename. Switching tools cannot restart the counter. A final text-only `Done` while the failure is unresolved also discards the turn.
+If the model instead calls create_quote_section, the runner keeps the original operation unresolved and counts the attempt internally. Two further rejected attempts discard both the failed quantity request and the earlier successful rename. Switching tools cannot restart the counter. A final text-only `Done` while the failure is unresolved also discards the turn. The exact correction matching rule remains under review.
 
 If the draft is changed manually while the provider is working, even a valid correction is discarded as stale. If another business's Quote is requested, authorization aborts before inference; the model receives no corrective information about that Quote.
 
@@ -120,8 +119,7 @@ Artisan: `Pour ce devis seulement, remplace l'adresse du client par Rue du Lac 9
   "arguments": {
     "fields": { "customerAddress": "Rue du Lac 9, 1000 Lausanne", "validUntil": "2026-12-31" },
     "evidence": [
-      { "path": "/fields/customerAddress", "source": { "kind": "artisan_message", "messageId": "current", "excerpt": "Rue du Lac 9, 1000 Lausanne" } },
-      { "path": "/fields/validUntil", "source": { "kind": "artisan_message", "messageId": "current", "excerpt": "Valable jusqu'au 2026-12-31" } }
+      { "fields": ["customerAddress", "validUntil"], "source": "current", "text": "Pour ce devis seulement, remplace l'adresse du client par Rue du Lac 9, 1000 Lausanne. Valable jusqu'au 2026-12-31." }
     ]
   }
 }
@@ -140,7 +138,7 @@ The three quantity-mode lines have prices `12.50`, `10.10` and empty. Their IDs 
   "name": "edit_lines",
   "arguments": {
     "operations": [{ "op": "adjust", "lineIds": ["line_1", "line_2", "line_3"], "field": "unitPrice", "direction": "increase", "percent": "5" }],
-    "evidence": [{ "path": "/operations/0/percent", "source": { "kind": "artisan_message", "messageId": "current", "excerpt": "Increase the unit prices on lines 1, 2 and 3 by 5%" } }]
+    "evidence": [{ "fields": ["/operations/0/percent"], "source": "current", "text": "Increase the unit prices on lines 1, 2 and 3 by 5%." }]
   }
 }
 ```
@@ -196,7 +194,7 @@ The stable new IDs come from the accepted copy result, not the outdated initial 
 
 Artisan: `Rename the project to Kitchen repairs, and delete the bathroom section and all its work.`
 
-The model first stages edit_quote with title `Kitchen repairs` and supporting current-message evidence, then:
+The model first stages edit_quote with title `Kitchen repairs` and `{ "fields": ["title"], "source": "current", "text": "Rename the project to Kitchen repairs" }`, then:
 
 ```json
 {
@@ -205,7 +203,7 @@ The model first stages edit_quote with title `Kitchen repairs` and supporting cu
 }
 ```
 
-The section was populated. The result has confirmationRequired true. Inference completes, but neither the title change nor deletion commits. The UI lists the title change, section, every contained line and before/after totals. It focuses Cancel by default. Model reply: `The application will show the title change and the bathroom work to remove. Review and confirm them there.`
+The section was populated. The result tells the model that application-controlled confirmation is required. Inference completes, but neither the title change nor deletion commits. The UI lists the title change, section, every contained line and before/after totals. It focuses Cancel by default. Model reply: `The application will show the title change and the bathroom work to remove. Review and confirm them there.`
 
 - Artisan types `yes` in chat: no confirmation authority. The pending proposal still requires its UI button.
 - Artisan cancels: title, section and lines remain unchanged.

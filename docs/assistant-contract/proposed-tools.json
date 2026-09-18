@@ -97,133 +97,41 @@
           "items": {
             "type": "object",
             "properties": {
-              "path": {
-                "type": "string",
-                "maxLength": 160,
-                "description": "JSON Pointer to the input field supported by this evidence, including its operation index."
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "minLength": 1
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "uniqueItems": true,
+                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
               },
               "source": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "artisan_message"
-                        ]
-                      },
-                      "messageId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "messageId",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "quote"
-                        ]
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "line",
-                          "section"
-                        ]
-                      },
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "id",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1,
+                "description": "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message."
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1,
+                "description": "Exact excerpt from the identified source. One citation may support several fields."
               }
             },
             "required": [
-              "path",
-              "source"
+              "fields",
+              "source",
+              "text"
             ],
             "additionalProperties": false
           },
           "minItems": 1,
           "maxItems": 200,
-          "description": "For each new nonempty commercial value, cite its source and use a path such as /fields/discount. Omit for deliberate clearing or unchanged values. Cite retained Artisan messages or current-work fields supplied by the application."
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+          "description": "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values."
         }
       },
       "required": [
@@ -234,7 +142,7 @@
   },
   {
     "name": "edit_lines",
-    "description": "Add, correct or adjust explicitly selected Quote Lines, including manually entered lines. A call contains at most 50 operations and touches at most 50 lines. Operations validate together or change nothing. Add requires description and mode; unknown values stay empty. Updates omit unchanged fields and use empty strings to clear. Changing pricing mode clears obsolete fields and leaves unsupplied replacement prices missing. Adjust uses application decimal arithmetic and CHF half-up rounding, not model-computed replacement prices. No copying, moving or deleting through this tool. Provide evidence for new commercial facts and supplied adjustment percentages.",
+    "description": "Add or edit Quote Lines, or increase/decrease selected unit prices or fixed amounts by a supplied percentage. Add requires description and pricing mode. For edits, include only fields to change; use empty strings to clear values. On a pricing-mode change, supply any known replacement values; incompatible old fields are cleared. For room wall area, supply quantityCalculation instead of quantity. A call may contain up to 50 operations affecting up to 50 lines. Do not copy, move or delete lines with this tool.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -505,132 +413,41 @@
           "items": {
             "type": "object",
             "properties": {
-              "path": {
-                "type": "string",
-                "maxLength": 160,
-                "description": "JSON Pointer to the input field supported by this evidence, including its operation index."
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "minLength": 1
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "uniqueItems": true,
+                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
               },
               "source": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "artisan_message"
-                        ]
-                      },
-                      "messageId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "messageId",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "quote"
-                        ]
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "line",
-                          "section"
-                        ]
-                      },
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "id",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1,
+                "description": "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message."
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1,
+                "description": "Exact excerpt from the identified source. One citation may support several fields."
               }
             },
             "required": [
-              "path",
-              "source"
+              "fields",
+              "source",
+              "text"
             ],
             "additionalProperties": false
           },
           "minItems": 1,
-          "maxItems": 200
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+          "maxItems": 200,
+          "description": "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values."
         }
       },
       "required": [
@@ -708,132 +525,41 @@
           "items": {
             "type": "object",
             "properties": {
-              "path": {
-                "type": "string",
-                "maxLength": 160,
-                "description": "JSON Pointer to the input field supported by this evidence, including its operation index."
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "minLength": 1
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "uniqueItems": true,
+                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
               },
               "source": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "artisan_message"
-                        ]
-                      },
-                      "messageId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "messageId",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "quote"
-                        ]
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "line",
-                          "section"
-                        ]
-                      },
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "id",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1,
+                "description": "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message."
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1,
+                "description": "Exact excerpt from the identified source. One citation may support several fields."
               }
             },
             "required": [
-              "path",
-              "source"
+              "fields",
+              "source",
+              "text"
             ],
             "additionalProperties": false
           },
           "minItems": 1,
-          "maxItems": 200
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+          "maxItems": 200,
+          "description": "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values."
         }
       },
       "required": [
@@ -925,132 +651,41 @@
           "items": {
             "type": "object",
             "properties": {
-              "path": {
-                "type": "string",
-                "maxLength": 160,
-                "description": "JSON Pointer to the input field supported by this evidence, including its operation index."
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "minLength": 1
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "uniqueItems": true,
+                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
               },
               "source": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "artisan_message"
-                        ]
-                      },
-                      "messageId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "messageId",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "quote"
-                        ]
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "current_work"
-                        ]
-                      },
-                      "entity": {
-                        "type": "string",
-                        "enum": [
-                          "line",
-                          "section"
-                        ]
-                      },
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                      },
-                      "field": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "excerpt": {
-                        "type": "string",
-                        "maxLength": 2000,
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "entity",
-                      "id",
-                      "field",
-                      "excerpt"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1,
+                "description": "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message."
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1,
+                "description": "Exact excerpt from the identified source. One citation may support several fields."
               }
             },
             "required": [
-              "path",
-              "source"
+              "fields",
+              "source",
+              "text"
             ],
             "additionalProperties": false
           },
           "minItems": 1,
-          "maxItems": 200
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
+          "maxItems": 200,
+          "description": "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values."
         }
       },
       "required": [
@@ -1143,12 +778,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "required": [
@@ -1237,12 +866,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "correctionOf": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "When correcting a rejected call, copy its failureId here. Omit for a new operation. A correction replaces the entire rejected call and counts against the turn-wide limit of three correction attempts."
         }
       },
       "required": [
