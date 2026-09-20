@@ -91,14 +91,20 @@ At turn start, the application records the original line IDs. Across every delet
 
 A destructive-scope rejection discards every staged change from that turn. It does not save an earlier successful subset. Manual Undo remains the way to reverse a committed assistant turn. This approves neither a runtime executor nor registration.
 
+### Quote-details tool and data-sharing direction approved
+
+The product owner accepted closing out `edit_quote_details` after the naming and grouped-evidence review: "What is there to review, only the name change? If so that's fine". No additional field or operation change is proposed beyond the already reviewed tool and shared evidence simplification. Its current definition is in [proposed-tools.json](proposed-tools.json).
+
+The product owner explicitly approved sending the complete Working Draft, including Customer/business details, and exposing it temporarily in authenticated diagnostics: "I confirm that this is fine.." This approves that disclosure scope, not provider terms or real-data production use. Final bilingual disclosure wording remains proposed.
+
+The product owner requested simpler recovery: report each tool failure, count failed calls and stop at three in the same round, without matching a later call to a failed operation. The previous recovery design below is now under reconsideration. Clarification is pending on the counting window and whether successful changes may commit when a failed operation was not corrected. Do not implement either recovery rule before resolving that question.
+
 ### Still awaiting approval
 
-The remaining tool definitions, including legacy foundation schemas and results, context/result contracts, recovery, limits, disclosures and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
+Legacy foundation schemas and results, final context/result contracts, revised recovery, limits, disclosure wording and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
 
-- Full-draft data sharing, including Quote-local Customer/business details and terms.
 - Foundation schemas, registration and the staged plan below.
-- Remaining end-state tools beyond `edit_quote_lines`, `edit_quote_sections`, `delete_quote_lines` and the provisionally accepted `copy_quote_work` and `move_quote_work`, including `edit_quote_details` fields.
-- Three turn-wide correction attempts, whole-turn discard and diagnostics.
+- Revised failure-count recovery, including the counting window and partial-success behavior.
 - Proposed size/execution limits and unsupported-request behavior.
 - The test seams listed below. No new tests at these seams are written before approval.
 
