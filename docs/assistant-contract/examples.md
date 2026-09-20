@@ -77,39 +77,47 @@ The application returns a fresh section ID and fresh line IDs. It clears the cop
 
 Model reply: `J'ai copié la section. Les quantités restent à renseigner ; le prix de 14 CHF par m² est conservé.` The application adds its deterministic retained/missing-value disclosure. A later rename can use the new section ID from this result without rereading the initial context.
 
-## Malformed call, correction and atomic commit, #26
+## Failed calls and atomic turn commit, #27
 
-The current Artisan message supplies `36 m²`. A staged earlier section rename succeeded. The model then calls:
+Context has Quote title `Bedroom refresh` and `line_manual`, description `Peinture des murs`, quantity `36`, unit `m²`, unit price `12.50`.
+
+The model first changes the title successfully. The result is staged, not committed:
 
 ```json
 {
-  "name": "update_quote_line",
+  "name": "edit_quote_details",
   "arguments": {
-    "lineId": "line_manual",
-    "fields": { "quantity": "36 m²" },
-    "evidence": [{ "field": "quantity", "text": "36 m²" }]
+    "fields": { "title": "Bedroom repaint" },
+    "evidence": [{ "fields": ["title"], "source": "current", "text": "Rename the quote to Bedroom repaint." }]
   }
 }
 ```
 
-Pi marks the result as an error. Its model-visible text says: `Quantity must be a decimal without units. Resubmit the complete call.` The prior rename is still staged, not committed. The model resubmits the complete call:
+It then submits an invalid full-line edit:
 
 ```json
 {
-  "name": "update_quote_line",
+  "name": "edit_quote_lines",
   "arguments": {
-    "lineId": "line_manual",
-    "fields": { "quantity": "36" },
-    "evidence": [{ "field": "quantity", "text": "36 m²" }]
+    "lines": [{
+      "id": "line_manual",
+      "description": "Peinture des murs",
+      "mode": "quantity",
+      "quantity": "36",
+      "unit": "m²",
+      "unitPrice": "CHF 14",
+      "amount": ""
+    }],
+    "evidence": [{ "fields": ["/lines/0/unitPrice"], "source": "current", "text": "Set the price to CHF 14 per m²." }]
   }
 }
 ```
 
-The runner keeps the unresolved operation, failure ID and correction count internally. If its exact correction matcher accepts this complete replacement, the quantity call succeeds. After successful model completion, both changes commit in one transaction and share one manual Undo action.
+Pi marks the result as an error: `Unit price must be a decimal without currency or units. Resubmit the complete call.` This is failure `1/3`. The price edit applies nothing. If the model now stops, normal completion commits the staged title in one transaction and creates one manual Undo target. The price remains `12.50`. The application, not the model, shows: `Some tool calls failed. Review the applied changes.`
 
-If the model instead calls create_quote_section, the runner keeps the original operation unresolved and counts the attempt internally. Two further rejected attempts discard both the failed quantity request and the earlier successful rename. Switching tools cannot restart the counter. A final text-only `Done` while the failure is unresolved also discards the turn. The exact correction matching rule remains under review.
+If the model makes two more failed tool calls in the same turn, the third failure stops the turn and discards the title and every other staged change. The calls may be retries of the price edit or different calls. A successful retry does not reset the count. The next Artisan message starts at `0/3`.
 
-If the draft is changed manually while the provider is working, even a valid correction is discarded as stale. If another business's Quote is requested, authorization aborts before inference; the model receives no corrective information about that Quote.
+Each individual call is atomic, including bulk calls. If the draft changes manually while the provider is working, the turn is discarded as stale. If another business's Quote is requested, authorization aborts before inference; the model receives no corrective information about that Quote.
 
 ## Quote-local commercial correction, #27
 

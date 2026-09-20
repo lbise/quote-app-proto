@@ -1,6 +1,6 @@
 # Proposed disclosure and deterministic messages
 
-Status: approval request only. These strings do not replace the current UI until #26 is approved and implemented. `{provider}` is the application's configured public provider name, never model-supplied text. Other placeholders below contain application-derived values, rendered as text rather than HTML.
+Status: simplified recovery behavior is approved. The exact English/French status and disclosure wording below remains proposed. These strings do not replace the current UI until implemented. `{provider}` is the application's configured public provider name, never model-supplied text. Other placeholders below contain application-derived values, rendered as text rather than HTML.
 
 ## Assistant data-sharing disclosure
 
@@ -32,15 +32,16 @@ Retain the existing nonblocking warning entry point and current provider-terms l
 
 ## Final status strings
 
-These are application-authored status text, not model instructions or model assertions. Add the applicable status before an accepted reply, separated by two newlines. Discard uses only application status and the existing manual Retry action, never a model success reply.
+These are application-authored status text, not model instructions or model assertions. Add the applicable status before an accepted reply, separated by two newlines. When one or two calls failed, the application shows the failed-call status even if the model reply ignores it. Do not treat model prose as confirmation that every requested edit succeeded. A discarded turn uses only application status and the existing manual Retry action, never a model success reply.
 
-| Outcome | English | French |
+| Outcome | English | French, proposed |
 | --- | --- | --- |
 | committed | Changes saved to this Working Draft. You can Undo this turn with the manual control. | Modifications enregistrées dans ce brouillon. Vous pouvez annuler ce tour avec la commande manuelle. |
+| committed_with_failed_calls | Some tool calls failed. Review the applied changes. | Certains appels d'outil ont échoué. Vérifiez les modifications appliquées. |
 | unchanged | No changes were made to this Working Draft. | Aucune modification n'a été apportée à ce brouillon. |
+| unchanged_with_failed_calls | Some tool calls failed. No changes were applied. | Certains appels d'outil ont échoué. Aucune modification n'a été appliquée. |
 | discarded | Nothing from this turn was saved. Retry or continue manually. | Aucune modification de ce tour n'a été enregistrée. Réessayez ou continuez manuellement. |
-| unresolved_failure | A tool call could not be corrected. Nothing from this turn was saved. Clarify your request or continue manually. | Un appel d'outil n'a pas pu être corrigé. Aucune modification de ce tour n'a été enregistrée. Précisez votre demande ou continuez manuellement. |
-| recovery_exhausted | The three correction attempts were used. Nothing from this turn was saved. Retry with a clearer request or continue manually. | Les trois tentatives de correction ont été utilisées. Aucune modification de ce tour n'a été enregistrée. Précisez votre demande et réessayez, ou continuez manuellement. |
+| failed_call_limit_reached | Three tool calls failed. Nothing from this turn was saved. Retry or continue manually. | Trois appels d'outil ont échoué. Aucune modification de ce tour n'a été enregistrée. Réessayez ou continuez manuellement. |
 | stale | The Working Draft changed while the assistant was processing. Nothing from this turn was saved. | Le brouillon a changé pendant le traitement. Aucune modification de ce tour n'a été enregistrée. |
 | draft_context_too_large | This complete Working Draft exceeds the assistant's size limit. Nothing was sent to the provider. Continue manually. | Ce brouillon complet dépasse la limite de taille de l'assistant. Aucune donnée n'a été envoyée au fournisseur. Continuez manuellement. |
 | later_budget_exhausted | The assistant reached a processing limit. Nothing from this turn was saved. Continue manually or make a smaller request. | L'assistant a atteint une limite de traitement. Aucune modification de ce tour n'a été enregistrée. Continuez manuellement ou formulez une demande plus limitée. |
@@ -63,14 +64,14 @@ French warning:
 Données de débogage sensibles : ces requêtes et appels d'outils peuvent contenir le brouillon complet, les coordonnées du client et de l'entreprise, ainsi que la conversation. Seules les personnes autorisées à consulter ce devis peuvent les voir ici. Ces données sont temporaires et ne sont pas conservées dans les journaux de l'application. Les identifiants secrets sont exclus. Ne partagez pas ce panneau sans retirer les données personnelles et confidentielles.
 ```
 
-| Label | English | French |
+| Label | English | French, proposed |
 | --- | --- | --- |
-| Counter | Correction attempts used: {used}/3 | Tentatives de correction utilisées : {used}/3 |
-| Unresolved | Unresolved failed call: {failureId} | Appel en échec non résolu : {failureId} |
+| Counter | Failed calls: {used}/3 | Appels d'outil en échec : {used}/3 |
+| Attempt | Tool call: {tool}. Outcome: {outcome} | Appel d'outil : {tool}. Résultat : {outcome} |
 | Outcome | Turn outcome: {outcome} | Résultat du tour : {outcome} |
 | Not sent | Not sent to the provider | Non transmis au fournisseur |
 
-Use committed/enregistré, unchanged/inchangé and discarded/abandonné as localized outcome values. Include the initial failure at 0/3; do not label it attempt 1/3. Each diagnostic call record shows its own count, even if a later correction succeeds.
+Use committed/enregistré, unchanged/inchangé and discarded/abandonné as localized outcome values. The first failed call is `1/3`, not `0/3`. Each transient diagnostic record shows the attempted call, its outcome and the failed-call count and limit. A later successful call may appear in that history but does not reset the count.
 
 ## Destructive requests, #28 only
 

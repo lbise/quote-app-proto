@@ -1,8 +1,8 @@
 # Assistant contract approval request
 
-Status: **core system prompt and line/section editing definitions approved; model-derived line inputs approved as a prototype tradeoff; copying and moving accepted for evaluation; narrow line deletion scope approved; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and the superseding deletion scope for [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
+Status: **core system prompt; quote-details, line and section definitions; complete-draft sharing and authenticated debug; model-derived line inputs; narrow line deletion; and simplified turn recovery are approved. Copying and moving are accepted for evaluation. Remaining limits, test seams, bilingual wording and staged registration are proposed.** This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and the superseding deletion scope for [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
 
-The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosures or deletion rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
+The remaining implementation sign-off is still pending. Approval of the earlier capability list is not approval of other texts in this packet. Any material change to prompts, schemas, authority, recovery, disclosures or deletion rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
 
 ## Review order
 
@@ -31,11 +31,11 @@ Removed explanations about current-state tracking, tool availability, copying, c
 Recorded on 2026-09-18. After discussing the design, the product owner said, "ok it sounds good then I think". This records agreement with the design direction only. It does not approve every schema, tool, result format or unreviewed artifact. The agreed direction is:
 
 - One evidence citation can cover several fields without duplicating its excerpt.
-- No model-supplied correctionOf argument. The application tracks unresolved failures and correction attempts internally.
-- Minimal successful acknowledgements, with generated IDs and application-derived changes returned when needed. Errors explain the failure and request a complete corrected call; detailed diagnostics stay internal.
+- No model-supplied `correctionOf` argument. This historical approval remains in effect.
+- Minimal successful acknowledgements, with generated IDs and application-derived changes returned when needed. Errors explain the failed call in plain language; detailed diagnostics stay internal.
 - A fresh agent receives the complete current draft for every Artisan message. Small tool results support the bounded loop within that turn.
 
-The exact correction matcher and remaining tool definitions still need review.
+The old unresolved-operation and correction-matcher design is superseded by the approved recovery rule below. The remaining review covers implementation limits, staging, test seams and final wording.
 
 ### Historical naming clarification
 
@@ -51,7 +51,7 @@ That approval covers only the model-facing line definition. `edit_quote_lines` t
 
 Its optional grouped `evidence` array has entries shaped as `{ "fields": ["/lines/0/unitPrice"], "source": "current", "text": "exact excerpt" }`. `fields` uses JSON Pointers. `source` is `current`, `history_N`, `quote.FIELD`, `line:ID.FIELD` or `section:ID.FIELD`. The application injects sequential execution and enforces atomicity, ranges and evidence.
 
-This does not approve a runtime executor, registration, an arbitrary stage plan, test seams, `edit_quote_details` fields, or any structural tool. It does not add a calculation expression, `quantityCalculation`, percentage-adjust operation or calculator tool to `edit_quote_lines`. No implementation gate has passed for the packet as a whole.
+This does not approve a runtime executor, registration, an arbitrary stage plan, test seams, `edit_quote_details` fields, or any structural tool. It does not add a calculation expression, `quantityCalculation`, percentage-adjust operation or calculator tool to `edit_quote_lines`. Only the listed approval exclusions remain out of scope.
 
 ### Model-derived line inputs approved as a prototype tradeoff
 
@@ -79,7 +79,7 @@ The canonical proposal is the `copy_quote_work` entry in [proposed-tools.json](p
 
 The product owner accepted `move_quote_work` in this conversation: "I guess it's fine, nothing much to simplify on this one. I wonder about its usefulness also.. will see." The reviewed description and schema are the `move_quote_work` entry in [proposed-tools.json](proposed-tools.json). This accepts the tool for now, not a claim that its usefulness has been demonstrated.
 
-A call moves or reorders 1 through 50 explicit line IDs or section IDs. Lines require a destination section, with an empty string for No section. Selected array order determines placement; an optional unselected before-anchor determines insertion, otherwise work appends. Unknown IDs, duplicates and invalid placement reject the whole call. Sections move with their lines, unselected work retains relative order, and no commercial content changes. No evidence or new IDs are needed. Later evaluation should check actual ordering/grouping requests and whether the dedicated tool is useful. This acceptance does not approve deletion or the remaining recovery contract.
+A call moves or reorders 1 through 50 explicit line IDs or section IDs. Lines require a destination section, with an empty string for No section. Selected array order determines placement; an optional unselected before-anchor determines insertion, otherwise work appends. Unknown IDs, duplicates and invalid placement reject the whole call. Sections move with their lines, unselected work retains relative order, and no commercial content changes. No evidence or new IDs are needed. Later evaluation should check actual ordering/grouping requests and whether the dedicated tool is useful. This acceptance does not approve deletion.
 
 ### Deletion scope decision approved
 
@@ -97,15 +97,25 @@ The product owner accepted closing out `edit_quote_details` after the naming and
 
 The product owner explicitly approved sending the complete Working Draft, including Customer/business details, and exposing it temporarily in authenticated diagnostics: "I confirm that this is fine.." This approves that disclosure scope, not provider terms or real-data production use. Final bilingual disclosure wording remains proposed.
 
-The product owner requested simpler recovery: report each tool failure, count failed calls and stop at three in the same round, without matching a later call to a failed operation. The previous recovery design below is now under reconsideration. Clarification is pending on the counting window and whether successful changes may commit when a failed operation was not corrected. Do not implement either recovery rule before resolving that question.
+### Simplified turn recovery approved
+
+The product owner approved the simplified recovery rule in this conversation: "yes that's fine". The [approval record on #26](https://github.com/lbise/quote-app-proto/issues/26#issuecomment-5750796562) and issue bodies #26 through #29 now reflect it. It replaces matching failures, `correctionOf`, unresolved-operation tracking and the old three corrective attempts.
+
+Count every failed tool call across one Artisan request/turn, including the first failure. Schema, target and commercial validation failures all count. A successful call does not reset the count. The error returned to the model is plain and actionable, so it may retry, but no correction matcher or failure-resolution tracking is needed. The counter resets with the next Artisan message.
+
+Each tool call, including a bulk call, is atomic. A rejected call applies none of its edits. On normal completion with fewer than three failed calls, save all successful staged edits in one atomic turn commit and one manual Undo target, even if the model never retries a failed call. Failed edits remain unapplied. At the third failed call, stop the turn and discard every staged change, including earlier successful calls. Do not make per-call database commits.
+
+Authorization, stale-draft, deadline, provider, context/payload/response and execution-budget failures still abort the whole turn. They are application outcomes, not errors the model should repair.
+
+The application must surface failed edits even if the model's reply ignores them. Proposed status when successful edits were saved after one or two failed calls: `Some tool calls failed. Review the applied changes.` Do not present model prose as a claim that every requested edit succeeded. If a later successful call has the same intent as a failed call, diagnostics may show both attempts but must not label the failed attempt unresolved. Diagnostics are transient and show attempted calls, their outcomes, and the failed-call count and limit.
 
 ### Still awaiting approval
 
-Legacy foundation schemas and results, final context/result contracts, revised recovery, limits, disclosure wording and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
+Legacy foundation schemas and results, final context/result contracts, proposed size/execution limits, bilingual wording, staged registration and test seams remain proposed. These behavior approvals do not yet complete the implementation sign-off. Each unapproved artifact remains proposed until reviewed. The remaining review covers:
 
 - Foundation schemas, registration and the staged plan below.
-- Revised failure-count recovery, including the counting window and partial-success behavior.
 - Proposed size/execution limits and unsupported-request behavior.
+- Final bilingual disclosure and status wording.
 - The test seams listed below. No new tests at these seams are written before approval.
 
 ## Staged registration
@@ -114,7 +124,7 @@ The system message is exactly the approved core prompt with the explicit interfa
 
 ### #26 foundation
 
-Register exactly the nine entries in `foundation-tools.json`. They retain their existing field limits, supported operations and legacy evidence shape, and replace obsolete `read_work` references. They do not take `correctionOf`. The proposed supply_missing_line_fields.fields schema also explicitly rejects empty objects and unknown properties, matching its executor's existing restrictions. The current Type.Partial serialization drops the source object's additionalProperties option; the proposal closes that schema gap. Remove `read_work` completely. Full context, structured results, correction handling, call rollback, debug changes, faithful description/unit rewriting and removal of automatic Publication-review opening are #26 work. The old special-case missing-field tool remains temporarily; consolidation belongs to #27. No new bulk, commercial-field, pricing-mode or deletion capability is implied by context visibility.
+Register exactly the nine entries in `foundation-tools.json`. They retain their existing field limits, supported operations and legacy evidence shape, and replace obsolete `read_work` references. The proposed supply_missing_line_fields.fields schema also explicitly rejects empty objects and unknown properties, matching its executor's existing restrictions. The current Type.Partial serialization drops the source object's additionalProperties option; the proposal closes that schema gap. Remove `read_work` completely. Full context, structured results, failed-call handling, call rollback, debug changes, faithful description/unit rewriting and removal of automatic Publication-review opening are #26 work. The old special-case missing-field tool remains temporarily; consolidation belongs to #27. No new bulk, commercial-field, pricing-mode or deletion capability is implied by context visibility.
 
 The existing description/unit source-containment rule must stop requiring verbatim text. Keep numeric evidence checks. Faithful translation remains a model obligation and human review task, not a claim that the validator proves semantic equivalence. Customer snapshot values still require supplied source text; changing address wording or clearing those fields is #27 work.
 
@@ -167,8 +177,8 @@ These replace the 200-line/40,000-byte selected-work limit, not the application'
 | Provider context window | Reject if the configured model cannot fit the complete bounded request plus 4,096 output tokens. Use the provider's supported token count or a conservative UTF-8-byte upper bound, not a characters/4 estimate. |
 | Model rounds | 12 total, including the final text-only round. A tool call in the twelfth round cannot leave room for completion and aborts. |
 | Tool calls | 24 total attempts, including malformed/rejected calls. No reset after success. |
-| Corrective calls | Three attempts after initial rejection, turn-wide, described below. Included in the 24-call and 12-round bounds. |
-| Deadline | Existing server-configured whole-turn timeout, 1,000 through 45,000 ms, default 20,000. No restart during correction. |
+| Failed calls | Three total failed tool calls per Artisan turn, including the first failed call. Successful calls do not reset this count. The third failure aborts and discards the turn. This approved recovery rule is included in the 24-call and 12-round bounds. |
+| Deadline | Existing server-configured whole-turn timeout, 1,000 through 45,000 ms, default 20,000. No restart during recovery. |
 | Model output | 4,096 output tokens per round, 64,000 serialized bytes per assistant message and 256,000 bytes over the turn. Exceeding either aborts. |
 | Bulk tools | At most 50 operations and 50 distinct touched or created lines per call. Section copy creates at most 50 lines and one section. Move selects at most 50 lines or sections. `delete_quote_lines` selects 1 through 50 unique explicit line IDs and may not delete every original line in the turn. |
 | Visible final response | At most 4,000 model-authored code units, plus bounded deterministic copy disclosure of at most 3,400, with total saved message at most 8,000. Oversize model final text rejects the turn, not silently truncated commercial content. |
@@ -199,7 +209,7 @@ New nonempty numeric values need evidence; unchanged values and explicit clears 
 
 ### Structural semantics
 
-The approved model-facing tool `edit_quote_sections` creates or renames up to 50 sections using a `sections` array of `{ id?, title }`. Omitted IDs create sections at the end; supplied existing IDs rename sections without changing their lines or position. Unknown or repeated IDs reject the call. A supplied empty title leaves the section incomplete rather than deleting it. It does not move, copy or delete sections or change their lines. This description and input shape are approved; runtime implementation remains gated by the remaining contract review.
+The approved model-facing tool `edit_quote_sections` creates or renames up to 50 sections using a `sections` array of `{ id?, title }`. Omitted IDs create sections at the end; supplied existing IDs rename sections without changing their lines or position. Unknown or repeated IDs reject the call. A supplied empty title leaves the section incomplete rather than deleting it. It does not move, copy or delete sections or change their lines. This description and input shape are approved; unapproved registration and other contract artifacts remain out of scope.
 
 The valid order is No section first, then groups in sections-array order. Global line numbers follow that order. The proposed `move_quote_work` preserves unselected relative order. Its selected array sets relative order at the requested destination; the before anchor must exist in that destination and must not be selected. Omitted anchor appends. Moving a section moves its whole group. Cyclic/self anchors, unknown IDs and duplicates reject without staging.
 
@@ -213,21 +223,21 @@ The runner snapshots the line IDs present at turn start and checks the union of 
 
 Pi carries `isError` and the associated original `toolCallId`; do not repeat a structured envelope in model content. On a successful call whose exact accepted arguments are unchanged, the model content may be a minimal acknowledgement. Include only what the model cannot know: newly issued IDs, application-derived or normalized values, and relevant calculation changes. Do not dump the complete Quote, complete calculation, state sequence, internal counters or diagnostics into the result. The application keeps complete change metadata, calculations and diagnostics internally.
 
-### Rejected tool result and correction accounting
+### Rejected tool result and failed-call accounting
 
-Pi marks a rejected call with `isError`. Model content is plain, safe failure text. Name the field and reason, then ask the model to resubmit the complete call. Do not expose a structured failure envelope, failure ID, correction counter, stack trace, another business's values or diagnostics. For example: `Quantity must be a decimal without units. Resubmit the complete call.` The executor catches schema rejection at the real agent boundary. No rejected call changes staged state or change metadata.
+Pi marks a rejected call with `isError`. Model content is plain, safe failure text that names the field and reason and lets the model retry. Do not expose a structured failure envelope, stack trace, another business's values or diagnostics. For example: `Quantity must be a decimal without units. Resubmit the complete call.` The executor catches schema rejection at the real agent boundary. A rejected call does not change staged state or change metadata.
 
-The runner tracks unresolved failed operations, failure IDs and the three turn-wide correction attempts internally. The initial rejection consumes zero attempts. Every later tool attempt while a failure is unresolved consumes an attempt. An unrelated successful call cannot resolve it. A successful corrected call resolves it only when the runner's exact correction matcher accepts the complete replacement. That matching rule still needs review. Do not claim semantic inference guarantees or invent them from tool arguments. A failed replacement leaves the operation unresolved. A successful correction does not reset the count. A later failure has only the remaining turn-wide allowance; if all three attempts have already been used, it aborts immediately. The third correction attempt may succeed. If it fails, or the model completes with an unresolved failure, discard the whole turn. There is no abandon-failed-operation tool or successful-subset commit.
+The runner counts each rejected tool call in the Artisan turn, starting with `1/3`. It does not match later calls to earlier failures and does not track whether a failed operation was resolved. Schema, target and commercial validation rejections all count. A successful call, whether it retries the same intent or does unrelated work, does not reset the count. Before the third failure, the model may finish normally and successful staged changes commit. On the third failure, the runner stops and discards the entire staged turn. The next Artisan message starts at `0/3`.
 
-Authorization failures, stale drafts, deadline, provider failures and exhausted context/payload/response/call/round budgets are non-correctable aborts. Return an application outcome, not a model repair instruction. Do not accept late model output after abort.
+Authorization failures, stale drafts, deadline, provider failures and exhausted context/payload/response/call/round/execution budgets are non-correctable aborts. Return an application outcome, not a model repair instruction. Do not accept late model output after abort.
 
 ### Final outcome, atomicity and diagnostics
 
-The request boundary alone commits. After the model completes without unresolved failures, validate and calculate the whole candidate, recheck authenticated ownership and base version, and atomically save the Quote, one-turn change metadata and one manual Undo target. No-op turns do not consume Undo. Request identity remains bound to its payload; accepted retries return the prior outcome without executing twice. A changed payload with the same key is rejected. Published Revisions remain immutable, and a locked reference cannot be changed by any path. A stale manual edit invalidates the whole staged result. Manual Undo restores the full previous draft and retains conversation with the existing reversal explanation.
+The request boundary alone commits. After normal model completion with fewer than three failed calls, validate and calculate the whole candidate, recheck authenticated ownership and base version, and atomically save the Quote, one-turn change metadata and one manual Undo target. Successful calls before rejected calls share that one commit. No-op turns do not consume Undo. Request identity remains bound to its payload; accepted retries return the prior outcome without executing twice. A changed payload with the same key is rejected. Published Revisions remain immutable, and a locked reference cannot be changed by any path. A stale manual edit invalidates the whole staged result. Manual Undo restores the full previous draft and retains conversation with the existing reversal explanation.
 
 Final outcomes are committed, unchanged or discarded. The application displays model text only after choosing the outcome and adds the deterministic status in messages.md. A discarded turn never shows a success reply. No response boolean or text heuristic opens Publication review. Only the manual UI action can open it.
 
-When authenticated debug mode is enabled, show every exact application-level model request, including prompt, context, tool definitions and safe generation options; every attempted tool name and raw argument value, even schema-rejected calls; each validation result, failure ID, state sequence and correction count; final outcome and stable reason code. Retain successful and failed attempts, not just the last call. Show the same counters used by execution. Before-provider validation failures show the rejection and available application input, explicitly marked not sent. If there was no model request, do not fabricate one.
+When authenticated debug mode is enabled, show every exact application-level model request, including prompt, context, tool definitions and safe generation options; every attempted tool name and raw argument value, even schema-rejected calls; each validation result, attempt outcome, state sequence and failed-call count; final outcome and stable reason code. Retain successful and failed attempts, not just the last call. Show the same count and limit used by execution. Before-provider validation failures show the rejection and available application input, explicitly marked not sent. If there was no model request, do not fabricate one.
 
 Diagnostics are transient, accessible only to the authorized Quote viewer, and never stored with conversation, application logs, traces or breadcrumbs. Do not include credentials, headers, raw provider HTTP responses or account metadata. Reload loses transient diagnostics. Full draft and tool arguments are sensitive business/Customer data; the debug warning in messages.md names that change.
 
@@ -235,7 +245,7 @@ Diagnostics are transient, accessible only to the authorized Quote viewer, and n
 
 Use red-green vertical slices at these public boundaries after approval, without adding pass-through modules to create test targets:
 
-1. **Authenticated Quote HTTP operations with real PostgreSQL and controllable model transport.** Exercise the real executor, not fake successful tool results. Assert complete first-call context and implemented registry, capture/edit/copy regression, malformed argument recovery, three-attempt exhaustion, switching tools, failure then unrelated success, unresolved failure, candidate rollback, mixed-turn commit, save/reopen, one manual Undo, stale changes, payload-bound idempotency, limits and cross-business isolation. For `delete_quote_lines`, cover selected-line deletion, ambiguous-target clarification, all-work rejection with manual fallback, the original-line check across calls and whole-turn discard after a destructive-scope rejection. No live provider in CI.
+1. **Authenticated Quote HTTP operations with real PostgreSQL and controllable model transport.** Exercise the real executor, not fake successful tool results. Assert complete first-call context and implemented registry, capture/edit/copy regression, rejected-call `1/3` reporting, successful or unrelated calls that do not reset the count, partial-success commit after one or two failures, third-failure rollback, per-call atomicity including bulk calls, save/reopen, one manual Undo, stale changes, payload-bound idempotency, limits and cross-business isolation. For `delete_quote_lines`, cover selected-line deletion, ambiguous-target clarification, all-work rejection with manual fallback, the original-line check across calls and whole-turn discard after a destructive-scope rejection. No live provider in CI.
 2. **Whole-Quote validation/calculation.** Observe mode transitions, missing versus zero and authoritative totals through the whole-Quote result, not private arithmetic helpers. #29 evaluates model-derived quantities and price adjustments, including expected CHF half-up rounding, without treating the application as an independent derivation checker. Keep existing domain tests; add approved scenarios only as capabilities land.
 3. **Bilingual browser workflow.** Check existing editing, disclosure, visible failure/retry counters and outcomes, manual editing while processing, manual Undo and no automatic Publication dialog. In #28, show rejection of destructive scope and the manual deletion fallback. Scripted browser HTTP responses prove UI behavior only; PostgreSQL tests above prove execution and persistence.
 
@@ -251,7 +261,7 @@ No documented-standard violations. One naming finding in the schema generator wa
 
 ### Spec
 
-Two schema inconsistencies were corrected and rechecked by the Spec reviewer. The original current-work evidence finding forbade an ID for Quote fields and required an ID for lines/sections. That finding is historical because the approved `edit_quote_lines` evidence uses JSON Pointers. The foundation missing-fields schema now rejects empty objects and unknown properties; the inventory records the existing serialization gap accurately. No missing approval-preparation artifact or scope creep was found. Runtime acceptance criteria remain gated, not completed.
+Two schema inconsistencies were corrected and rechecked by the Spec reviewer. The original current-work evidence finding forbade an ID for Quote fields and required an ID for lines/sections. That finding is historical because the approved `edit_quote_lines` evidence uses JSON Pointers. The foundation missing-fields schema now rejects empty objects and unknown properties; the inventory records the existing serialization gap accurately. No missing approval-preparation artifact or scope creep was found. Runtime acceptance criteria were not completed.
 
 ### Validation
 
@@ -262,4 +272,4 @@ Two schema inconsistencies were corrected and rechecked by the Spec reviewer. Th
 
 ## Implementation stop
 
-This work records partial approval and prepares the remaining review. The unchecked execution, test and disclosure work in #26 remains open. The derived-input decision does not open a runtime implementation gate. Do not change runtime prompts, registration, context sharing or validation until the product owner approves the remaining contract required for implementation.
+This work records partial approval and prepares the remaining review. The unchecked execution, test and disclosure work in #26 remains open. Runtime code remains unchanged. Finish the remaining implementation sign-off for limits, test seams, final wording and staged registration before changing the runtime.
