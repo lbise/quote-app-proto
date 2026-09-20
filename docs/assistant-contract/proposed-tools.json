@@ -1,6 +1,6 @@
 [
   {
-    "name": "edit_quote",
+    "name": "edit_quote_details",
     "description": "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.",
     "parameters": {
       "type": "object",
@@ -107,7 +107,7 @@
                 "minItems": 1,
                 "maxItems": 200,
                 "uniqueItems": true,
-                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
+                "description": "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title."
               },
               "source": {
                 "type": "string",
@@ -141,269 +141,79 @@
     }
   },
   {
-    "name": "edit_lines",
-    "description": "Add or edit Quote Lines, or increase/decrease selected unit prices or fixed amounts by a supplied percentage. Add requires description and pricing mode. For edits, include only fields to change; use empty strings to clear values. On a pricing-mode change, supply any known replacement values; incompatible old fields are cleared. For room wall area, supply quantityCalculation instead of quantity. A call may contain up to 50 operations affecting up to 50 lines. Do not copy, move or delete lines with this tool.",
+    "name": "edit_quote_lines",
+    "description": "Create or edit up to 50 Quote Lines in one call. Supply each line's complete description and pricing information. Include its existing ID to edit it; omit the ID to create a new line. Preserve unchanged values from the current draft. Use empty strings for unknown values, deliberately cleared values and fields unused by the selected pricing mode. Do not copy, move or delete lines with this tool.",
     "parameters": {
       "type": "object",
+      "required": [
+        "lines"
+      ],
       "properties": {
-        "operations": {
+        "lines": {
           "type": "array",
           "items": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "op": {
-                    "type": "string",
-                    "enum": [
-                      "add"
-                    ]
-                  },
-                  "sectionId": {
-                    "type": "string",
-                    "maxLength": 128,
-                    "description": "Existing Quote Section ID, or the empty string for No section."
-                  },
-                  "fields": {
-                    "type": "object",
-                    "properties": {
-                      "description": {
-                        "type": "string",
-                        "maxLength": 20000,
-                        "description": "Faithful French commercial wording of supplied work. Empty clears it and leaves the draft incomplete."
-                      },
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "quantity",
-                          "fixed"
-                        ]
-                      },
-                      "quantity": {
-                        "type": "string",
-                        "maxLength": 20,
-                        "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
-                        "description": "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero."
-                      },
-                      "unit": {
-                        "type": "string",
-                        "maxLength": 100
-                      },
-                      "unitPrice": {
-                        "type": "string",
-                        "maxLength": 20,
-                        "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
-                        "description": "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero."
-                      },
-                      "amount": {
-                        "type": "string",
-                        "maxLength": 20,
-                        "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
-                        "description": "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero."
-                      },
-                      "quantityCalculation": {
-                        "type": "object",
-                        "properties": {
-                          "kind": {
-                            "type": "string",
-                            "enum": [
-                              "room_wall_area"
-                            ]
-                          },
-                          "length": {
-                            "type": "string",
-                            "maxLength": 20,
-                            "pattern": "^[0-9]+([.,][0-9]+)?$",
-                            "description": "Non-negative decimal without units. Application validation enforces field precision and range."
-                          },
-                          "width": {
-                            "type": "string",
-                            "maxLength": 20,
-                            "pattern": "^[0-9]+([.,][0-9]+)?$",
-                            "description": "Non-negative decimal without units. Application validation enforces field precision and range."
-                          },
-                          "height": {
-                            "type": "string",
-                            "maxLength": 20,
-                            "pattern": "^[0-9]+([.,][0-9]+)?$",
-                            "description": "Non-negative decimal without units. Application validation enforces field precision and range."
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "length",
-                          "width",
-                          "height"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "required": [
-                      "description",
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "op",
-                  "fields"
-                ],
-                "additionalProperties": false
+            "type": "object",
+            "required": [
+              "description",
+              "mode",
+              "quantity",
+              "unit",
+              "unitPrice",
+              "amount"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
               },
-              {
-                "type": "object",
-                "properties": {
-                  "op": {
-                    "type": "string",
-                    "enum": [
-                      "update"
-                    ]
-                  },
-                  "lineId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128,
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                  },
-                  "fields": {
-                    "type": "object",
-                    "properties": {
-                      "description": {
-                        "type": "string",
-                        "maxLength": 20000,
-                        "description": "Faithful French commercial wording of supplied work. Empty clears it and leaves the draft incomplete."
-                      },
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "quantity",
-                          "fixed"
-                        ]
-                      },
-                      "quantity": {
-                        "type": "string",
-                        "maxLength": 20,
-                        "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
-                        "description": "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero."
-                      },
-                      "unit": {
-                        "type": "string",
-                        "maxLength": 100
-                      },
-                      "unitPrice": {
-                        "type": "string",
-                        "maxLength": 20,
-                        "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
-                        "description": "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero."
-                      },
-                      "amount": {
-                        "type": "string",
-                        "maxLength": 20,
-                        "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
-                        "description": "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero."
-                      },
-                      "quantityCalculation": {
-                        "type": "object",
-                        "properties": {
-                          "kind": {
-                            "type": "string",
-                            "enum": [
-                              "room_wall_area"
-                            ]
-                          },
-                          "length": {
-                            "type": "string",
-                            "maxLength": 20,
-                            "pattern": "^[0-9]+([.,][0-9]+)?$",
-                            "description": "Non-negative decimal without units. Application validation enforces field precision and range."
-                          },
-                          "width": {
-                            "type": "string",
-                            "maxLength": 20,
-                            "pattern": "^[0-9]+([.,][0-9]+)?$",
-                            "description": "Non-negative decimal without units. Application validation enforces field precision and range."
-                          },
-                          "height": {
-                            "type": "string",
-                            "maxLength": 20,
-                            "pattern": "^[0-9]+([.,][0-9]+)?$",
-                            "description": "Non-negative decimal without units. Application validation enforces field precision and range."
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "length",
-                          "width",
-                          "height"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "required": [],
-                    "additionalProperties": false,
-                    "minProperties": 1
-                  }
-                },
-                "required": [
-                  "op",
-                  "lineId",
-                  "fields"
-                ],
-                "additionalProperties": false
+              "sectionId": {
+                "type": "string",
+                "maxLength": 128,
+                "description": "For new lines only: destination section ID. Omit or use an empty string for No section."
               },
-              {
-                "type": "object",
-                "properties": {
-                  "op": {
+              "description": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "mode": {
+                "anyOf": [
+                  {
                     "type": "string",
-                    "enum": [
-                      "adjust"
-                    ]
+                    "const": "quantity"
                   },
-                  "lineIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128,
-                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                    },
-                    "minItems": 1,
-                    "maxItems": 50,
-                    "uniqueItems": true
-                  },
-                  "field": {
+                  {
                     "type": "string",
-                    "enum": [
-                      "unitPrice",
-                      "amount"
-                    ]
-                  },
-                  "direction": {
-                    "type": "string",
-                    "enum": [
-                      "increase",
-                      "decrease"
-                    ]
-                  },
-                  "percent": {
-                    "type": "string",
-                    "maxLength": 20,
-                    "pattern": "^[0-9]+([.,][0-9]+)?$",
-                    "description": "Non-negative decimal without units. Application validation enforces field precision and range."
+                    "const": "fixed"
                   }
-                },
-                "required": [
-                  "op",
-                  "lineIds",
-                  "field",
-                  "direction",
-                  "percent"
-                ],
-                "additionalProperties": false
+                ]
+              },
+              "quantity": {
+                "type": "string",
+                "maxLength": 20,
+                "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
+                "description": "Decimal without units or currency. Use an empty string for an unknown, cleared or unused value."
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "unitPrice": {
+                "type": "string",
+                "maxLength": 20,
+                "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
+                "description": "Decimal without units or currency. Use an empty string for an unknown, cleared or unused value."
+              },
+              "amount": {
+                "type": "string",
+                "maxLength": 20,
+                "pattern": "^$|^[0-9]+([.,][0-9]+)?$",
+                "description": "Decimal without units or currency. Use an empty string for an unknown, cleared or unused value."
               }
-            ]
+            },
+            "additionalProperties": false,
+            "description": "Complete line content. Quantity pricing uses quantity, unit and unitPrice; amount must be empty. Fixed pricing uses amount; quantity, unit and unitPrice must be empty."
           },
           "minItems": 1,
           "maxItems": 50
@@ -412,110 +222,73 @@
           "type": "array",
           "items": {
             "type": "object",
-            "properties": {
-              "fields": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "maxLength": 160,
-                  "minLength": 1
-                },
-                "minItems": 1,
-                "maxItems": 200,
-                "uniqueItems": true,
-                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
-              },
-              "source": {
-                "type": "string",
-                "maxLength": 256,
-                "minLength": 1,
-                "description": "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message."
-              },
-              "text": {
-                "type": "string",
-                "maxLength": 2000,
-                "minLength": 1,
-                "description": "Exact excerpt from the identified source. One citation may support several fields."
-              }
-            },
             "required": [
               "fields",
               "source",
               "text"
             ],
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "uniqueItems": true,
+                "description": "Input fields supported by this citation, such as /lines/0/quantity and /lines/0/unitPrice."
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Application-supplied source: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message."
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "Exact excerpt from the source. One citation may support several fields."
+              }
+            },
             "additionalProperties": false
           },
           "minItems": 1,
           "maxItems": 200,
-          "description": "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values."
+          "description": "Cite sources for new nonempty commercial facts. Unchanged values and deliberate clearing do not need new evidence."
         }
       },
-      "required": [
-        "operations"
-      ],
       "additionalProperties": false
     }
   },
   {
-    "name": "edit_sections",
-    "description": "Create or rename Quote Sections using faithful French titles. Omitted values are unchanged. At most 50 operations per call. New sections append and receive application-generated IDs. Use the returned ID in a later call to add or move lines into a new section. This tool cannot move, copy or delete work. The whole call validates before staging any change.",
+    "name": "edit_quote_sections",
+    "description": "Create or rename up to 50 Quote Sections in one call. Supply a title for each section. Include its existing ID to rename it; omit the ID to create a new section. Use an empty title to clear it. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.",
     "parameters": {
       "type": "object",
       "properties": {
-        "operations": {
+        "sections": {
           "type": "array",
           "items": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "op": {
-                    "type": "string",
-                    "enum": [
-                      "add"
-                    ]
-                  },
-                  "title": {
-                    "type": "string",
-                    "maxLength": 4000,
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "op",
-                  "title"
-                ],
-                "additionalProperties": false
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
               },
-              {
-                "type": "object",
-                "properties": {
-                  "op": {
-                    "type": "string",
-                    "enum": [
-                      "rename"
-                    ]
-                  },
-                  "sectionId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128,
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                  },
-                  "title": {
-                    "type": "string",
-                    "maxLength": 4000,
-                    "description": "Empty deliberately clears the title and leaves the draft incomplete."
-                  }
-                },
-                "required": [
-                  "op",
-                  "sectionId",
-                  "title"
-                ],
-                "additionalProperties": false
+              "title": {
+                "type": "string",
+                "maxLength": 4000
               }
-            ]
+            },
+            "required": [
+              "title"
+            ],
+            "additionalProperties": false
           },
           "minItems": 1,
           "maxItems": 50
@@ -535,7 +308,7 @@
                 "minItems": 1,
                 "maxItems": 200,
                 "uniqueItems": true,
-                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
+                "description": "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title."
               },
               "source": {
                 "type": "string",
@@ -563,7 +336,7 @@
         }
       },
       "required": [
-        "operations"
+        "sections"
       ],
       "additionalProperties": false
     }
@@ -661,7 +434,7 @@
                 "minItems": 1,
                 "maxItems": 200,
                 "uniqueItems": true,
-                "description": "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent."
+                "description": "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title."
               },
               "source": {
                 "type": "string",

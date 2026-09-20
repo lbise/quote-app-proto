@@ -1,6 +1,11 @@
 // Review artifact only. Nothing in app/ imports or registers these definitions.
 // Run from the repo root: node docs/assistant-contract/build-proposed-tools.mjs
 import { writeFileSync } from "node:fs";
+import { createEditQuoteLinesTool } from "./edit-quote-lines.ts";
+
+const approvedLineTool = createEditQuoteLinesTool(async () => {
+  throw new Error("Review artifact only; no executor is implemented here.");
+});
 
 const text = (maxLength, description) => ({ type: "string", maxLength, ...(description ? { description } : {}) });
 const choice = (...values) => ({ type: "string", enum: values });
@@ -8,25 +13,18 @@ const object = (properties, required = Object.keys(properties)) => ({ type: "obj
 const list = (items, maxItems = 50) => ({ type: "array", items, minItems: 1, maxItems });
 const id = { type: "string", minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" };
 const sectionIdOrNoSection = { ...text(128), description: "Existing Quote Section ID, or the empty string for No section." };
-const decimal = { ...text(20), pattern: "^[0-9]+([.,][0-9]+)?$", description: "Non-negative decimal without units. Application validation enforces field precision and range." };
 const clearableDecimal = { ...text(20), pattern: "^$|^[0-9]+([.,][0-9]+)?$", description: "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero." };
 const evidence = {
   ...list(object({
-    fields: { ...list({ ...text(160), minLength: 1 }, 200), uniqueItems: true, description: "Fields supported by this citation. For edit_quote, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /operations/0/percent." },
+    fields: { ...list({ ...text(160), minLength: 1 }, 200), uniqueItems: true, description: "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title." },
     source: { ...text(256), minLength: 1, description: "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message." },
     text: { ...text(2000), minLength: 1, description: "Exact excerpt from the identified source. One citation may support several fields." },
   }), 200),
   description: "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values.",
 };
-const roomWallArea = object({ kind: choice("room_wall_area"), length: decimal, width: decimal, height: decimal });
-const pricingFields = {
-  description: text(20000, "Faithful French commercial wording of supplied work. Empty clears it and leaves the draft incomplete."),
-  mode: choice("quantity", "fixed"), quantity: clearableDecimal, unit: text(100), unitPrice: clearableDecimal, amount: clearableDecimal,
-  quantityCalculation: roomWallArea,
-};
 const tool = (name, description, properties, required) => ({ name, description, parameters: object(properties, required) });
 const tools = [
-  tool("edit_quote", "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.", {
+  tool("edit_quote_details", "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.", {
     fields: { ...object({
       reference: text(200), title: text(20000), issueDate: text(10, "YYYY-MM-DD or empty."), validUntil: text(10, "YYYY-MM-DD or empty."),
       siteAddress: text(20000), customerName: text(20000), customerAddress: text(20000), customerContact: text(20000),
@@ -36,19 +34,15 @@ const tools = [
     }, []), minProperties: 1 },
     evidence,
   }, ["fields"]),
-  tool("edit_lines", "Add or edit Quote Lines, or increase/decrease selected unit prices or fixed amounts by a supplied percentage. Add requires description and pricing mode. For edits, include only fields to change; use empty strings to clear values. On a pricing-mode change, supply any known replacement values; incompatible old fields are cleared. For room wall area, supply quantityCalculation instead of quantity. A call may contain up to 50 operations affecting up to 50 lines. Do not copy, move or delete lines with this tool.", {
-    operations: list({ anyOf: [
-      object({ op: choice("add"), sectionId: sectionIdOrNoSection, fields: object(pricingFields, ["description", "mode"]) }, ["op", "fields"]),
-      object({ op: choice("update"), lineId: id, fields: { ...object(pricingFields, []), minProperties: 1 } }),
-      object({ op: choice("adjust"), lineIds: { ...list(id), uniqueItems: true }, field: choice("unitPrice", "amount"), direction: choice("increase", "decrease"), percent: decimal }),
-    ] }), evidence,
-  }, ["operations"]),
-  tool("edit_sections", "Create or rename Quote Sections using faithful French titles. Omitted values are unchanged. At most 50 operations per call. New sections append and receive application-generated IDs. Use the returned ID in a later call to add or move lines into a new section. This tool cannot move, copy or delete work. The whole call validates before staging any change.", {
-    operations: list({ anyOf: [
-      object({ op: choice("add"), title: { ...text(4000), minLength: 1 } }),
-      object({ op: choice("rename"), sectionId: id, title: text(4000, "Empty deliberately clears the title and leaves the draft incomplete.") }),
-    ] }), evidence,
-  }, ["operations"]),
+  {
+    name: approvedLineTool.name,
+    description: approvedLineTool.description,
+    parameters: approvedLineTool.parameters,
+  },
+  tool("edit_quote_sections", "Create or rename up to 50 Quote Sections in one call. Supply a title for each section. Include its existing ID to rename it; omit the ID to create a new section. Use an empty title to clear it. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.", {
+    sections: list(object({ id, title: text(4000) }, ["title"])),
+    evidence,
+  }, ["sections"]),
   tool("copy_work", "Explicitly copy existing lines or a section. New work receives fresh application IDs. A line copy appends to the named destination, or immediately follows its source when destinationSectionId is omitted. A section copy follows its source section. Source values remain unchanged. Use measurementPolicy unknown when copied measurements are not known; affected quantities and uncertain embedded measurements are removed, while other supplied values remain. If safe removal is ambiguous, the call fails for clarification. Review the returned retained/missing values. A call may create at most 50 lines and one section and either succeeds completely or changes nothing.", {
     source: { anyOf: [
       object({ kind: choice("lines"), lineIds: { ...list(id), uniqueItems: true }, destinationSectionId: sectionIdOrNoSection }, ["kind", "lineIds"]),

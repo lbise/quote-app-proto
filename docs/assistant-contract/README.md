@@ -1,6 +1,6 @@
 # Assistant contract approval request
 
-Status: **core system prompt approved; design direction agreed; schemas and remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
+Status: **core system prompt approved; `edit_quote_lines` model-facing definition approved; remaining schemas and contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
 
 The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosure or confirmation rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
 
@@ -9,7 +9,7 @@ The product owner must approve the actual artifacts below before implementation.
 1. [Current inventory](current-inventory.md), the instructions and behavior being replaced.
 2. [Complete approved core system prompt](proposed-system-prompt.txt), with the language substitution recorded below.
 3. [Foundation tool definitions](foundation-tools.json), the nine implemented mutation tools proposed for #26, without `read_work`.
-4. [Complete future tool definitions](proposed-tools.json), six grouped tools for the complete agreed capability set. [Generator](build-proposed-tools.mjs) provides a less repetitive view of the exact same schemas. It is review tooling, not an application module.
+4. [Current future tool definitions](proposed-tools.json), the six-tool proposal. The [generator](build-proposed-tools.mjs) reads the approved line definition directly from [edit-quote-lines.ts](edit-quote-lines.ts); other entries remain proposed. These files are review artifacts, not registered application tools.
 5. [Behavior and wire contract](#behavior-and-wire-contract), below, including outputs, errors, limits and confirmation.
 6. [Examples](examples.md), including initial capture, corrections, copies, bulk changes, ambiguity, recovery and destructive confirmation.
 7. [Proposed disclosures and deterministic messages](messages.md).
@@ -37,19 +37,29 @@ Recorded on 2026-09-18. After discussing the design, the product owner said, "ok
 
 The exact correction matcher and remaining tool definitions still need review.
 
-### Tool grouping clarification pending
+### Historical naming clarification
 
-The earlier exchange about `edit_lines` replacing `edit_line` was misinterpreted by the agent. The product owner clarified: "what I ment is that edit_lines replaces edit_quote is that correct?" Do not treat the earlier exchange as approval of the proposed split or of a line-tool consolidation decision.
+The earlier exchange about `edit_lines` replacing `edit_line` was misinterpreted by the agent. The product owner clarified: "what I ment is that edit_lines replaces edit_quote is that correct?" This historical note records the confusing old names. It is not approval inferred from that exchange.
 
-The proposal currently separates `edit_quote` for Quote-level fields from `edit_lines` for Quote Lines. Whether to retain that split or combine these capabilities remains under discussion. Shared grouped-evidence, internal recovery tracking and minimal-result conventions remain the agreed direction. No runtime replacement has happened.
+### Tool names and model-facing line definition approved
+
+Recorded in this conversation. The product owner explicitly accepted `edit_quote_details` and `edit_quote_lines`: "yep that's good names my dude there you go".
+
+The product owner then approved the complete TypeBox definition for `edit_quote_lines`: "ok I think that's good for this tool go next". The canonical exact definition is [edit-quote-lines.ts](edit-quote-lines.ts).
+
+That approval covers only the model-facing line definition. `edit_quote_lines` takes `lines`, an array of 1 through 50 full editable-line objects. An omitted `id` creates a line. An existing `id` edits that line. An unknown ID rejects the call. `sectionId` is optional only for a new line. An omitted or empty `sectionId` puts a new line in No section. Each line has a description of at most 20,000 characters, `mode` of `quantity` or `fixed`, and required string `quantity`, `unit`, `unitPrice` and `amount` fields. Unknown, deliberately cleared and mode-incompatible values are empty strings. It has no `op`, `update`, `adjust` or `quantityCalculation` argument.
+
+Its optional grouped `evidence` array has entries shaped as `{ "fields": ["/lines/0/unitPrice"], "source": "current", "text": "exact excerpt" }`. `fields` uses JSON Pointers. `source` is `current`, `history_N`, `quote.FIELD`, `line:ID.FIELD` or `section:ID.FIELD`. The application injects sequential execution and enforces atomicity, ranges and evidence.
+
+This does not approve a runtime executor, registration, an arbitrary stage plan, test seams, `edit_quote_details` fields, or any structural tool. It also excludes calculated-quantity and percentage-adjustment inputs. The arithmetic guarantees under #26 and #27 remain unresolved and have not been waived or silently removed. No implementation gate has passed for the packet as a whole.
 
 ### Still awaiting approval
 
 Tool definitions, including legacy foundation schemas and results, context/result contracts, recovery, limits, disclosures, confirmation and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
 
 - Full-draft data sharing, including Quote-local Customer/business details and terms.
-- Foundation schemas and staged registration below.
-- Six-tool end-state contract, including mode changes, percentage adjustments and deletion confirmation.
+- Foundation schemas, registration and the staged plan below.
+- All end-state tools beyond the approved model-facing `edit_quote_lines` definition, including `edit_quote_details` fields, percentage adjustments and deletion confirmation.
 - Three turn-wide correction attempts, whole-turn discard and diagnostics.
 - Proposed size/execution limits and unsupported-request behavior.
 - The test seams listed below. No new tests at these seams are written before this confirmation.
@@ -66,7 +76,7 @@ The existing description/unit source-containment rule must stop requiring verbat
 
 ### #27 commercial edits
 
-Register `edit_quote` and `edit_lines` from `proposed-tools.json`, plus the five named structural tools from `foundation-tools.json`. Retire `set_customer_info`, `add_quote_line`, `supply_missing_line_fields` and `update_quote_line`. Do not register the future structural definitions yet. This replaces initial-capture/missing-field special cases with ordinary line edits without rebuilding existing copy behavior.
+The #27 registration plan remains unapproved. Its proposed registry would register `edit_quote_details` and the approved model-facing `edit_quote_lines` definition, plus the five named structural tools from `foundation-tools.json`. It would retire `set_customer_info`, `add_quote_line`, `supply_missing_line_fields` and `update_quote_line`. Do not register future structural definitions merely because they appear in this packet. The unresolved arithmetic contract and stage plan still need review before implementation.
 
 ### #28 structural edits
 
@@ -125,25 +135,27 @@ Representative offline sizing used fictional or sanitized data only. `tests/brow
 
 ### Commercial semantics
 
-`edit_quote` exposes only the named fields in its schema. Omission means unchanged; an empty string deliberately clears a string, even when it makes a required field incomplete. `vatRegistered: null` means unknown, false means not registered, true uses the supported 8.1% rate and requires a VAT ID for completeness. There is no model-selected rate, reduced rate or legal classification. Reference changes require uniqueness within the Artisan Business and are rejected after first Publication, including clearing it. Dates are valid YYYY-MM-DD values or empty. Local Customer/business corrections neither change reusable records nor refresh another Quote.
+The proposed `edit_quote_details` exposes only the named fields in its schema. Omission means unchanged; an empty string deliberately clears a string, even when it makes a required field incomplete. `vatRegistered: null` means unknown, false means not registered, true uses the supported 8.1% rate and requires a VAT ID for completeness. There is no model-selected rate, reduced rate or legal classification. Reference changes require uniqueness within the Artisan Business and are rejected after first Publication, including clearing it. Dates are valid YYYY-MM-DD values or empty. Local Customer/business corrections neither change reusable records nor refresh another Quote.
 
 For discounts, changing `discountMode` to none canonicalizes discount to `"0"`. Changing to percent or fixed without supplying discount leaves it empty rather than reusing a value from the old mode. Changing only discount uses the existing mode; a nonzero discount with mode none is rejected. Percent accepts 0 through 100 with up to two decimals; fixed CHF accepts up to two decimals and cannot exceed a complete subtotal. Incomplete pricing leaves totals incomplete.
 
-`edit_lines` unifies capture and correction. New lines append to their group; omitted sectionId means No section. Update cannot change identity or membership. Fields may be deliberately cleared, including description and unit. Mode quantity permits positive quantity up to three decimals and non-negative unitPrice up to two; mode fixed permits non-negative amount up to two. Zero quantity is invalid; zero prices are valid. Domain numeric and total bounds remain authoritative.
+The approved model-facing `edit_quote_lines` contract unifies capture and correction with a flat `lines` array of 1 through 50 complete editable lines. Every line supplies `description`, `mode`, `quantity`, `unit`, `unitPrice` and `amount`. All four commercial values are required strings. Description is at most 20,000 characters. Quantity mode uses `quantity`, `unit` and `unitPrice`; fixed mode uses `amount`. Unknown, cleared and incompatible values are empty strings. A quantity remains positive, prices may be zero and domain numeric and total bounds remain authoritative.
 
-On a switch to fixed, clear quantity, unit and unitPrice before applying supplied fixed fields. On a switch to quantity, clear amount before applying supplied quantity fields. Reject incompatible nonempty inputs rather than silently ignoring them. Never infer a replacement price from an old computed total. Empty obsolete fields are canonical in both modes. A mode-preserving update retains compatible fields. `quantityCalculation` requires mode quantity, no quantity input and unit m²; an omitted unit is set to m². Its positive metre dimensions have at most three decimals, with field evidence for each; application arithmetic supplies wall area. Precision or range failure rejects the call.
+An item without `id` creates a line and may supply `sectionId`. An omitted or empty `sectionId` creates it in No section. An existing `id` edits that line and cannot change its membership. An unknown `id`, a `sectionId` on an existing line or a nonempty mode-incompatible field rejects the call. The call has no operation discriminator, update/adjust operation or `quantityCalculation` input. The application executes the supplied lines sequentially on a candidate clone, validates ranges and evidence, then replaces staged state only if the whole call validates and calculates. It never infers a price from an old computed total.
 
-An adjust operation selects explicit stable IDs and either unitPrice on quantity lines or amount on fixed lines. It applies the supplied non-negative percentage in the named direction, with at most two decimal places. A decrease cannot exceed 100%. The application computes each resulting editable price using decimal arithmetic and CHF half-up rounding. Missing source prices remain missing and are listed as skippedMissingSource in the result. Wrong-mode targets reject the complete call. Do not invent a base for an adjustment or adjust a computed line total.
-
-All multi-operation calls validate on a candidate clone and replace staged state only after complete validation and calculation. Duplicate or overlapping target IDs within a call are rejected, including overlap between update and adjust. Operations may not reference not-yet-issued IDs. Use a later call after receiving new IDs. This keeps a failed second operation from leaving the first applied.
+Calculated-quantity inputs and percentage adjustments are unresolved arithmetic work for #26 and #27. Neither is supported by the approved `edit_quote_lines` definition. Their guarantees remain required before any future approval.
 
 ### Evidence and text rewriting
 
-Foundation schemas keep their existing evidence shape until #27 unifies them. Later schemas use entries shaped as `{ "fields": ["..."], "source": "...", "text": "..." }`. `fields` is a nonempty array of strings. `edit_quote` uses field names; other tools use JSON Pointers to argument values, such as `/operations/0/percent`. One citation may cover multiple changed fields, for example `{ "fields": ["discountMode", "discount"], "source": "current", "text": "Apply a 5% discount" }`. `source` is a compact application-issued locator: `current`, `history_N`, `quote.FIELD`, `line:ID.FIELD` or `section:ID.FIELD`. Lookup is strictly scoped to that locator. `text` is the exact excerpt.
+Foundation schemas keep their existing evidence shape until #27. Their replacement and every other future tool's evidence schema remain proposed.
 
-Every nonempty numeric replacement, adjustment percentage and calculation dimension needs evidence. New nonnumeric commercial facts also need supplied support; faithful description/title/unit rewriting may cite a source without reproducing it verbatim. Explicit clears and structural target selection do not require replacement-value evidence. For numeric current-work evidence, compare the supplied typed value against the typed source field; an amount cannot cite quantity or unit price. Track accepted staged values back to their permitted source or application calculation. Do not allow an unsupported assistant assertion to become evidence by citing an earlier result. For Artisan excerpts, require containment in the identified retained Artisan message and preserve existing value/source checks. Never use assistant/note messages. Typed argument validation and excerpt matching cannot prove semantic interpretation of natural language. Human review remains necessary; do not claim these checks eliminate invented or misinterpreted facts.
+For approved `edit_quote_lines`, `evidence` is optional and grouped. Each entry has nonempty JSON Pointer `fields`, a `source` of `current`, `history_N`, `quote.FIELD`, `line:ID.FIELD` or `section:ID.FIELD`, and `text`, the exact excerpt. For example, `{ "fields": ["/lines/0/unitPrice"], "source": "current", "text": "CHF 12.50 per m²" }` supports a line's unit price. Lookup is strictly scoped to its source.
+
+Every nonempty numeric replacement in an approved line call needs evidence. New nonnumeric commercial facts also need supplied support. Explicit clears do not require replacement-value evidence. For numeric current-work evidence, compare the supplied typed value against the typed source field; an amount cannot cite quantity or unit price. Do not allow an unsupported assistant assertion to become evidence by citing an earlier result. For Artisan excerpts, require containment in the identified retained Artisan message and preserve existing value/source checks. Never use assistant/note messages. Typed argument validation and excerpt matching cannot prove semantic interpretation of natural language. Human review remains necessary; do not claim these checks eliminate invented or misinterpreted facts. The original future-tool evidence review used an obsolete schema and is superseded for `edit_quote_lines`.
 
 ### Structural semantics
+
+The next proposed tool, `edit_quote_sections`, creates or renames up to 50 sections using a `sections` array of `{ id?, title }`. Omitted IDs create sections at the end; supplied existing IDs rename sections without changing their lines or position. Unknown or repeated IDs reject the call. A supplied empty title leaves the section incomplete rather than deleting it. It does not move, copy or delete sections or change their lines. This proposal is not yet approved.
 
 The valid order is No section first, then groups in sections-array order. Global line numbers follow that order. `move_work` preserves unselected relative order. Its selected array sets relative order at the requested destination; the before anchor must exist in that destination and must not be selected. Omitted anchor appends. Moving a section moves its whole group. Cyclic/self anchors, unknown IDs and duplicates reject without staging.
 
@@ -187,9 +199,9 @@ Use red-green vertical slices at these public boundaries after approval, without
 
 For each relevant slice, typecheck regularly and run its single test file. Once implemented, run the full unit/integration suite with an isolated PostgreSQL database and the browser suite. Use the sanitized representative joinery/civil/landscape fixtures, preserve multiline composite work, and test the complete 220,000-byte draft boundary, multibyte French and provider-serialization overhead. A deterministic model does not prove live-model interpretation quality; #29 and #30 own that evaluation.
 
-## Preparation checks and two-axis review
+## Original review reports, superseded in part
 
-Reviewed the approval packet against baseline `f331f0ea36a2de9bfd434c6a96df46ecbe4bca8b`. These checks do not constitute product-owner approval.
+The following initial review reports covered the packet against baseline `f331f0ea36a2de9bfd434c6a96df46ecbe4bca8b`. They do not constitute product-owner approval. Their future-tool evidence finding used the old evidence schema and is superseded for `edit_quote_lines` by the approved definition above.
 
 ### Standards
 
@@ -197,7 +209,7 @@ No documented-standard violations. One naming finding in the schema generator wa
 
 ### Spec
 
-Two schema inconsistencies were corrected and rechecked by the Spec reviewer. Current-work evidence now forbids an ID for Quote fields and requires an ID for lines/sections. The foundation missing-fields schema now rejects empty objects and unknown properties; the inventory records the existing serialization gap accurately. No missing approval-preparation artifact or scope creep was found. Runtime acceptance criteria remain gated, not completed.
+Two schema inconsistencies were corrected and rechecked by the Spec reviewer. The original current-work evidence finding forbade an ID for Quote fields and required an ID for lines/sections. That finding is historical because the approved `edit_quote_lines` evidence uses JSON Pointers. The foundation missing-fields schema now rejects empty objects and unknown properties; the inventory records the existing serialization gap accurately. No missing approval-preparation artifact or scope creep was found. Runtime acceptance criteria remain gated, not completed.
 
 ### Validation
 

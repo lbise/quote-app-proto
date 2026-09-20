@@ -115,7 +115,7 @@ Artisan: `Pour ce devis seulement, remplace l'adresse du client par Rue du Lac 9
 
 ```json
 {
-  "name": "edit_quote",
+  "name": "edit_quote_details",
   "arguments": {
     "fields": { "customerAddress": "Rue du Lac 9, 1000 Lausanne", "validUntil": "2026-12-31" },
     "evidence": [
@@ -127,15 +127,15 @@ Artisan: `Pour ce devis seulement, remplace l'adresse du client par Rue du Lac 9
 
 Only this Working Draft changes. The reusable Customer, business defaults, other Quotes and Published Revisions do not change. Under #26 the assistant instead explains that date editing is unavailable through its tools; it must not partially pretend to complete this compound request.
 
-## Bulk adjustment and failed-call rollback, #27
+## Percentage adjustment, unresolved arithmetic review, #27
 
 Artisan: `Increase the unit prices on lines 1, 2 and 3 by 5%.`
 
-The three quantity-mode lines have prices `12.50`, `10.10` and empty. Their IDs are `line_1`, `line_2`, `line_3`.
+This original/superseded review example used the removed `op: "adjust"` shape. It is not a supported `edit_quote_lines` call and has no approved replacement.
 
 ```json
 {
-  "name": "edit_lines",
+  "name": "edit_quote_lines",
   "arguments": {
     "operations": [{ "op": "adjust", "lineIds": ["line_1", "line_2", "line_3"], "field": "unitPrice", "direction": "increase", "percent": "5" }],
     "evidence": [{ "fields": ["/operations/0/percent"], "source": "current", "text": "Increase the unit prices on lines 1, 2 and 3 by 5%." }]
@@ -143,22 +143,54 @@ The three quantity-mode lines have prices `12.50`, `10.10` and empty. Their IDs 
 }
 ```
 
-Application-calculated prices become `13.13`, `10.61` and empty. The result lists `line_3` in skippedMissingSource. Reply: `Increased the two supplied unit prices by 5%. Line 3 still has no unit price.` No price is filled from another line or from model knowledge.
+Do not implement or register this payload. The #26 and #27 arithmetic guarantees, including calculation inputs and rounding behavior, remain under review. Their absence from the approved line definition does not waive them.
 
-If a call instead includes two update operations and the second has an unknown line ID, neither applies. Correcting only the second operation would omit requested work, so the replacement must contain the complete intended batch. Debug shows the rejected call and the accepted replacement, not an apparent partial success.
+## New quantity line in No section, #27
 
-## Pricing-mode change and missing replacement amount, #27
-
-Artisan: `Make line 1 fixed-price; the amount is not known yet.`
+Artisan: `Ajoute 10 m² de peinture murale à 12.50 CHF par m².`
 
 ```json
 {
-  "name": "edit_lines",
-  "arguments": { "operations": [{ "op": "update", "lineId": "line_1", "fields": { "mode": "fixed", "amount": "" } }] }
+  "name": "edit_quote_lines",
+  "arguments": {
+    "lines": [{
+      "description": "Peinture murale",
+      "mode": "quantity",
+      "quantity": "10",
+      "unit": "m²",
+      "unitPrice": "12.50",
+      "amount": ""
+    }],
+    "evidence": [{ "fields": ["/lines/0/description", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], "source": "current", "text": "Ajoute 10 m² de peinture murale à 12.50 CHF par m²." }]
+  }
 }
 ```
 
-The application clears quantity, unit and unitPrice and leaves amount empty. It does not reuse the old calculated quantity-times-price amount. The line and whole Quote remain honestly incomplete. Setting amount to `0` would require evidence of a deliberately supplied zero price.
+The omitted `id` creates the line. The omitted `sectionId` puts it in No section. Quantity pricing requires the empty incompatible `amount` string.
+
+## Pricing-mode change and missing replacement amount, #27
+
+Context line `line_1` has description `Peinture des murs`. Artisan: `Make line 1 fixed-price; the amount is not known yet.`
+
+```json
+{
+  "name": "edit_quote_lines",
+  "arguments": {
+    "lines": [{
+      "id": "line_1",
+      "description": "Peinture des murs",
+      "mode": "fixed",
+      "quantity": "",
+      "unit": "",
+      "unitPrice": "",
+      "amount": ""
+    }],
+    "evidence": [{ "fields": ["/lines/0/mode"], "source": "current", "text": "Make line 1 fixed-price" }]
+  }
+}
+```
+
+The full line supplies empty quantity, unit, unit price and amount. It does not reuse the old calculated quantity-times-price amount. The line and whole Quote remain incomplete. Setting amount to `0` requires evidence of a deliberately supplied zero price.
 
 ## Clarification instead of guessing, all stages
 
@@ -194,7 +226,7 @@ The stable new IDs come from the accepted copy result, not the outdated initial 
 
 Artisan: `Rename the project to Kitchen repairs, and delete the bathroom section and all its work.`
 
-The model first stages edit_quote with title `Kitchen repairs` and `{ "fields": ["title"], "source": "current", "text": "Rename the project to Kitchen repairs" }`, then:
+The model first stages `edit_quote_details` with title `Kitchen repairs` and `{ "fields": ["title"], "source": "current", "text": "Rename the project to Kitchen repairs" }`, then:
 
 ```json
 {
