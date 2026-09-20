@@ -1,5 +1,6 @@
 // Approved model-facing review artifact. This file is not registered by app/.
-// Calculation-specific inputs and the application executor remain under review.
+// Derived inputs are model-calculated; no calculation-specific arguments.
+// The application executor is not implemented by this review artifact.
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 

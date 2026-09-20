@@ -2,7 +2,9 @@
 
 These are review examples, not executed tests or claims about live-model quality. IDs are fictional stable IDs. No provider receives these examples in addition to the approved prompt. Each example identifies its capability stage. Results describe model-visible acknowledgements; full diagnostics remain internal.
 
-## Initial capture without administrative questions, #26
+## Legacy initial capture without administrative questions, #26
+
+This documents existing `add_quote_line` behavior, retained until its replacement is implemented. The approved `edit_quote_lines` definition below instead accepts the model-derived quantity without room-specific calculation arguments.
 
 Artisan, English: `Paint the bedroom walls. The room is 2 m long, 4 m wide and 3 m high. CHF 12.50 per m².`
 
@@ -127,46 +129,55 @@ Artisan: `Pour ce devis seulement, remplace l'adresse du client par Rue du Lac 9
 
 Only this Working Draft changes. The reusable Customer, business defaults, other Quotes and Published Revisions do not change. Under #26 the assistant instead explains that date editing is unavailable through its tools; it must not partially pretend to complete this compound request.
 
-## Percentage adjustment, unresolved arithmetic review, #27
+## Model-derived price adjustment, #27
 
-Artisan: `Increase the unit prices on lines 1, 2 and 3 by 5%.`
-
-This original/superseded review example used the removed `op: "adjust"` shape. It is not a supported `edit_quote_lines` call and has no approved replacement.
-
-```json
-{
-  "name": "edit_quote_lines",
-  "arguments": {
-    "operations": [{ "op": "adjust", "lineIds": ["line_1", "line_2", "line_3"], "field": "unitPrice", "direction": "increase", "percent": "5" }],
-    "evidence": [{ "fields": ["/operations/0/percent"], "source": "current", "text": "Increase the unit prices on lines 1, 2 and 3 by 5%." }]
-  }
-}
-```
-
-Do not implement or register this payload. The #26 and #27 arithmetic guarantees, including calculation inputs and rounding behavior, remain under review. Their absence from the approved line definition does not waive them.
-
-## New quantity line in No section, #27
-
-Artisan: `Ajoute 10 m² de peinture murale à 12.50 CHF par m².`
+Context line `line_1` is `Peinture des murs` with quantity `36`, unit `m²`, unit price `12.50` and no fixed amount. Artisan: `Increase the unit price on line 1 by 5%.`
 
 ```json
 {
   "name": "edit_quote_lines",
   "arguments": {
     "lines": [{
-      "description": "Peinture murale",
+      "id": "line_1",
+      "description": "Peinture des murs",
       "mode": "quantity",
-      "quantity": "10",
+      "quantity": "36",
       "unit": "m²",
-      "unitPrice": "12.50",
+      "unitPrice": "13.13",
       "amount": ""
     }],
-    "evidence": [{ "fields": ["/lines/0/description", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], "source": "current", "text": "Ajoute 10 m² de peinture murale à 12.50 CHF par m²." }]
+    "evidence": [
+      { "fields": ["/lines/0/unitPrice"], "source": "current", "text": "Increase the unit price on line 1 by 5%." },
+      { "fields": ["/lines/0/unitPrice"], "source": "line:line_1.unitPrice", "text": "12.50" }
+    ]
   }
 }
 ```
 
-The omitted `id` creates the line. The omitted `sectionId` puts it in No section. Quantity pricing requires the empty incompatible `amount` string.
+The two citations record the requested adjustment and the current price. The model uses expected CHF half-up rounding to send `13.13`. The application validates both sources and the complete flat line, but does not independently check the 5% calculation or rounding. It calculates the resulting line amount and Quote totals under its existing rules. There is no calculation schema or percentage-adjust operation.
+
+## Model-derived room-wall quantity in No section, #27
+
+Artisan: `Paint the bedroom walls. The room is 2 m long, 4 m wide and 3 m high. CHF 12.50 per m².`
+
+```json
+{
+  "name": "edit_quote_lines",
+  "arguments": {
+    "lines": [{
+      "description": "Peinture des murs de la chambre, longueur 2 m, largeur 4 m, hauteur 3 m",
+      "mode": "quantity",
+      "quantity": "36",
+      "unit": "m²",
+      "unitPrice": "12.50",
+      "amount": ""
+    }],
+    "evidence": [{ "fields": ["/lines/0/description", "/lines/0/mode", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], "source": "current", "text": "Paint the bedroom walls. The room is 2 m long, 4 m wide and 3 m high. CHF 12.50 per m²." }]
+  }
+}
+```
+
+All editable values are strings. The omitted `id` creates the line and the omitted `sectionId` puts it in No section. The dimensions cite the derived `quantity` field, but the application does not require `36` to equal a numeric input in the excerpt. It checks that the excerpt occurs in the current Artisan message, not that it establishes the submitted value, wall-area formula or arithmetic. Quantity pricing requires the empty incompatible `amount` string.
 
 ## Pricing-mode change and missing replacement amount, #27
 

@@ -1,6 +1,6 @@
 # Assistant contract approval request
 
-Status: **core system prompt and line/section editing definitions approved; copying and moving accepted for evaluation; narrow line deletion scope approved; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and the superseding deletion scope for [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
+Status: **core system prompt and line/section editing definitions approved; model-derived line inputs approved as a prototype tradeoff; copying and moving accepted for evaluation; narrow line deletion scope approved; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and the superseding deletion scope for [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
 
 The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosures or deletion rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
 
@@ -51,7 +51,19 @@ That approval covers only the model-facing line definition. `edit_quote_lines` t
 
 Its optional grouped `evidence` array has entries shaped as `{ "fields": ["/lines/0/unitPrice"], "source": "current", "text": "exact excerpt" }`. `fields` uses JSON Pointers. `source` is `current`, `history_N`, `quote.FIELD`, `line:ID.FIELD` or `section:ID.FIELD`. The application injects sequential execution and enforces atomicity, ranges and evidence.
 
-This does not approve a runtime executor, registration, an arbitrary stage plan, test seams, `edit_quote_details` fields, or any structural tool. It also excludes calculated-quantity and percentage-adjustment inputs. The arithmetic guarantees under #26 and #27 remain unresolved and have not been waived or silently removed. No implementation gate has passed for the packet as a whole.
+This does not approve a runtime executor, registration, an arbitrary stage plan, test seams, `edit_quote_details` fields, or any structural tool. It does not add a calculation expression, `quantityCalculation`, percentage-adjust operation or calculator tool to `edit_quote_lines`. No implementation gate has passed for the packet as a whole.
+
+### Model-derived line inputs approved as a prototype tradeoff
+
+Recorded in this conversation. The product owner explicitly approved this decision with: "yes settle this".
+
+The model may derive a quantity, including room wall area, and may derive an adjusted unit or fixed price from permitted Artisan input, current-draft facts or application-supplied facts. It sends the resulting ordinary string fields through the already approved `edit_quote_lines` definition. The definition itself remains exact and unchanged.
+
+The application validates field types, decimal precision, ranges, pricing modes and evidence provenance. It does not recalculate a model-derived input, check the chosen formula or independently verify an adjustment's arithmetic. Evidence records the source facts used for a result. It does not prove that the result follows from them. A plausible but wrong derived quantity or price can therefore pass validation.
+
+The application remains authoritative for line amounts from `quantity * unitPrice`, section subtotals, Quote discount, VAT and total under its existing rules. The model should apply CHF half-up rounding when it adjusts a price, but the application does not independently check that rounding. This is an accepted prototype tradeoff. [#29](https://github.com/lbise/quote-app-proto/issues/29) owns scenarios that evaluate it.
+
+This supersedes the #26 and #27 requirements for application-verified arithmetic of derived inputs. The [approval record on #27](https://github.com/lbise/quote-app-proto/issues/27#issuecomment-5750715256) and both issue bodies now record the change. [#29's evaluation note](https://github.com/lbise/quote-app-proto/issues/29#issuecomment-5750718405) calls for independently worked quantity and price-adjustment cases. This does not start runtime implementation; the legacy room calculation remains in the current code until the approved replacement is implemented.
 
 ### Model-facing section definition approved
 
@@ -67,7 +79,7 @@ The canonical proposal is the `copy_quote_work` entry in [proposed-tools.json](p
 
 The product owner accepted `move_quote_work` in this conversation: "I guess it's fine, nothing much to simplify on this one. I wonder about its usefulness also.. will see." The reviewed description and schema are the `move_quote_work` entry in [proposed-tools.json](proposed-tools.json). This accepts the tool for now, not a claim that its usefulness has been demonstrated.
 
-A call moves or reorders 1 through 50 explicit line IDs or section IDs. Lines require a destination section, with an empty string for No section. Selected array order determines placement; an optional unselected before-anchor determines insertion, otherwise work appends. Unknown IDs, duplicates and invalid placement reject the whole call. Sections move with their lines, unselected work retains relative order, and no commercial content changes. No evidence or new IDs are needed. Later evaluation should check actual ordering/grouping requests and whether the dedicated tool is useful. This acceptance does not approve deletion or the unresolved arithmetic/recovery contract.
+A call moves or reorders 1 through 50 explicit line IDs or section IDs. Lines require a destination section, with an empty string for No section. Selected array order determines placement; an optional unselected before-anchor determines insertion, otherwise work appends. Unknown IDs, duplicates and invalid placement reject the whole call. Sections move with their lines, unselected work retains relative order, and no commercial content changes. No evidence or new IDs are needed. Later evaluation should check actual ordering/grouping requests and whether the dedicated tool is useful. This acceptance does not approve deletion or the remaining recovery contract.
 
 ### Deletion scope decision approved
 
@@ -85,7 +97,7 @@ The remaining tool definitions, including legacy foundation schemas and results,
 
 - Full-draft data sharing, including Quote-local Customer/business details and terms.
 - Foundation schemas, registration and the staged plan below.
-- Remaining end-state tools beyond `edit_quote_lines`, `edit_quote_sections`, `delete_quote_lines` and the provisionally accepted `copy_quote_work` and `move_quote_work`, including `edit_quote_details` fields and percentage adjustments.
+- Remaining end-state tools beyond `edit_quote_lines`, `edit_quote_sections`, `delete_quote_lines` and the provisionally accepted `copy_quote_work` and `move_quote_work`, including `edit_quote_details` fields.
 - Three turn-wide correction attempts, whole-turn discard and diagnostics.
 - Proposed size/execution limits and unsupported-request behavior.
 - The test seams listed below. No new tests at these seams are written before approval.
@@ -102,7 +114,7 @@ The existing description/unit source-containment rule must stop requiring verbat
 
 ### #27 commercial edits
 
-The #27 registration plan remains unapproved. Its proposed registry would register `edit_quote_details` and the approved model-facing `edit_quote_lines` definition, plus the five named structural tools from `foundation-tools.json`. It would retire `set_customer_info`, `add_quote_line`, `supply_missing_line_fields` and `update_quote_line`. Do not register future structural definitions merely because they appear in this packet. The unresolved arithmetic contract and stage plan still need review before implementation.
+The #27 registration plan remains unapproved. Its proposed registry would register `edit_quote_details` and the approved model-facing `edit_quote_lines` definition, plus the five named structural tools from `foundation-tools.json`. It would retire `set_customer_info`, `add_quote_line`, `supply_missing_line_fields` and `update_quote_line`. Do not register future structural definitions merely because they appear in this packet. The remaining stage plan still needs review before implementation.
 
 ### #28 structural edits
 
@@ -169,7 +181,7 @@ The approved model-facing `edit_quote_lines` contract unifies capture and correc
 
 An item without `id` creates a line and may supply `sectionId`. An omitted or empty `sectionId` creates it in No section. An existing `id` edits that line and cannot change its membership. An unknown `id`, a `sectionId` on an existing line or a nonempty mode-incompatible field rejects the call. The call has no operation discriminator, update/adjust operation or `quantityCalculation` input. The application executes the supplied lines sequentially on a candidate clone, validates ranges and evidence, then replaces staged state only if the whole call validates and calculates. It never infers a price from an old computed total.
 
-Calculated-quantity inputs and percentage adjustments are unresolved arithmetic work for #26 and #27. Neither is supported by the approved `edit_quote_lines` definition. Their guarantees remain required before any future approval.
+The model may place derived quantities and adjusted prices directly in these approved string fields. It has no calculation expression, `quantityCalculation`, percentage-adjust operation or calculator tool. The application does not verify the derivation arithmetic or formula selection. It continues to calculate line amounts and Quote totals authoritatively under the existing rules. See the approved prototype tradeoff above and #29 evaluation scenarios.
 
 ### Evidence and text rewriting
 
@@ -177,7 +189,7 @@ Foundation schemas keep their existing evidence shape until #27. Their replaceme
 
 For approved `edit_quote_lines`, `evidence` is optional and grouped. Each entry has nonempty JSON Pointer `fields`, a `source` of `current`, `history_N`, `quote.FIELD`, `line:ID.FIELD` or `section:ID.FIELD`, and `text`, the exact excerpt. For example, `{ "fields": ["/lines/0/unitPrice"], "source": "current", "text": "CHF 12.50 per m²" }` supports a line's unit price. Lookup is strictly scoped to its source.
 
-Every nonempty numeric replacement in an approved line call needs evidence. New nonnumeric commercial facts also need supplied support. Explicit clears do not require replacement-value evidence. For numeric current-work evidence, compare the supplied typed value against the typed source field; an amount cannot cite quantity or unit price. Do not allow an unsupported assistant assertion to become evidence by citing an earlier result. For Artisan excerpts, require containment in the identified retained Artisan message and preserve existing value/source checks. Never use assistant/note messages. Typed argument validation and excerpt matching cannot prove semantic interpretation of natural language. Human review remains necessary; do not claim these checks eliminate invented or misinterpreted facts. The original future-tool evidence review used an obsolete schema and is superseded for `edit_quote_lines`.
+New nonempty numeric values need evidence; unchanged values and explicit clears do not need new evidence. New nonnumeric commercial facts also need supplied support. A cited source fact used in a derivation, such as room dimensions or an existing unit price, need not equal the derived replacement. The approved schema has no direct-versus-derived discriminator, so validation cannot promise to enforce equality for one while automatically recognizing the other. Validate source identity, field existence, excerpt containment and final value precision/range, not whether the final value equals a quoted operand or follows from it. Do not allow previous assistant prose to become permitted source evidence. For Artisan excerpts, require containment in the identified retained Artisan message. Never use assistant/note messages. Typed argument validation and excerpt matching cannot prove semantic interpretation of natural language or a derived result. Human review remains necessary; do not claim these checks eliminate invented or misinterpreted facts. The original future-tool evidence review used an obsolete schema and is superseded for `edit_quote_lines`.
 
 ### Structural semantics
 
@@ -218,7 +230,7 @@ Diagnostics are transient, accessible only to the authorized Quote viewer, and n
 Use red-green vertical slices at these public boundaries after approval, without adding pass-through modules to create test targets:
 
 1. **Authenticated Quote HTTP operations with real PostgreSQL and controllable model transport.** Exercise the real executor, not fake successful tool results. Assert complete first-call context and implemented registry, capture/edit/copy regression, malformed argument recovery, three-attempt exhaustion, switching tools, failure then unrelated success, unresolved failure, candidate rollback, mixed-turn commit, save/reopen, one manual Undo, stale changes, payload-bound idempotency, limits and cross-business isolation. For `delete_quote_lines`, cover selected-line deletion, ambiguous-target clarification, all-work rejection with manual fallback, the original-line check across calls and whole-turn discard after a destructive-scope rejection. No live provider in CI.
-2. **Whole-Quote validation/calculation.** Observe mode transitions, missing versus zero, percent adjustment rounding and authoritative totals through the whole-Quote result, not private arithmetic helpers. Keep existing domain tests; add approved scenarios only as capabilities land.
+2. **Whole-Quote validation/calculation.** Observe mode transitions, missing versus zero and authoritative totals through the whole-Quote result, not private arithmetic helpers. #29 evaluates model-derived quantities and price adjustments, including expected CHF half-up rounding, without treating the application as an independent derivation checker. Keep existing domain tests; add approved scenarios only as capabilities land.
 3. **Bilingual browser workflow.** Check existing editing, disclosure, visible failure/retry counters and outcomes, manual editing while processing, manual Undo and no automatic Publication dialog. In #28, show rejection of destructive scope and the manual deletion fallback. Scripted browser HTTP responses prove UI behavior only; PostgreSQL tests above prove execution and persistence.
 
 For each relevant slice, typecheck regularly and run its single test file. Once implemented, run the full unit/integration suite with an isolated PostgreSQL database and the browser suite. Use the sanitized representative joinery/civil/landscape fixtures, preserve multiline composite work, and test the complete 220,000-byte draft boundary, multibyte French and provider-serialization overhead. A deterministic model does not prove live-model interpretation quality; #29 and #30 own that evaluation.
@@ -244,4 +256,4 @@ Two schema inconsistencies were corrected and rechecked by the Spec reviewer. Th
 
 ## Implementation stop
 
-This work records partial approval and prepares the remaining review. The unchecked execution, test and disclosure work in #26 remains open. Do not change runtime prompts, registration, context sharing or validation until the product owner approves the remaining contract required for implementation.
+This work records partial approval and prepares the remaining review. The unchecked execution, test and disclosure work in #26 remains open. The derived-input decision does not open a runtime implementation gate. Do not change runtime prompts, registration, context sharing or validation until the product owner approves the remaining contract required for implementation.
