@@ -43,10 +43,10 @@ const tools = [
     sections: list(object({ id, title: text(4000) }, ["title"])),
     evidence,
   }, ["sections"]),
-  tool("copy_work", "Explicitly copy existing lines or a section. New work receives fresh application IDs. A line copy appends to the named destination, or immediately follows its source when destinationSectionId is omitted. A section copy follows its source section. Source values remain unchanged. Use measurementPolicy unknown when copied measurements are not known; affected quantities and uncertain embedded measurements are removed, while other supplied values remain. If safe removal is ambiguous, the call fails for clarification. Review the returned retained/missing values. A call may create at most 50 lines and one section and either succeeds completely or changes nothing.", {
+  tool("copy_quote_work", "Copy up to 50 Quote Lines or one Quote Section with its lines. For line copies, optionally choose a destination section; otherwise copies follow their source lines. For a section copy, supply its title. Set measurementPolicy to retain to keep measurements, or unknown to clear quantities and remove embedded measurements. Other values are retained.", {
     source: { anyOf: [
-      object({ kind: choice("lines"), lineIds: { ...list(id), uniqueItems: true }, destinationSectionId: sectionIdOrNoSection }, ["kind", "lineIds"]),
-      object({ kind: choice("section"), sectionId: id, title: { ...text(4000), minLength: 1 } }),
+      object({ lineIds: { ...list(id), uniqueItems: true }, destinationSectionId: sectionIdOrNoSection }, ["lineIds"]),
+      object({ sectionId: id, title: { ...text(4000), minLength: 1 } }),
     ] }, measurementPolicy: choice("retain", "unknown"), evidence,
   }, ["source", "measurementPolicy"]),
   tool("move_work", "Explicitly move or reorder selected lines or sections using stable IDs. Array order is the requested relative order. For lines, destinationSectionId is required; beforeLineId must be an unselected line already in that destination. Omit beforeLineId to append. For sections, beforeSectionId must be unselected; omit it to append. No section remains first. Unselected work retains relative order. The complete call validates before staging any change; at most 50 selected lines or sections.", {

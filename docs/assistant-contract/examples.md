@@ -206,8 +206,8 @@ Artisan: `Copy lines 1 and 2 into the kitchen section, with the same measurement
 
 ```json
 {
-  "name": "copy_work",
-  "arguments": { "source": { "kind": "lines", "lineIds": ["line_1", "line_2"], "destinationSectionId": "section_kitchen" }, "measurementPolicy": "retain" }
+  "name": "copy_quote_work",
+  "arguments": { "source": { "lineIds": ["line_1", "line_2"], "destinationSectionId": "section_kitchen" }, "measurementPolicy": "retain" }
 }
 ```
 
