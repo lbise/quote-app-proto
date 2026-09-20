@@ -532,73 +532,26 @@
     }
   },
   {
-    "name": "delete_quote_work",
-    "description": "Remove selected Quote Lines or Quote Sections. Supply lineIds or sectionIds, or set clearAll to true to remove all lines and sections. Deleting a section also removes its contained lines. Do not edit content, move or copy work with this tool.",
+    "name": "delete_quote_lines",
+    "description": "Delete up to 50 explicitly identified Quote Lines. Supply their existing IDs. Do not delete Quote Sections or remove all work; direct those requests to the manual controls.",
     "parameters": {
       "type": "object",
       "properties": {
-        "target": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "lineIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128,
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                  },
-                  "minItems": 1,
-                  "maxItems": 50,
-                  "uniqueItems": true
-                }
-              },
-              "required": [
-                "lineIds"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "sectionIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128,
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-                  },
-                  "minItems": 1,
-                  "maxItems": 50,
-                  "uniqueItems": true
-                }
-              },
-              "required": [
-                "sectionIds"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "clearAll": {
-                  "const": true,
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "clearAll"
-              ],
-              "additionalProperties": false
-            }
-          ]
+        "lineIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true
         }
       },
       "required": [
-        "target"
+        "lineIds"
       ],
       "additionalProperties": false
     }

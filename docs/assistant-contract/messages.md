@@ -38,7 +38,6 @@ These are application-authored status text, not model instructions or model asse
 | --- | --- | --- |
 | committed | Changes saved to this Working Draft. You can Undo this turn with the manual control. | Modifications enregistrées dans ce brouillon. Vous pouvez annuler ce tour avec la commande manuelle. |
 | unchanged | No changes were made to this Working Draft. | Aucune modification n'a été apportée à ce brouillon. |
-| awaiting_confirmation, #28 | No changes saved yet. Review the complete proposed turn and confirm or cancel below. | Aucune modification enregistrée pour le moment. Vérifiez toutes les modifications proposées, puis confirmez ou annulez ci-dessous. |
 | discarded | Nothing from this turn was saved. Retry or continue manually. | Aucune modification de ce tour n'a été enregistrée. Réessayez ou continuez manuellement. |
 | unresolved_failure | A tool call could not be corrected. Nothing from this turn was saved. Clarify your request or continue manually. | Un appel d'outil n'a pas pu être corrigé. Aucune modification de ce tour n'a été enregistrée. Précisez votre demande ou continuez manuellement. |
 | recovery_exhausted | The three correction attempts were used. Nothing from this turn was saved. Retry with a clearer request or continue manually. | Les trois tentatives de correction ont été utilisées. Aucune modification de ce tour n'a été enregistrée. Précisez votre demande et réessayez, ou continuez manuellement. |
@@ -48,7 +47,7 @@ These are application-authored status text, not model instructions or model asse
 
 Use the pre-provider size message only if no request went to the provider. Provider-serialization failure on a later step uses later_budget_exhausted instead. A smaller request does not bypass the requirement to send the complete current draft.
 
-Copied-value disclosure retains `copyDisclosure`'s current English/French wording and bounded row algorithm from `app/lib/quote-assistant.server.ts:48-77`, as transcribed in the current inventory. Inputs must reflect the final staged state, not obsolete values from an earlier copy call in the same turn. Omit copies deleted later in the same turn. A confirmation-required copy is labelled proposed by the awaiting_confirmation status. Full untruncated accepted values remain in tool results; the visible list remains bounded.
+Copied-value disclosure retains `copyDisclosure`'s current English/French wording and bounded row algorithm from `app/lib/quote-assistant.server.ts:48-77`, as transcribed in the current inventory. Inputs must reflect the final staged state, not obsolete values from an earlier copy call in the same turn. Omit copies deleted later in the same turn. Full untruncated accepted values remain in tool results; the visible list remains bounded.
 
 ## Debug panel
 
@@ -71,22 +70,15 @@ Données de débogage sensibles : ces requêtes et appels d'outils peuvent conte
 | Outcome | Turn outcome: {outcome} | Résultat du tour : {outcome} |
 | Not sent | Not sent to the provider | Non transmis au fournisseur |
 
-Use committed/enregistré, unchanged/inchangé, awaiting confirmation/en attente de confirmation and discarded/abandonné as localized outcome values. Include the initial failure at 0/3; do not label it attempt 1/3. Each diagnostic call record shows its own count, even if a later correction succeeds.
+Use committed/enregistré, unchanged/inchangé and discarded/abandonné as localized outcome values. Include the initial failure at 0/3; do not label it attempt 1/3. Each diagnostic call record shows its own count, even if a later correction succeeds.
 
-## Destructive confirmation, #28 only
+## Destructive requests, #28 only
 
-| UI element | English | French |
+| Request or result | English | French |
 | --- | --- | --- |
-| Heading | Review changes before deleting work | Vérifier les modifications avant de supprimer des travaux |
-| Explanation | This turn removes the work listed below. Other changes in this turn are also listed. Confirm applies all of them together; cancel applies none. | Ce tour supprime les travaux ci-dessous. Les autres modifications du tour sont également indiquées. Confirmer applique toutes les modifications ensemble ; annuler n'en applique aucune. |
-| Removed work heading | Work to remove | Travaux à supprimer |
-| Other edits heading | Other changes in this turn | Autres modifications de ce tour |
-| Totals heading | Amounts before and after | Montants avant et après |
-| Safe default button | Cancel | Annuler |
-| Confirm button | Apply all changes and delete listed work | Appliquer les modifications et supprimer les travaux indiqués |
-| New chat while pending | Review or cancel the pending proposal before sending another assistant request. | Vérifiez ou annulez la proposition en attente avant d'envoyer une autre demande à l'assistant. |
-| Cancelled | Proposal cancelled. Nothing from this turn was saved. | Proposition annulée. Aucune modification de ce tour n'a été enregistrée. |
-| Stale | The Working Draft changed. This proposal can no longer be applied. | Le brouillon a changé. Cette proposition ne peut plus être appliquée. |
-| Expired | This proposal expired. Nothing from this turn was saved. Send a new request to try again. | Cette proposition a expiré. Aucune modification de ce tour n'a été enregistrée. Envoyez une nouvelle demande pour réessayer. |
+| Ambiguous line target | Which lines should I delete? | Quelles lignes dois-je supprimer ? |
+| Remove all work | I can't remove all work. Delete the work manually instead. | Je ne peux pas supprimer tous les travaux. Supprimez les travaux manuellement. |
+| Remove a section | I can't delete a section. Delete the section manually instead. | Je ne peux pas supprimer une section. Supprimez la section manuellement. |
+| Scope rejected after staging | Nothing from this turn was saved. Delete the work manually instead. | Aucune modification de ce tour n'a été enregistrée. Supprimez les travaux manuellement. |
 
-Names, descriptions, removed line counts and before/after values come from the validated proposed turn. Do not use a model-generated summary as the only destructive preview. Render complete affected content in a scrollable review, without truncating what the Artisan is authorizing.
+`delete_quote_lines` can remove only 1 through 50 explicitly identified lines. It has no evidence, section or all-work target. A request that would remove every line present at the start of the turn discards the whole staged turn. Manual Undo reverses a committed permitted deletion.

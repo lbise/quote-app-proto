@@ -222,27 +222,24 @@ The new IDs are `line_copy_1` and `line_copy_2`, appended in that order. Source 
 
 The stable new IDs come from the accepted copy result, not the outdated initial draft. Unrelated lines retain their relative order.
 
-## Destructive confirmation covers the complete turn, #28
+## Narrow line deletion, #28
 
-Artisan: `Rename the project to Kitchen repairs, and delete the bathroom section and all its work.`
-
-The model first stages `edit_quote_details` with title `Kitchen repairs` and `{ "fields": ["title"], "source": "current", "text": "Rename the project to Kitchen repairs" }`, then:
+Context starts with `line_paint`, `line_trim` and `line_cleanup`. Artisan: `Remove the cleanup line.`
 
 ```json
 {
-  "name": "delete_quote_work",
-  "arguments": { "target": { "sectionIds": ["section_bathroom"] } }
+  "name": "delete_quote_lines",
+  "arguments": { "lineIds": ["line_cleanup"] }
 }
 ```
 
-The section was populated. The result tells the model that application-controlled confirmation is required. Inference completes, but neither the title change nor deletion commits. The UI lists the title change, section, every contained line and before/after totals. It focuses Cancel by default. Model reply: `The application will show the title change and the bathroom work to remove. Review and confirm them there.`
+The application deletes only `line_cleanup`. It takes no evidence. `line_paint` and `line_trim` remain, and the Artisan can use manual Undo to reverse the committed turn. The tool cannot remove the section that contained `line_cleanup`, even if that deletion leaves the section empty.
 
-- Artisan types `yes` in chat: no confirmation authority. The pending proposal still requires its UI button.
-- Artisan cancels: title, section and lines remain unchanged.
-- Artisan edits manually: the proposal becomes stale; confirmation cannot delete newer work.
-- Artisan confirms an unchanged proposal: both edits commit atomically once. Retrying confirmation does not apply them again. Manual Undo restores the whole prior draft.
-- The model first moves all bathroom lines out, then deletes the section: confirmation is still required because it was populated earlier in the turn.
-- The model deletes all original lines in several calls, or adds replacements before deleting the originals: confirmation is still required.
+Artisan: `Clear all the work.`
+
+No deletion tool call. Reply: `I can't remove all work. Delete the work manually instead.` The assistant also asks for explicit line targets when a deletion request is ambiguous.
+
+If a turn first stages another change and later tries to delete every line that existed at the start of the turn, the application rejects the destructive scope and discards all staged changes. Adding replacement lines or splitting the deletions across calls does not bypass the original-line check. No earlier successful subset is saved.
 
 ## Publication and Undo are manual, all stages
 

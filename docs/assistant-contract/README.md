@@ -1,17 +1,17 @@
 # Assistant contract approval request
 
-Status: **core system prompt and line/section editing definitions approved; copying and moving accepted for evaluation; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
+Status: **core system prompt and line/section editing definitions approved; copying and moving accepted for evaluation; narrow line deletion scope approved; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and the superseding deletion scope for [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
 
-The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosure or confirmation rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
+The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosures or deletion rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
 
 ## Review order
 
 1. [Current inventory](current-inventory.md), the instructions and behavior being replaced.
 2. [Complete approved core system prompt](proposed-system-prompt.txt), with the language substitution recorded below.
 3. [Foundation tool definitions](foundation-tools.json), the nine implemented mutation tools proposed for #26, without `read_work`.
-4. [Current future tool definitions](proposed-tools.json), the six-tool proposal. The [generator](build-proposed-tools.mjs) reads the approved line definition directly from [edit-quote-lines.ts](edit-quote-lines.ts). The `edit_quote_sections` entry is also approved, and `copy_quote_work` and `move_quote_work` are accepted for evaluation. The remaining entries are still proposed. These files are review artifacts, not registered application tools.
-5. [Behavior and wire contract](#behavior-and-wire-contract), below, including outputs, errors, limits and confirmation.
-6. [Examples](examples.md), including initial capture, corrections, copies, bulk changes, ambiguity, recovery and destructive confirmation.
+4. [Current future tool definitions](proposed-tools.json), the six-tool proposal. The [generator](build-proposed-tools.mjs) reads the approved line definition directly from [edit-quote-lines.ts](edit-quote-lines.ts). The `edit_quote_sections` entry is also approved, and `copy_quote_work` and `move_quote_work` are accepted for evaluation. The deletion entry now reflects the approved narrow `delete_quote_lines` scope. These files are review artifacts, not registered application tools.
+5. [Behavior and wire contract](#behavior-and-wire-contract), below, including outputs, errors, limits and line deletion.
+6. [Examples](examples.md), including initial capture, corrections, copies, bulk changes, ambiguity, recovery and rejected destructive requests.
 7. [Proposed disclosures and deterministic messages](messages.md).
 
 ## Approval record
@@ -69,16 +69,26 @@ The product owner accepted `move_quote_work` in this conversation: "I guess it's
 
 A call moves or reorders 1 through 50 explicit line IDs or section IDs. Lines require a destination section, with an empty string for No section. Selected array order determines placement; an optional unselected before-anchor determines insertion, otherwise work appends. Unknown IDs, duplicates and invalid placement reject the whole call. Sections move with their lines, unselected work retains relative order, and no commercial content changes. No evidence or new IDs are needed. Later evaluation should check actual ordering/grouping requests and whether the dedicated tool is useful. This acceptance does not approve deletion or the unresolved arithmetic/recovery contract.
 
+### Deletion scope decision approved
+
+The product owner approved the assistant's recommendation with: "ok sounds good go for it". This records the decision described here, not separate word-for-word approval of newly authored contract prose. It supersedes the broader original #28 deletion proposal. The [#28 scope amendment](https://github.com/lbise/quote-app-proto/issues/28#issuecomment-5750461002) records the decision, and #28's body now reflects it. Scope notes also appear on [#26](https://github.com/lbise/quote-app-proto/issues/26#issuecomment-5750464158) and [#29](https://github.com/lbise/quote-app-proto/issues/29#issuecomment-5750495080). The generator and schemas reflect the narrower tool.
+
+`delete_quote_lines { lineIds: string[] }` is the only assistant deletion tool. It takes 1 through 50 unique existing line IDs and no evidence. It deletes only explicitly identified Quote Lines. It cannot delete a Quote Section, even after every line in that section has been removed. It has no section target or all-work option.
+
+At turn start, the application records the original line IDs. Across every deletion call in that turn, it rejects the turn if the selected deletions would remove all of those original lines. Adding replacement lines does not change that check. Deleting the last or only line is therefore manual-only. If the Artisan's target is ambiguous, the assistant asks which lines to delete. If the Artisan asks to remove all work, the assistant rejects that request and directs them to delete work manually. Deleting a whole section, including an empty section, and clearing all work are manual-only.
+
+A destructive-scope rejection discards every staged change from that turn. It does not save an earlier successful subset. Manual Undo remains the way to reverse a committed assistant turn. This approves neither a runtime executor nor registration.
+
 ### Still awaiting approval
 
-The remaining tool definitions, including legacy foundation schemas and results, context/result contracts, recovery, limits, disclosures, confirmation and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
+The remaining tool definitions, including legacy foundation schemas and results, context/result contracts, recovery, limits, disclosures and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
 
 - Full-draft data sharing, including Quote-local Customer/business details and terms.
 - Foundation schemas, registration and the staged plan below.
-- Remaining end-state tools beyond `edit_quote_lines`, `edit_quote_sections` and the provisionally accepted `copy_quote_work` and `move_quote_work`, including `edit_quote_details` fields, percentage adjustments and deletion confirmation.
+- Remaining end-state tools beyond `edit_quote_lines`, `edit_quote_sections`, `delete_quote_lines` and the provisionally accepted `copy_quote_work` and `move_quote_work`, including `edit_quote_details` fields and percentage adjustments.
 - Three turn-wide correction attempts, whole-turn discard and diagnostics.
 - Proposed size/execution limits and unsupported-request behavior.
-- The test seams listed below. No new tests at these seams are written before this confirmation.
+- The test seams listed below. No new tests at these seams are written before approval.
 
 ## Staged registration
 
@@ -96,7 +106,7 @@ The #27 registration plan remains unapproved. Its proposed registry would regist
 
 ### #28 structural edits
 
-Register exactly the six entries in `proposed-tools.json`, retiring the legacy structural names. No standalone confirmation tool exists. A future tool definition must not be registered merely because it appears in this packet.
+The earlier broad structural-deletion registration plan is superseded. A future registration may expose only `delete_quote_lines` with the approved narrow scope above. It must not expose section deletion, an all-work operation or any dialog-driven deletion path. A future tool definition must not be registered merely because it appears in this packet.
 
 ## Behavior and wire contract
 
@@ -142,7 +152,7 @@ These replace the 200-line/40,000-byte selected-work limit, not the application'
 | Corrective calls | Three attempts after initial rejection, turn-wide, described below. Included in the 24-call and 12-round bounds. |
 | Deadline | Existing server-configured whole-turn timeout, 1,000 through 45,000 ms, default 20,000. No restart during correction. |
 | Model output | 4,096 output tokens per round, 64,000 serialized bytes per assistant message and 256,000 bytes over the turn. Exceeding either aborts. |
-| Bulk tools | At most 50 operations and 50 distinct touched or created lines per call. Section copy creates at most 50 lines and one section. Move selects at most 50 lines or sections. Delete selects at most 50 explicit IDs; deleting their contained lines and clear_all can affect the complete supported draft. |
+| Bulk tools | At most 50 operations and 50 distinct touched or created lines per call. Section copy creates at most 50 lines and one section. Move selects at most 50 lines or sections. `delete_quote_lines` selects 1 through 50 unique explicit line IDs and may not delete every original line in the turn. |
 | Visible final response | At most 4,000 model-authored code units, plus bounded deterministic copy disclosure of at most 3,400, with total saved message at most 8,000. Oversize model final text rejects the turn, not silently truncated commercial content. |
 
 Every accepted staged mutation must also fit the draft and next-context limits before replacing staged state. Do not inject another complete draft snapshot after each small tool call in the bounded loop. If aggregate provider payload, response or execution budgets are exceeded later, discard the whole turn. Do not tell the model to repair authorization, stale state or global budget failures.
@@ -177,11 +187,9 @@ The valid order is No section first, then groups in sections-array order. Global
 
 The proposed `copy_quote_work` returns source-to-new-ID mappings. Copies preserve complete multiline descriptions and all values unless the explicitly requested measurement policy changes them. Retain means copy supplied facts, including unknown and deliberate zero prices. Unknown clears affected quantities and removes uncertain embedded measurements using the existing safe-cleanup behavior; unrecognized or ambiguous measurements require clarification rather than a guess. Fixed composite work does not become quantity-priced. Section copy needs a supplied French title and follows the source; line copies without a destination follow each source, while a destination appends copies in supplied source order. No silent move or deletion happens through copying.
 
-The proposed `delete_quote_work` targets explicit IDs or clear_all. Unknown/duplicate targets reject. An ordinary line deletion applies directly only if the turn does not meet a confirmation condition. Deleting a populated section removes its contained lines. Clear_all removes every line and section.
+`delete_quote_lines` accepts only `lineIds`, an array of 1 through 50 unique existing line IDs. It takes no evidence. It deletes the identified lines directly when the complete turn remains within the approved scope. It has no section IDs, section operation or all-work target. The tool cannot remove a section, including a section left empty after line deletion.
 
-Confirmation is required if the turn uses clear_all, deletes a section populated at turn start or at any earlier staged step, or deletes all line IDs present at turn start. The last rule still applies if new replacement lines have been added. If the draft initially has no lines, deleting every original section also requires confirmation. A one-line Quote therefore requires confirmation to delete its last line. Track these conditions over the entire turn, not just the final call, so move/delete/split operations cannot bypass them. Deleting a section that was always empty may be direct unless it effectively clears all remaining work.
-
-After successful inference and validation, a confirmation-required turn becomes a server-controlled pending proposal, not a committed Quote. Bind its complete before/after state, exact changed/deleted IDs, request payload hash, authenticated business, Quote and base draft version. The UI displays every affected section and line and any unrelated changes in the same turn, plus authoritative before/after totals. Default focus is Cancel. Escape cancels; keyboard users can reach the explicit confirm button. Both languages use the messages in messages.md. Manual work stays possible and invalidates the proposal. Publication is blocked while a proposal is unsettled. Confirmation rechecks ownership, version and validation and atomically applies the complete proposed turn once; cancellation, stale version, rejection or expiration applies none of it. Proposal lifetime is 15 minutes. Reopen shows its actual pending/cancelled/stale/expired/applied status, never resumes inference or confirms automatically. While a proposal is pending, a new chat submission does not start another assistant turn; show the pending-proposal message in messages.md and require UI confirmation or cancellation first. Manual edits remain available and invalidate it. There is no model-callable consent flag or confirmation tool.
+The runner snapshots the line IDs present at turn start and checks the union of original IDs deleted across all calls. If that union contains every original line ID, it rejects and discards the entire staged turn. New lines do not alter the snapshot, so replacements cannot bypass the rule. The assistant must not call the tool for an ambiguous target. It asks which lines the Artisan means. A request to remove all work is rejected and redirected to manual deletion. Removing a section or clearing all work is manual-only. A committed permitted deletion can be reversed only with manual Undo. No executor is implemented by this contract.
 
 ### Successful tool result
 
@@ -199,19 +207,19 @@ Authorization failures, stale drafts, deadline, provider failures and exhausted 
 
 The request boundary alone commits. After the model completes without unresolved failures, validate and calculate the whole candidate, recheck authenticated ownership and base version, and atomically save the Quote, one-turn change metadata and one manual Undo target. No-op turns do not consume Undo. Request identity remains bound to its payload; accepted retries return the prior outcome without executing twice. A changed payload with the same key is rejected. Published Revisions remain immutable, and a locked reference cannot be changed by any path. A stale manual edit invalidates the whole staged result. Manual Undo restores the full previous draft and retains conversation with the existing reversal explanation.
 
-Final outcomes are committed, unchanged, awaiting_confirmation or discarded. Awaiting confirmation is available only in #28. The application displays model text only after choosing the outcome and adds the deterministic status in messages.md. A discarded turn never shows a success reply. No response boolean or text heuristic opens Publication review. Only the manual UI action can open it.
+Final outcomes are committed, unchanged or discarded. The application displays model text only after choosing the outcome and adds the deterministic status in messages.md. A discarded turn never shows a success reply. No response boolean or text heuristic opens Publication review. Only the manual UI action can open it.
 
-When authenticated debug mode is enabled, show every exact application-level model request, including prompt, context, tool definitions and safe generation options; every attempted tool name and raw argument value, even schema-rejected calls; each validation result, failure ID, state sequence and correction count; final outcome and stable reason code. Retain successful and failed attempts, not just the last call. Show the same counters used by execution. Before-provider validation failures show the rejection and available application input, explicitly marked not sent. If there was no model request, do not fabricate one. Confirmation outcomes update the diagnostic status without implying a second model turn.
+When authenticated debug mode is enabled, show every exact application-level model request, including prompt, context, tool definitions and safe generation options; every attempted tool name and raw argument value, even schema-rejected calls; each validation result, failure ID, state sequence and correction count; final outcome and stable reason code. Retain successful and failed attempts, not just the last call. Show the same counters used by execution. Before-provider validation failures show the rejection and available application input, explicitly marked not sent. If there was no model request, do not fabricate one.
 
-Diagnostics are transient, accessible only to the authorized Quote viewer, and never stored with conversation, proposal history, application logs, traces or breadcrumbs. Do not include credentials, headers, raw provider HTTP responses or account metadata. Reload loses transient diagnostics. Full draft and tool arguments are sensitive business/Customer data; the debug warning in messages.md names that change. Server-owned pending proposal content is necessary commercial state for #28, not a store for raw diagnostic/provider content.
+Diagnostics are transient, accessible only to the authorized Quote viewer, and never stored with conversation, application logs, traces or breadcrumbs. Do not include credentials, headers, raw provider HTTP responses or account metadata. Reload loses transient diagnostics. Full draft and tool arguments are sensitive business/Customer data; the debug warning in messages.md names that change.
 
 ## Proposed test seams, awaiting approval
 
 Use red-green vertical slices at these public boundaries after approval, without adding pass-through modules to create test targets:
 
-1. **Authenticated Quote HTTP operations with real PostgreSQL and controllable model transport.** Exercise the real executor, not fake successful tool results. Assert complete first-call context and implemented registry, capture/edit/copy regression, malformed argument recovery, three-attempt exhaustion, switching tools, failure then unrelated success, unresolved failure, candidate rollback, mixed-turn commit, save/reopen, one manual Undo, stale changes, payload-bound idempotency, limits and cross-business isolation. No live provider in CI.
+1. **Authenticated Quote HTTP operations with real PostgreSQL and controllable model transport.** Exercise the real executor, not fake successful tool results. Assert complete first-call context and implemented registry, capture/edit/copy regression, malformed argument recovery, three-attempt exhaustion, switching tools, failure then unrelated success, unresolved failure, candidate rollback, mixed-turn commit, save/reopen, one manual Undo, stale changes, payload-bound idempotency, limits and cross-business isolation. For `delete_quote_lines`, cover selected-line deletion, ambiguous-target clarification, all-work rejection with manual fallback, the original-line check across calls and whole-turn discard after a destructive-scope rejection. No live provider in CI.
 2. **Whole-Quote validation/calculation.** Observe mode transitions, missing versus zero, percent adjustment rounding and authoritative totals through the whole-Quote result, not private arithmetic helpers. Keep existing domain tests; add approved scenarios only as capabilities land.
-3. **Bilingual browser workflow.** Check existing editing, disclosure, visible failure/retry counters and outcomes, manual editing while processing, manual Undo and no automatic Publication dialog. In #28 add confirmation preview, safe focus, keyboard confirmation/cancel, manual-edit invalidation and mixed-turn atomicity. Scripted browser HTTP responses prove UI behavior only; PostgreSQL tests above prove execution and persistence.
+3. **Bilingual browser workflow.** Check existing editing, disclosure, visible failure/retry counters and outcomes, manual editing while processing, manual Undo and no automatic Publication dialog. In #28, show rejection of destructive scope and the manual deletion fallback. Scripted browser HTTP responses prove UI behavior only; PostgreSQL tests above prove execution and persistence.
 
 For each relevant slice, typecheck regularly and run its single test file. Once implemented, run the full unit/integration suite with an isolated PostgreSQL database and the browser suite. Use the sanitized representative joinery/civil/landscape fixtures, preserve multiline composite work, and test the complete 220,000-byte draft boundary, multibyte French and provider-serialization overhead. A deterministic model does not prove live-model interpretation quality; #29 and #30 own that evaluation.
 

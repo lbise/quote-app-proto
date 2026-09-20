@@ -55,12 +55,8 @@ const tools = [
       object({ sectionIds: { ...list(id), uniqueItems: true }, beforeSectionId: id }, ["sectionIds"]),
     ] },
   }, ["move"]),
-  tool("delete_quote_work", "Remove selected Quote Lines or Quote Sections. Supply lineIds or sectionIds, or set clearAll to true to remove all lines and sections. Deleting a section also removes its contained lines. Do not edit content, move or copy work with this tool.", {
-    target: { anyOf: [
-      object({ lineIds: { ...list(id), uniqueItems: true } }),
-      object({ sectionIds: { ...list(id), uniqueItems: true } }),
-      object({ clearAll: { const: true, type: "boolean" } }),
-    ] },
-  }, ["target"]),
+  tool("delete_quote_lines", "Delete up to 50 explicitly identified Quote Lines. Supply their existing IDs. Do not delete Quote Sections or remove all work; direct those requests to the manual controls.", {
+    lineIds: { ...list(id), uniqueItems: true },
+  }, ["lineIds"]),
 ];
 writeFileSync(new URL("./proposed-tools.json", import.meta.url), `${JSON.stringify(tools, null, 2)}\n`);
