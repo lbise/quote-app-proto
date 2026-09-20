@@ -49,10 +49,10 @@ const tools = [
       object({ sectionId: id, title: { ...text(4000), minLength: 1 } }),
     ] }, measurementPolicy: choice("retain", "unknown"), evidence,
   }, ["source", "measurementPolicy"]),
-  tool("move_work", "Explicitly move or reorder selected lines or sections using stable IDs. Array order is the requested relative order. For lines, destinationSectionId is required; beforeLineId must be an unselected line already in that destination. Omit beforeLineId to append. For sections, beforeSectionId must be unselected; omit it to append. No section remains first. Unselected work retains relative order. The complete call validates before staging any change; at most 50 selected lines or sections.", {
+  tool("move_quote_work", "Move or reorder up to 50 Quote Lines or Quote Sections. For lines, supply a destination section ID; use an empty string for No section. Supply IDs in the desired order. Use beforeLineId or beforeSectionId to insert before an existing line or section; omit it to append. Do not edit content, copy or delete work with this tool.", {
     move: { anyOf: [
-      object({ kind: choice("lines"), lineIds: { ...list(id), uniqueItems: true }, destinationSectionId: sectionIdOrNoSection, beforeLineId: id }, ["kind", "lineIds", "destinationSectionId"]),
-      object({ kind: choice("sections"), sectionIds: { ...list(id), uniqueItems: true }, beforeSectionId: id }, ["kind", "sectionIds"]),
+      object({ lineIds: { ...list(id), uniqueItems: true }, destinationSectionId: sectionIdOrNoSection, beforeLineId: id }, ["lineIds", "destinationSectionId"]),
+      object({ sectionIds: { ...list(id), uniqueItems: true }, beforeSectionId: id }, ["sectionIds"]),
     ] },
   }, ["move"]),
   tool("delete_work", "Explicitly remove identified work. Delete ordinary selected lines or empty sections directly where authorized. Deleting a populated section removes its contained lines and requires application-controlled confirmation; clear_all does too. A sequence that effectively clears all original work or empties a populated section before deleting it also requires confirmation. No part of a confirmation-required turn commits before UI confirmation. Conversational yes is not authorization. This tool only stages a proposal, never confirms it. All targets validate together or no staged work changes.", {

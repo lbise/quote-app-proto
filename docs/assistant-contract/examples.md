@@ -215,8 +215,8 @@ The new IDs are `line_copy_1` and `line_copy_2`, appended in that order. Source 
 
 ```json
 {
-  "name": "move_work",
-  "arguments": { "move": { "kind": "lines", "lineIds": ["line_copy_1", "line_copy_2"], "destinationSectionId": "section_kitchen", "beforeLineId": "line_kitchen_existing" } }
+  "name": "move_quote_work",
+  "arguments": { "move": { "lineIds": ["line_copy_1", "line_copy_2"], "destinationSectionId": "section_kitchen", "beforeLineId": "line_kitchen_existing" } }
 }
 ```
 
