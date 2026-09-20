@@ -230,8 +230,8 @@ The model first stages `edit_quote_details` with title `Kitchen repairs` and `{ 
 
 ```json
 {
-  "name": "delete_work",
-  "arguments": { "target": { "kind": "sections", "sectionIds": ["section_bathroom"] } }
+  "name": "delete_quote_work",
+  "arguments": { "target": { "sectionIds": ["section_bathroom"] } }
 }
 ```
 

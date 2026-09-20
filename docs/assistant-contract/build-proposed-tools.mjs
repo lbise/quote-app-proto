@@ -55,11 +55,11 @@ const tools = [
       object({ sectionIds: { ...list(id), uniqueItems: true }, beforeSectionId: id }, ["sectionIds"]),
     ] },
   }, ["move"]),
-  tool("delete_work", "Explicitly remove identified work. Delete ordinary selected lines or empty sections directly where authorized. Deleting a populated section removes its contained lines and requires application-controlled confirmation; clear_all does too. A sequence that effectively clears all original work or empties a populated section before deleting it also requires confirmation. No part of a confirmation-required turn commits before UI confirmation. Conversational yes is not authorization. This tool only stages a proposal, never confirms it. All targets validate together or no staged work changes.", {
+  tool("delete_quote_work", "Remove selected Quote Lines or Quote Sections. Supply lineIds or sectionIds, or set clearAll to true to remove all lines and sections. Deleting a section also removes its contained lines. Do not edit content, move or copy work with this tool.", {
     target: { anyOf: [
-      object({ kind: choice("lines"), lineIds: { ...list(id), uniqueItems: true } }),
-      object({ kind: choice("sections"), sectionIds: { ...list(id), uniqueItems: true } }),
-      object({ kind: choice("clear_all") }),
+      object({ lineIds: { ...list(id), uniqueItems: true } }),
+      object({ sectionIds: { ...list(id), uniqueItems: true } }),
+      object({ clearAll: { const: true, type: "boolean" } }),
     ] },
   }, ["target"]),
 ];

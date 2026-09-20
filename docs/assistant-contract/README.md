@@ -1,6 +1,6 @@
 # Assistant contract approval request
 
-Status: **core system prompt and line/section editing definitions approved; copying accepted for evaluation; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
+Status: **core system prompt and line/section editing definitions approved; copying and moving accepted for evaluation; remaining contract proposed; not implemented**. This is the approval checkpoint for [#26](https://github.com/lbise/quote-app-proto/issues/26), including the future capabilities in [#27](https://github.com/lbise/quote-app-proto/issues/27) and [#28](https://github.com/lbise/quote-app-proto/issues/28). Runtime code is unchanged. Approval is recorded below, with its limited scope.
 
 The product owner must approve the actual artifacts below before implementation. Approval of the earlier capability list is not approval of these texts. Any material change to prompts, schemas, authority, recovery, disclosure or confirmation rules needs renewed approval. This packet does not approve sending real Customer data to a provider.
 
@@ -9,7 +9,7 @@ The product owner must approve the actual artifacts below before implementation.
 1. [Current inventory](current-inventory.md), the instructions and behavior being replaced.
 2. [Complete approved core system prompt](proposed-system-prompt.txt), with the language substitution recorded below.
 3. [Foundation tool definitions](foundation-tools.json), the nine implemented mutation tools proposed for #26, without `read_work`.
-4. [Current future tool definitions](proposed-tools.json), the six-tool proposal. The [generator](build-proposed-tools.mjs) reads the approved line definition directly from [edit-quote-lines.ts](edit-quote-lines.ts). The `edit_quote_sections` entry is also approved, and `copy_quote_work` is accepted for evaluation. The remaining entries are still proposed. These files are review artifacts, not registered application tools.
+4. [Current future tool definitions](proposed-tools.json), the six-tool proposal. The [generator](build-proposed-tools.mjs) reads the approved line definition directly from [edit-quote-lines.ts](edit-quote-lines.ts). The `edit_quote_sections` entry is also approved, and `copy_quote_work` and `move_quote_work` are accepted for evaluation. The remaining entries are still proposed. These files are review artifacts, not registered application tools.
 5. [Behavior and wire contract](#behavior-and-wire-contract), below, including outputs, errors, limits and confirmation.
 6. [Examples](examples.md), including initial capture, corrections, copies, bulk changes, ambiguity, recovery and destructive confirmation.
 7. [Proposed disclosures and deterministic messages](messages.md).
@@ -63,13 +63,19 @@ The product owner accepted `copy_quote_work` in this conversation: "ok I guess t
 
 The canonical proposal is the `copy_quote_work` entry in [proposed-tools.json](proposed-tools.json). A call copies either explicit line IDs, optionally to a destination section, or one complete section with a supplied title. It creates at most 50 lines and one section, returns new-ID mappings, preserves originals, and uses `retain` or `unknown` measurement policy as reviewed. This acceptance does not approve the remaining tools or authorize runtime changes before the contract checkpoint is complete.
 
+### Model-facing move definition accepted for evaluation
+
+The product owner accepted `move_quote_work` in this conversation: "I guess it's fine, nothing much to simplify on this one. I wonder about its usefulness also.. will see." The reviewed description and schema are the `move_quote_work` entry in [proposed-tools.json](proposed-tools.json). This accepts the tool for now, not a claim that its usefulness has been demonstrated.
+
+A call moves or reorders 1 through 50 explicit line IDs or section IDs. Lines require a destination section, with an empty string for No section. Selected array order determines placement; an optional unselected before-anchor determines insertion, otherwise work appends. Unknown IDs, duplicates and invalid placement reject the whole call. Sections move with their lines, unselected work retains relative order, and no commercial content changes. No evidence or new IDs are needed. Later evaluation should check actual ordering/grouping requests and whether the dedicated tool is useful. This acceptance does not approve deletion or the unresolved arithmetic/recovery contract.
+
 ### Still awaiting approval
 
 The remaining tool definitions, including legacy foundation schemas and results, context/result contracts, recovery, limits, disclosures, confirmation and test seams remain proposed. No runtime redesign is authorized by core-prompt approval alone. Later approvals must identify the exact artifacts and any exclusions, with a conversation or issue-comment reference. The remaining review covers:
 
 - Full-draft data sharing, including Quote-local Customer/business details and terms.
 - Foundation schemas, registration and the staged plan below.
-- Remaining end-state tools beyond `edit_quote_lines`, `edit_quote_sections` and the provisionally accepted `copy_quote_work`, including `edit_quote_details` fields, percentage adjustments and deletion confirmation.
+- Remaining end-state tools beyond `edit_quote_lines`, `edit_quote_sections` and the provisionally accepted `copy_quote_work` and `move_quote_work`, including `edit_quote_details` fields, percentage adjustments and deletion confirmation.
 - Three turn-wide correction attempts, whole-turn discard and diagnostics.
 - Proposed size/execution limits and unsupported-request behavior.
 - The test seams listed below. No new tests at these seams are written before this confirmation.
@@ -171,7 +177,7 @@ The valid order is No section first, then groups in sections-array order. Global
 
 The proposed `copy_quote_work` returns source-to-new-ID mappings. Copies preserve complete multiline descriptions and all values unless the explicitly requested measurement policy changes them. Retain means copy supplied facts, including unknown and deliberate zero prices. Unknown clears affected quantities and removes uncertain embedded measurements using the existing safe-cleanup behavior; unrecognized or ambiguous measurements require clarification rather than a guess. Fixed composite work does not become quantity-priced. Section copy needs a supplied French title and follows the source; line copies without a destination follow each source, while a destination appends copies in supplied source order. No silent move or deletion happens through copying.
 
-`delete_work` targets explicit IDs or clear_all. Unknown/duplicate targets reject. An ordinary line deletion applies directly only if the turn does not meet a confirmation condition. Deleting a populated section removes its contained lines. Clear_all removes every line and section.
+The proposed `delete_quote_work` targets explicit IDs or clear_all. Unknown/duplicate targets reject. An ordinary line deletion applies directly only if the turn does not meet a confirmation condition. Deleting a populated section removes its contained lines. Clear_all removes every line and section.
 
 Confirmation is required if the turn uses clear_all, deletes a section populated at turn start or at any earlier staged step, or deletes all line IDs present at turn start. The last rule still applies if new replacement lines have been added. If the draft initially has no lines, deleting every original section also requires confirmation. A one-line Quote therefore requires confirmation to delete its last line. Track these conditions over the entire turn, not just the final call, so move/delete/split operations cannot bypass them. Deleting a section that was always empty may be direct unless it effectively clears all remaining work.
 
