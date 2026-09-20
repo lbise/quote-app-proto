@@ -1,6 +1,6 @@
-# Proposed disclosure and deterministic messages
+# Disclosure and deterministic messages
 
-Status: simplified recovery behavior is approved. The exact English/French status and disclosure wording below remains proposed. These strings do not replace the current UI until implemented. `{provider}` is the application's configured public provider name, never model-supplied text. Other placeholders below contain application-derived values, rendered as text rather than HTML.
+Status: the product owner approved short factual copy within the signed-off scope. Implementation owns the final English/French wording, so exact phrasing is not a separate approval gate. These strings do not replace the current UI until implemented. `{provider}` is the application's configured public provider name, never model-supplied text. Other placeholders below contain application-derived values, rendered as text rather than HTML.
 
 ## Assistant data-sharing disclosure
 
@@ -28,20 +28,22 @@ L'assistant ne peut modifier que les champs pris en charge dans ce brouillon. Le
 Easy Quote n'écrit pas les conversations, brouillons ou données transmises au fournisseur dans les journaux de l'application. Lorsque le débogage est activé, la personne autorisée à consulter le devis peut voir temporairement les requêtes exactes de l'application et les appels d'outils tentés. Ces informations peuvent contenir le brouillon complet et les coordonnées du client.
 ```
 
-Retain the existing nonblocking warning entry point and current provider-terms links. Update `app/lib/quote-ai-disclosure.ts`, `app/components/quotes/assistant-disclosure.tsx` and `docs/quote-ai.md` together. Update `docs/quote-review.md` and `docs/quote-workflow.md` wherever historical assistant limits or work-only sharing are described as current. Keep historical rehearsal results labelled historical. No existing production disclosure changes in this approval-only commit.
+Retain the existing nonblocking warning entry point and current provider-terms links. Update `app/lib/quote-ai-disclosure.ts`, `app/components/quotes/assistant-disclosure.tsx` and `docs/quote-ai.md` together. Update `docs/quote-review.md` and `docs/quote-workflow.md` wherever historical assistant limits or work-only sharing are described as current. Keep historical rehearsal results labelled historical. This documentation-only update changes no production disclosure.
 
 ## Final status strings
 
 These are application-authored status text, not model instructions or model assertions. Add the applicable status before an accepted reply, separated by two newlines. When one or two calls failed, the application shows the failed-call status even if the model reply ignores it. Do not treat model prose as confirmation that every requested edit succeeded. A discarded turn uses only application status and the existing manual Retry action, never a model success reply.
 
-| Outcome | English | French, proposed |
+Use attempt-oriented status after one or two failures. The runner does not match retries to failed operations, so it cannot label requests as unresolved or fully recovered. Do not introduce correction tracking for UI wording. Show the actual attempted calls and applied changes instead. Outcome keys are implementation names, not separately approved interfaces.
+
+| Outcome | English | French |
 | --- | --- | --- |
 | committed | Changes saved to this Working Draft. You can Undo this turn with the manual control. | Modifications enregistrées dans ce brouillon. Vous pouvez annuler ce tour avec la commande manuelle. |
-| committed_with_failed_calls | Some tool calls failed. Review the applied changes. | Certains appels d'outil ont échoué. Vérifiez les modifications appliquées. |
+| committed_with_failed_calls | Some tool calls failed. Review the applied changes. | Certains appels d'outil ont échoué. Examinez les modifications appliquées. |
 | unchanged | No changes were made to this Working Draft. | Aucune modification n'a été apportée à ce brouillon. |
 | unchanged_with_failed_calls | Some tool calls failed. No changes were applied. | Certains appels d'outil ont échoué. Aucune modification n'a été appliquée. |
 | discarded | Nothing from this turn was saved. Retry or continue manually. | Aucune modification de ce tour n'a été enregistrée. Réessayez ou continuez manuellement. |
-| failed_call_limit_reached | Three tool calls failed. Nothing from this turn was saved. Retry or continue manually. | Trois appels d'outil ont échoué. Aucune modification de ce tour n'a été enregistrée. Réessayez ou continuez manuellement. |
+| failed_call_limit_reached | The assistant stopped after three failed tool calls. No changes from this request were saved. | L'assistant s'est arrêté après trois appels d'outil en échec. Aucune modification de cette demande n'a été enregistrée. |
 | stale | The Working Draft changed while the assistant was processing. Nothing from this turn was saved. | Le brouillon a changé pendant le traitement. Aucune modification de ce tour n'a été enregistrée. |
 | draft_context_too_large | This complete Working Draft exceeds the assistant's size limit. Nothing was sent to the provider. Continue manually. | Ce brouillon complet dépasse la limite de taille de l'assistant. Aucune donnée n'a été envoyée au fournisseur. Continuez manuellement. |
 | later_budget_exhausted | The assistant reached a processing limit. Nothing from this turn was saved. Continue manually or make a smaller request. | L'assistant a atteint une limite de traitement. Aucune modification de ce tour n'a été enregistrée. Continuez manuellement ou formulez une demande plus limitée. |
@@ -64,7 +66,7 @@ French warning:
 Données de débogage sensibles : ces requêtes et appels d'outils peuvent contenir le brouillon complet, les coordonnées du client et de l'entreprise, ainsi que la conversation. Seules les personnes autorisées à consulter ce devis peuvent les voir ici. Ces données sont temporaires et ne sont pas conservées dans les journaux de l'application. Les identifiants secrets sont exclus. Ne partagez pas ce panneau sans retirer les données personnelles et confidentielles.
 ```
 
-| Label | English | French, proposed |
+| Label | English | French |
 | --- | --- | --- |
 | Counter | Failed calls: {used}/3 | Appels d'outil en échec : {used}/3 |
 | Attempt | Tool call: {tool}. Outcome: {outcome} | Appel d'outil : {tool}. Résultat : {outcome} |
