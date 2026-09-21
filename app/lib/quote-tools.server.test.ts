@@ -148,7 +148,7 @@ describe("createQuoteTools", () => {
         { id: "fixed", sectionId: "living", description: "Forfait tablette\navec fixations", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "150.00" },
       ],
     };
-    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Copie le travail." });
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Copie le travail dans Cuisine." });
     await tool(executor, "copy_quote_work").execute("line-copy", {
       source: { lineIds: ["wall", "fixed"] }, measurementPolicy: "unknown",
     });
@@ -164,8 +164,14 @@ describe("createQuoteTools", () => {
       { sourceId: "fixed", newId: expect.any(String) },
     ]);
 
+    await expect(tool(executor, "copy_quote_work").execute("section-copy-missing-evidence", {
+      source: { sectionId: "living", title: "Cuisine" }, measurementPolicy: "retain",
+    })).rejects.toThrow("missing_evidence");
+    expect(executor.result().quote?.sections.map((section) => section.title)).toEqual(["Séjour"]);
+
     await tool(executor, "copy_quote_work").execute("section-copy", {
       source: { sectionId: "living", title: "Cuisine" }, measurementPolicy: "retain",
+      evidence: [citation(["/source/title"], "Cuisine")],
     });
     expect(executor.result().quote?.sections.map((section) => section.title)).toEqual(["Séjour", "Cuisine"]);
     expect(executor.result().quote?.lines.filter((line) => line.sectionId !== "living")).toHaveLength(4);
@@ -200,7 +206,10 @@ describe("createQuoteTools", () => {
     const lines = Array.from({ length: 51 }, (_, index) => ({ id: `line-${index}`, sectionId: "section", description: `Line ${index}`, mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "1" }));
     const quote = { ...emptyQuote("Q-copy-limit"), sections: [{ id: "section", title: "Section" }], lines };
     const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Copy this section." });
-    await expect(tool(executor, "copy_quote_work").execute("copy-limit", { source: { sectionId: "section", title: "Copy" }, measurementPolicy: "retain" })).rejects.toThrow("bulk_limit_exceeded");
+    await expect(tool(executor, "copy_quote_work").execute("copy-limit", {
+      source: { sectionId: "section", title: "Copy" }, measurementPolicy: "retain",
+      evidence: [citation(["/source/title"], "Copy")],
+    })).rejects.toThrow("bulk_limit_exceeded");
     expect(executor.result().quote?.sections).toHaveLength(1);
     expect(executor.result().quote?.lines).toHaveLength(51);
   });

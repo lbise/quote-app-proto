@@ -59,6 +59,28 @@ export async function createLongQuote(artisan: Artisan): Promise<QuoteDetail> {
   return saved.data as QuoteDetail;
 }
 
+export async function createLongConversationQuote(artisan: Artisan): Promise<QuoteDetail> {
+  const detail = await createEmptyQuote(artisan);
+  const quote = makeJoineryQuote();
+  const longCompositeDescription = quote.lines.find((line) => line.id === "joinery-02")!.description;
+  const saved = await requestQuote(artisan, {
+    action: "save",
+    id: detail.id,
+    expectedVersion: detail.version,
+    requestId: crypto.randomUUID(),
+    quote: {
+      ...quote,
+      reference: detail.draft.reference,
+      customerContact: "",
+      lines: quote.lines.map((line) => line.id === "joinery-02"
+        ? { ...line, description: `${longCompositeDescription}\nComprend la livraison, l'ajustement des façades et le nettoyage final.` }
+        : line),
+    },
+  });
+  if (!saved.ok) throw new Error(`Browser long conversation Quote seed save failed with ${saved.status}.`);
+  return saved.data as QuoteDetail;
+}
+
 export async function createSectionedQuote(artisan: Artisan): Promise<QuoteDetail> {
   const detail = await createEmptyQuote(artisan);
   const quote = {

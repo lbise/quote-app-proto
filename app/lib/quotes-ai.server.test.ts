@@ -353,6 +353,53 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(reopened.pending).toBe(false);
   });
 
+  it("rejects section deletion, last-line deletion, cumulative deletion, and oversized deletion through the authenticated executor", async () => {
+    let detail = await createDraft();
+    const sectionBaseline = {
+      ...complete(detail.draft.reference),
+      sections: [{ id: "kitchen", title: "Cuisine" }],
+      lines: [{ id: "kitchen-line", sectionId: "kitchen", description: "Meuble", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "100.00" }],
+    };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: sectionBaseline })).json();
+    const sectionModel = scriptedModel([fauxAssistantMessage("Section deletion remains a manual action.")]);
+    const sectionResponse = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Supprime la section Cuisine.", locale: "fr" }, undefined, sectionModel.handler);
+    expect(sectionResponse.status).toBe(200);
+    const sectionResult = await (await request(undefined, detail.id)).json();
+    expect(sectionResult.draft).toMatchObject({ sections: sectionBaseline.sections, lines: sectionBaseline.lines });
+
+    detail = await createDraft();
+    const lastLine = complete(detail.draft.reference);
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: lastLine })).json();
+    const lastLineModel = scriptedModel([fauxAssistantMessage([fauxToolCall("delete_quote_lines", { lineIds: ["line-1"] })], { stopReason: "toolUse" })]);
+    const lastLineResponse = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Supprime la seule ligne.", locale: "fr" }, undefined, lastLineModel.handler);
+    expect(lastLineResponse.status).toBe(502);
+    expect((await (await request(undefined, detail.id)).json()).draft.lines).toEqual(lastLine.lines);
+
+    detail = await createDraft();
+    const cumulative = { ...complete(detail.draft.reference), lines: [
+      { id: "one", sectionId: "", description: "Pose", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "100.00" },
+      { id: "two", sectionId: "", description: "Finition", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "50.00" },
+    ] };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: cumulative })).json();
+    const cumulativeModel = scriptedModel([fauxAssistantMessage([
+      fauxToolCall("delete_quote_lines", { lineIds: ["one"] }),
+      fauxToolCall("delete_quote_lines", { lineIds: ["two"] }),
+    ], { stopReason: "toolUse" })]);
+    const cumulativeResponse = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Supprime les deux lignes.", locale: "fr" }, undefined, cumulativeModel.handler);
+    expect(cumulativeResponse.status).toBe(502);
+    expect((await (await request(undefined, detail.id)).json()).draft.lines).toEqual(cumulative.lines);
+
+    detail = await createDraft();
+    const oversized = { ...complete(detail.draft.reference), lines: Array.from({ length: 51 }, (_, index) => ({
+      id: `line-${index + 1}`, sectionId: "", description: `Ligne ${index + 1}`, mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "1.00",
+    })) };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: oversized })).json();
+    const oversizedModel = scriptedModel([fauxAssistantMessage([fauxToolCall("delete_quote_lines", { lineIds: oversized.lines.map((line) => line.id) })], { stopReason: "toolUse" })]);
+    const oversizedResponse = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Supprime ces lignes.", locale: "fr" }, undefined, oversizedModel.handler);
+    expect(oversizedResponse.status).toBe(502);
+    expect((await (await request(undefined, detail.id)).json()).draft.lines).toHaveLength(51);
+  });
+
   it("commits partial success below three failures and discards at the third failure", async () => {
     let detail = await createDraft();
     const partial = scriptedModel([

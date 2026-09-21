@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import type { QuoteData } from "../../app/lib/quote";
 import type { QuoteRecord } from "../../app/components/quotes/use-quote";
-import { createConversationQuote, expect, setInterfaceLanguage, test } from "./fixtures";
+import { createConversationQuote, createLongConversationQuote, expect, setInterfaceLanguage, test } from "./fixtures";
 
 type Locale = "en" | "fr";
 type AssistantPayload = { action?: string; requestId: string; text: string; locale: Locale };
@@ -177,6 +177,87 @@ for (const locale of ["en", "fr"] as const) {
     await page.getByRole("button", { name: copy[locale].undo, exact: true }).click();
     await expect(page.getByTestId("quote-line")).toHaveCount(3);
     await expect(page.getByText(copy[locale].undoNote, { exact: true })).toBeVisible();
+  });
+
+  test(`a targeted deletion preserves long multiline content through manual Undo in ${locale}`, async ({ artisan }) => {
+    const seeded = await createLongConversationQuote(artisan);
+    const { page } = artisan;
+    await page.goto(`/quotes?id=${seeded.id}`);
+    if (locale === "fr") await setInterfaceLanguage(page, locale);
+    const initial = await readQuote(page, seeded.id);
+    const target = initial.draft!.lines.find((line) => line.id === "joinery-02")!;
+    let current = initial;
+
+    await page.route("**/api/quotes**", async (route) => {
+      const request = route.request();
+      const payload = request.method() === "POST" ? request.postDataJSON() as AssistantPayload : null;
+      if (payload?.action === "assistant") {
+        const draft = structuredClone(initial.draft!);
+        draft.lines = draft.lines.filter((line) => line.id !== target.id);
+        current = assistantResult(initial, payload, draft, { fr: "La ligne ciblée a été supprimée.", en: "The selected line was deleted." }, [target.id], [], true);
+        await route.fulfill({ json: current });
+        return;
+      }
+      if (payload?.action === "undo") {
+        current = { ...structuredClone(initial), version: current.version + 1, messages: [...initial.messages, { role: "note", fr: copy[locale].undoNote, en: copy[locale].undoNote }], pending: false, canUndo: false };
+        await route.fulfill({ json: current });
+        return;
+      }
+      await route.continue();
+    });
+
+    const targetLine = page.getByTestId("quote-line").filter({ hasText: "Meuble bas sur mesure en mélaminé chêne naturel" });
+    await expect(targetLine).toHaveCount(1);
+    await expect(targetLine).toContainText("Comprend la livraison, l'ajustement des façades et le nettoyage final.");
+
+    const composer = page.getByLabel(copy[locale].message);
+    await composer.fill("Delete the selected kitchen cabinet line.");
+    await composer.press("Enter");
+    await expect(page.getByTestId("quote-line")).toHaveCount(initial.draft!.lines.length - 1);
+    await expect(page.getByTestId("quote-line").filter({ hasText: "Meuble bas sur mesure en mélaminé chêne naturel" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: copy[locale].undo, exact: true }).click();
+    await expect(page.getByTestId("quote-line")).toHaveCount(initial.draft!.lines.length);
+    await expect(page.getByTestId("quote-line").filter({ hasText: "Meuble bas sur mesure en mélaminé chêne naturel" })).toContainText("Comprend la livraison, l'ajustement des façades et le nettoyage final.");
+  });
+
+  test(`a clear edit changes representative long content and remains undoable in ${locale}`, async ({ artisan }) => {
+    const seeded = await createLongConversationQuote(artisan);
+    const { page } = artisan;
+    await page.goto(`/quotes?id=${seeded.id}`);
+    if (locale === "fr") await setInterfaceLanguage(page, locale);
+    const initial = await readQuote(page, seeded.id);
+    const target = initial.draft!.lines.find((line) => line.id === "joinery-02")!;
+    const updatedDescription = `${target.description}\nFinition ajustée après relevé.`;
+    let current = initial;
+
+    await page.route("**/api/quotes**", async (route) => {
+      const request = route.request();
+      const payload = request.method() === "POST" ? request.postDataJSON() as AssistantPayload : null;
+      if (payload?.action === "assistant") {
+        const draft = structuredClone(initial.draft!);
+        draft.lines = draft.lines.map((line) => line.id === target.id ? { ...line, description: updatedDescription } : line);
+        current = assistantResult(initial, payload, draft, { fr: "La description longue a été corrigée.", en: "The long description was corrected." }, [target.id], [], true);
+        await route.fulfill({ json: current });
+        return;
+      }
+      if (payload?.action === "undo") {
+        current = { ...structuredClone(initial), version: current.version + 1, messages: [...initial.messages, { role: "note", fr: copy[locale].undoNote, en: copy[locale].undoNote }], pending: false, canUndo: false };
+        await route.fulfill({ json: current });
+        return;
+      }
+      await route.continue();
+    });
+
+    const composer = page.getByLabel(copy[locale].message);
+    await composer.fill("Add the final adjustment note to the selected kitchen cabinet line.");
+    await composer.press("Enter");
+    await expect(page.getByTestId("quote-line").filter({ hasText: "Finition ajustée après relevé." })).toHaveCount(1);
+    await expect(page.getByText(`1 ${copy[locale].changedCount}`, { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: copy[locale].undo, exact: true }).click();
+    await expect(page.getByTestId("quote-line").filter({ hasText: "Finition ajustée après relevé." })).toHaveCount(0);
+    await expect(page.getByTestId("quote-line").filter({ hasText: "Meuble bas sur mesure en mélaminé chêne naturel" })).toContainText("Comprend la livraison, l'ajustement des façades et le nettoyage final.");
   });
 
   test(`a rejected destructive request leaves work for manual controls in ${locale}`, async ({ artisan }) => {

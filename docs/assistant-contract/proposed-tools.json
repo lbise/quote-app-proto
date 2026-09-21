@@ -444,7 +444,7 @@
           },
           "minItems": 1,
           "maxItems": 200,
-          "description": "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values."
+          "description": "Cite the supplied section title with /source/title when copying a section. Line copies only need evidence when they introduce a new nonempty commercial fact; omit for unchanged values or deliberate clearing."
         }
       },
       "required": [

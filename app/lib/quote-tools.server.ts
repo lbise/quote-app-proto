@@ -111,7 +111,7 @@ const copyQuoteWorkParameters = Type.Object({
     }, { additionalProperties: false }),
   ]),
   measurementPolicy: StringEnum(["retain", "unknown"]),
-  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE })),
+  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE, description: "Section copies require a /source/title citation; line copies need evidence only for new nonempty commercial facts." })),
 }, { additionalProperties: false });
 const moveQuoteWorkParameters = Type.Object({
   move: Type.Union([
@@ -312,9 +312,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     name: "copy_quote_work", label: "Copy Quote work",
     description: "Copy up to 50 explicitly identified Quote Lines, or one complete Quote Section with a supplied title. Copies receive fresh IDs and retain values unless measurementPolicy is unknown.",
     parameters: copyQuoteWorkParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { copyQuoteWorkInput(args, staged); }),
+    prepareArguments: prepare((args) => { copyQuoteWorkInput(args, evidenceContext, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const copyInput = copyQuoteWorkInput(params, staged);
+      const copyInput = copyQuoteWorkInput(params, evidenceContext, staged);
       const unknownMeasurements = copyInput.measurementPolicy === "unknown";
       if (copyInput.source.kind === "lines") {
         if (staged.lines.length + copyInput.source.lineIds.length > MAX_QUOTE_LINES) reject();
@@ -514,7 +514,7 @@ function editQuoteSectionsInput(value: unknown, context: EvidenceContext, quote:
   return sections;
 }
 
-function copyQuoteWorkInput(value: unknown, quote: QuoteData): CopyWorkInput {
+function copyQuoteWorkInput(value: unknown, context: EvidenceContext, quote: QuoteData): CopyWorkInput {
   if (!isRecord(value) || !isExactKeys(value, ["source", "measurementPolicy", "evidence"]) || !isRecord(value.source)
     || (value.measurementPolicy !== "retain" && value.measurementPolicy !== "unknown")) throw new ToolValidationError("invalid_tool_arguments");
   const source = value.source;
@@ -526,6 +526,7 @@ function copyQuoteWorkInput(value: unknown, quote: QuoteData): CopyWorkInput {
     return { measurementPolicy: value.measurementPolicy, source: { kind: "lines", lineIds: [...ids] as string[], ...(source.destinationSectionId === undefined ? {} : { destinationSectionId: source.destinationSectionId as string }) } };
   }
   if (!isExactKeys(source, ["sectionId", "title"]) || typeof source.sectionId !== "string" || !lineIdSyntax(source.sectionId) || typeof source.title !== "string" || !source.title.length || source.title.length > MAX_SECTION_TITLE || !quote.sections.some((section) => section.id === source.sectionId)) throw new ToolValidationError("invalid_section_id");
+  assertGroupedEvidence(value.evidence, context, ["/source/title"], (field) => field === "/source/title");
   return { measurementPolicy: value.measurementPolicy, source: { kind: "section", sectionId: source.sectionId, title: source.title } };
 }
 
