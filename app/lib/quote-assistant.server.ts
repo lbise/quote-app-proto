@@ -289,6 +289,11 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
           ...(code === "context_limit_exceeded" ? { outcome: "later_budget_exhausted" as const } : {}),
         };
         if (code === "context_limit_exceeded") failed = true;
+        if (code === "destructive_scope_rejected") {
+          diagnostic = { phase: "tool", code, tool: event.toolName, ...(toolCall ? { toolCall } : {}), outcome: "discarded" };
+          failed = true;
+          agent.abort();
+        }
       }
     }
   });

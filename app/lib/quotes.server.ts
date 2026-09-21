@@ -27,8 +27,12 @@ const AI_LEASE_MS = 60_000; // Greater than the provider's bounded 45-second tim
 const defaultFields = ["businessName", "businessAddress", "businessContact", "vatRegistered", "vatId", "terms"] as const;
 
 function assistantDiagnostic(error: unknown, requestId: string, fallback: QuoteAssistantDiagnostic): { diagnostic: QuoteAssistantDiagnostic } | undefined {
-  if (process.env.QUOTE_AI_DEBUG !== "true") return undefined;
   const diagnostic = error instanceof QuoteAIError ? error.diagnostic : fallback;
+  if (process.env.QUOTE_AI_DEBUG !== "true") {
+    return diagnostic.code === "destructive_scope_rejected"
+      ? { diagnostic: { phase: "tool", code: diagnostic.code, outcome: "discarded", requestId } }
+      : undefined;
+  }
   return { diagnostic: { ...diagnostic, requestId } };
 }
 

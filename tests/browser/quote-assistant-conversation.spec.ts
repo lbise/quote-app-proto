@@ -18,6 +18,7 @@ const copy = {
     copyExplanation: "Copied Chambre to Bureau. Kept the cladding unit m² and unit price CHF 40.00, left its quantity blank because the wall area is unknown, and kept the tablet's fixed amount of CHF 150.00.",
     changeExplanation: "Changed the unit prices on lines 1 and 2 from CHF 40.00 to CHF 45.00 per m². Kept quantities of 12 m² and 8 m². Line 3 is unchanged.",
     undoNote: "Last change undone. Earlier messages describe the previous state.",
+    fallback: "Nothing from this turn was saved. Delete the work manually instead.",
   },
   fr: {
     message: "Votre message",
@@ -30,6 +31,7 @@ const copy = {
     copyExplanation: "Chambre copiée dans Bureau. Unité m² et prix unitaire de l'habillage de 40.00 CHF conservés, quantité laissée vide car la surface est inconnue, et forfait de la tablette de 150.00 CHF conservé.",
     changeExplanation: "Prix unitaires des lignes 1 et 2 passés de 40.00 CHF à 45.00 CHF par m². Quantités conservées : 12 m² et 8 m². La ligne 3 est inchangée.",
     undoNote: "Dernière modification annulée. Les messages précédents décrivent l'état antérieur.",
+    fallback: "Aucune modification de ce tour n’a été enregistrée. Supprimez les travaux avec les contrôles manuels."
   },
 } as const;
 
@@ -138,6 +140,67 @@ for (const locale of ["en", "fr"] as const) {
     await view.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("button", { name: copy[locale].edit, exact: true })).toBeFocused();
+  });
+
+  test(`a targeted conversational deletion is visible and manually undoable in ${locale}`, async ({ artisan }) => {
+    const seeded = await createConversationQuote(artisan);
+    const { page } = artisan;
+    await page.goto(`/quotes?id=${seeded.id}`);
+    if (locale === "fr") await setInterfaceLanguage(page, locale);
+    const initial = await readQuote(page, seeded.id);
+    let current = initial;
+
+    await page.route("**/api/quotes**", async (route) => {
+      const request = route.request();
+      const payload = request.method() === "POST" ? request.postDataJSON() as AssistantPayload : null;
+      if (payload?.action === "assistant") {
+        const draft = structuredClone(initial.draft!);
+        draft.lines = draft.lines.filter((line) => line.id !== "living-cladding");
+        current = assistantResult(initial, payload, draft, { fr: "La ligne ciblée a été supprimée.", en: "The selected line was deleted." }, ["living-cladding"], [], true);
+        await route.fulfill({ json: current });
+        return;
+      }
+      if (payload?.action === "undo") {
+        current = { ...structuredClone(initial), version: current.version + 1, messages: [...initial.messages, { role: "note", fr: copy[locale].undoNote, en: copy[locale].undoNote }], pending: false, canUndo: false };
+        await route.fulfill({ json: current });
+        return;
+      }
+      await route.continue();
+    });
+
+    const composer = page.getByLabel(copy[locale].message);
+    await composer.fill("Delete the selected living-room cladding line.");
+    await composer.press("Enter");
+    await expect(page.getByTestId("quote-line")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: copy[locale].undo, exact: true })).toBeEnabled();
+
+    await page.getByRole("button", { name: copy[locale].undo, exact: true }).click();
+    await expect(page.getByTestId("quote-line")).toHaveCount(3);
+    await expect(page.getByText(copy[locale].undoNote, { exact: true })).toBeVisible();
+  });
+
+  test(`a rejected destructive request leaves work for manual controls in ${locale}`, async ({ artisan }) => {
+    const seeded = await createConversationQuote(artisan);
+    const { page } = artisan;
+    await page.goto(`/quotes?id=${seeded.id}`);
+    if (locale === "fr") await setInterfaceLanguage(page, locale);
+
+    await page.route("**/api/quotes**", async (route) => {
+      const request = route.request();
+      const payload = request.method() === "POST" ? request.postDataJSON() as AssistantPayload : null;
+      if (payload?.action === "assistant") {
+        await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "assistant_unavailable", details: { diagnostic: { phase: "tool", code: "destructive_scope_rejected", outcome: "discarded" } } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    const composer = page.getByLabel(copy[locale].message);
+    await composer.fill(locale === "fr" ? "Supprime tout le travail." : "Delete all work.");
+    await composer.press("Enter");
+    await expect(page.getByText(copy[locale].fallback, { exact: true })).toBeVisible();
+    await expect(page.getByTestId("quote-line")).toHaveCount(3);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
   test(`a conversational compound correction is one keyboard-undoable action in ${locale}`, async ({ artisan }) => {

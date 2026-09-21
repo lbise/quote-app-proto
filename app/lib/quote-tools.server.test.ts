@@ -10,11 +10,10 @@ function citation(fields: string[], text: string, source = "current") {
 }
 
 describe("createQuoteTools", () => {
-  it("registers the approved commercial tools and keeps structural tools", () => {
+  it("registers the approved commercial and structural tools", () => {
     const executor = createQuoteTools({ quote: emptyQuote("Q-1"), capturedLineIds: [], artisanText: "" });
     expect(executor.tools.map((entry) => entry.name)).toEqual([
-      "edit_quote_details", "edit_quote_lines", "create_quote_section", "rename_quote_section",
-      "move_quote_line", "duplicate_quote_line", "duplicate_quote_section",
+      "edit_quote_details", "edit_quote_lines", "edit_quote_sections", "copy_quote_work", "move_quote_work", "delete_quote_lines",
     ]);
   });
 
@@ -120,10 +119,104 @@ describe("createQuoteTools", () => {
     expect(executor.result().changed).toEqual([]);
   });
 
-  it("retains the old structural tools", async () => {
+  it("creates and renames sections in one atomic batch", async () => {
     const quote = { ...emptyQuote("Q-sections"), sections: [{ id: "living", title: "Séjour" }] };
-    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Ajoute une section Bureau." });
-    await tool(executor, "create_quote_section").execute("section", { title: "Bureau" });
-    expect(executor.result().quote?.sections).toHaveLength(2);
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Bureau et Cuisine" });
+    await tool(executor, "edit_quote_sections").execute("sections", {
+      sections: [{ id: "living", title: "Salon" }, { title: "Bureau" }, { title: "Cuisine" }],
+      evidence: [citation(["/sections/0/title", "/sections/1/title", "/sections/2/title"], "Bureau et Cuisine")],
+    });
+    expect(executor.result().quote?.sections).toEqual([
+      { id: "living", title: "Salon" },
+      { id: expect.any(String), title: "Bureau" },
+      { id: expect.any(String), title: "Cuisine" },
+    ]);
+
+    await expect(tool(executor, "edit_quote_sections").execute("invalid", {
+      sections: [{ id: "living", title: "Changed" }, { id: "living", title: "Again" }],
+      evidence: [citation(["/sections/0/title", "/sections/1/title"], "Changed Again")],
+    })).rejects.toThrow("invalid_section_id");
+    expect(executor.result().quote?.sections[0].title).toBe("Salon");
+  });
+
+  it("copies lines and sections with fresh IDs and unknown measurements", async () => {
+    const quote = {
+      ...emptyQuote("Q-copy"),
+      sections: [{ id: "living", title: "Séjour" }],
+      lines: [
+        { id: "wall", sectionId: "living", description: "Peinture 12 m²", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "40.00", amount: "" },
+        { id: "fixed", sectionId: "living", description: "Forfait tablette\navec fixations", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "150.00" },
+      ],
+    };
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Copie le travail." });
+    await tool(executor, "copy_quote_work").execute("line-copy", {
+      source: { lineIds: ["wall", "fixed"] }, measurementPolicy: "unknown",
+    });
+    const copied = executor.result();
+    expect(copied.quote?.lines).toHaveLength(4);
+    const copiedIds = copied.copyMappings!.map((mapping) => mapping.newId);
+    expect(copied.quote?.lines.filter((line) => copiedIds.includes(line.id))).toEqual([
+      expect.objectContaining({ sectionId: "living", description: "Peinture", quantity: "", amount: "" }),
+      expect.objectContaining({ sectionId: "living", description: "Forfait tablette\navec fixations", amount: "150.00" }),
+    ]);
+    expect(copied.copyMappings).toEqual([
+      { sourceId: "wall", newId: expect.any(String) },
+      { sourceId: "fixed", newId: expect.any(String) },
+    ]);
+
+    await tool(executor, "copy_quote_work").execute("section-copy", {
+      source: { sectionId: "living", title: "Cuisine" }, measurementPolicy: "retain",
+    });
+    expect(executor.result().quote?.sections.map((section) => section.title)).toEqual(["Séjour", "Cuisine"]);
+    expect(executor.result().quote?.lines.filter((line) => line.sectionId !== "living")).toHaveLength(4);
+
+    const ambiguous = createQuoteTools({
+      quote: { ...emptyQuote("Q-ambiguous"), lines: [{ id: "ambiguous", sectionId: "", description: "Pose 12 toises", mode: "quantity" as const, quantity: "12", unit: "m²", unitPrice: "10.00", amount: "" }] },
+      capturedLineIds: [], artisanText: "Copie avec mesure inconnue.",
+    });
+    await expect(tool(ambiguous, "copy_quote_work").execute("ambiguous", { source: { lineIds: ["ambiguous"] }, measurementPolicy: "unknown" })).rejects.toThrow("ambiguous_measurement");
+  });
+
+  it("moves selected lines and sections while preserving IDs and order", async () => {
+    const quote = {
+      ...emptyQuote("Q-move"),
+      sections: [{ id: "a", title: "A" }, { id: "b", title: "B" }],
+      lines: [
+        { id: "one", sectionId: "a", description: "One", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "1" },
+        { id: "two", sectionId: "a", description: "Two", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "2" },
+        { id: "four", sectionId: "a", description: "Four", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "4" },
+        { id: "three", sectionId: "b", description: "Three", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "3" },
+      ],
+    };
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Organise." });
+    await tool(executor, "move_quote_work").execute("lines", { move: { lineIds: ["two", "one"], destinationSectionId: "b", beforeLineId: "three" } });
+    expect(executor.result().quote?.lines.map((line) => `${line.id}:${line.sectionId}`)).toEqual(["four:a", "two:b", "one:b", "three:b"]);
+    await tool(executor, "move_quote_work").execute("sections", { move: { sectionIds: ["b"], beforeSectionId: "a" } });
+    expect(executor.result().quote?.sections.map((section) => section.id)).toEqual(["b", "a"]);
+    expect(executor.result().quote?.lines.map((line) => line.id)).toEqual(["two", "one", "three", "four"]);
+  });
+
+  it("rejects oversized section copies without changing staged work", async () => {
+    const lines = Array.from({ length: 51 }, (_, index) => ({ id: `line-${index}`, sectionId: "section", description: `Line ${index}`, mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "1" }));
+    const quote = { ...emptyQuote("Q-copy-limit"), sections: [{ id: "section", title: "Section" }], lines };
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Copy this section." });
+    await expect(tool(executor, "copy_quote_work").execute("copy-limit", { source: { sectionId: "section", title: "Copy" }, measurementPolicy: "retain" })).rejects.toThrow("bulk_limit_exceeded");
+    expect(executor.result().quote?.sections).toHaveLength(1);
+    expect(executor.result().quote?.lines).toHaveLength(51);
+  });
+
+  it("deletes targeted lines but rejects cumulative removal of all original work", async () => {
+    const quote = {
+      ...emptyQuote("Q-delete"),
+      lines: [
+        { id: "one", sectionId: "", description: "One", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "1" },
+        { id: "two", sectionId: "", description: "Two", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "2" },
+      ],
+    };
+    const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "Supprime la première ligne." });
+    await tool(executor, "delete_quote_lines").execute("delete-one", { lineIds: ["one"] });
+    expect(executor.result().quote?.lines.map((line) => line.id)).toEqual(["two"]);
+    await expect(tool(executor, "delete_quote_lines").execute("delete-last", { lineIds: ["two"] })).rejects.toThrow("destructive_scope_rejected");
+    expect(executor.result().quote?.lines.map((line) => line.id)).toEqual(["two"]);
   });
 });

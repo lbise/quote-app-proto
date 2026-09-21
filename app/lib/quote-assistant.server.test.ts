@@ -24,12 +24,11 @@ const input = () => ({ quote: emptyQuote("Q-1"), capturedLineIds: [], messages: 
 const lineEvidence = (fields: string[], text: string, source = "current") => ({ fields, source, text });
 
 describe("pi Quote assistant model boundary", () => {
-  it("advertises only the approved commercial and retained structural tools", async () => {
+  it("advertises only the approved commercial and structural tools", async () => {
     const { boundary, contexts } = modelBoundary([fauxAssistantMessage([fauxText("What room should I paint?")])]);
     await generateQuoteChange(input(), boundary);
     expect(contexts[0].tools?.map((tool) => tool.name)).toEqual([
-      "edit_quote_details", "edit_quote_lines", "create_quote_section", "rename_quote_section",
-      "move_quote_line", "duplicate_quote_line", "duplicate_quote_section",
+      "edit_quote_details", "edit_quote_lines", "edit_quote_sections", "copy_quote_work", "move_quote_work", "delete_quote_lines",
     ]);
   });
 
@@ -66,6 +65,44 @@ describe("pi Quote assistant model boundary", () => {
     expect(result.quote).toMatchObject({ title: "Nouveau titre", customerName: "Simon", lines: [{ id: "manual", amount: "125.00" }] });
     expect(result.changed).toEqual(["manual"]);
     expect(result.changedFields).toEqual(["title", "customerName"]);
+  });
+
+  it("applies bounded structural moves and targeted deletion without evidence", async () => {
+    const quote = {
+      ...emptyQuote("Q-structure"),
+      sections: [{ id: "living", title: "Séjour" }],
+      lines: [
+        { id: "one", sectionId: "", description: "Pose", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "10.00" },
+        { id: "two", sectionId: "living", description: "Finition", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "20.00" },
+      ],
+    };
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([
+        fauxToolCall("move_quote_work", { move: { lineIds: ["one"], destinationSectionId: "living", beforeLineId: "two" } }),
+        fauxToolCall("delete_quote_lines", { lineIds: ["one"] }),
+      ], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("The work was reorganized and the selected line was removed.")]),
+    ]);
+    const result = await generateQuoteChange({ ...input(), quote, text: "Move the pose into Séjour, then remove it.", locale: "en" }, boundary);
+    expect(result.quote?.lines).toEqual([expect.objectContaining({ id: "two", sectionId: "living" })]);
+    expect(result.changed).toEqual(["one"]);
+  });
+
+  it("discards mixed staged edits when deletion would remove all original work", async () => {
+    const quote = {
+      ...emptyQuote("Q-destructive"),
+      lines: [
+        { id: "one", sectionId: "", description: "Pose", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "10.00" },
+        { id: "two", sectionId: "", description: "Finition", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "20.00" },
+      ],
+    };
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([
+        fauxToolCall("edit_quote_details", { fields: { title: "Should not persist" }, evidence: [{ fields: ["title"], source: "current", text: "Should not persist" }] }),
+        fauxToolCall("delete_quote_lines", { lineIds: ["one", "two"] }),
+      ], { stopReason: "toolUse" }),
+    ]);
+    await expect(generateQuoteChange({ ...input(), quote, text: "Delete all work.", locale: "en" }, boundary)).rejects.toMatchObject({ diagnostic: { code: "destructive_scope_rejected", outcome: "discarded" } });
   });
 
   it("allows model-derived prices when their source facts are cited", async () => {

@@ -3,7 +3,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 import { editQuoteLinesParameters } from "../../docs/assistant-contract/edit-quote-lines";
-import { appendQuoteLineToSection, calculateQuote, type QuoteData, type QuoteLine } from "./quote";
+import { calculateQuote, type QuoteData, type QuoteLine } from "./quote";
 import { MAX_QUOTE_LINES, MAX_QUOTE_SECTIONS, quoteDraftLimit } from "./quote-limits";
 import { randomUUID } from "./random-id";
 
@@ -24,6 +24,7 @@ export type QuoteToolsResult = {
   capturedLineIds: string[];
   changedFields?: string[];
   copyFacts?: CopyFact[];
+  copyMappings?: { sourceId: string; newId: string }[];
 };
 
 export type QuoteToolsDiagnostic = { phase: "tool"; code: string; tool?: string };
@@ -91,11 +92,43 @@ const editQuoteDetailsParameters = Type.Object({
   evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE, description: "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values." })),
 }, { additionalProperties: false });
 
-const sectionTitleParameters = Type.Object({ title: Type.String({ minLength: 1, maxLength: MAX_SECTION_TITLE }) }, { additionalProperties: false });
-const sectionIdParameters = Type.Object({ sectionId: Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false });
-const moveLineParameters = Type.Object({ lineId: Type.String({ minLength: 1, maxLength: 128 }), sectionId: Type.String({ maxLength: 128 }) }, { additionalProperties: false });
-const duplicateLineParameters = Type.Object({ lineId: Type.String({ minLength: 1, maxLength: 128 }), sectionId: Type.Optional(Type.String({ maxLength: 128 })), measurementPolicy: Type.Optional(StringEnum(["retain", "unknown"])) }, { additionalProperties: false });
-const duplicateSectionParameters = Type.Object({ sectionId: Type.String({ minLength: 1, maxLength: 128 }), measurementPolicy: Type.Optional(StringEnum(["retain", "unknown"])) }, { additionalProperties: false });
+const editQuoteSectionsParameters = Type.Object({
+  sections: Type.Array(Type.Object({
+    id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" })),
+    title: Type.String({ maxLength: MAX_SECTION_TITLE }),
+  }, { additionalProperties: false }), { minItems: 1, maxItems: 50 }),
+  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE })),
+}, { additionalProperties: false });
+const copyQuoteWorkParameters = Type.Object({
+  source: Type.Union([
+    Type.Object({
+      lineIds: Type.Array(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }), { minItems: 1, maxItems: 50, uniqueItems: true }),
+      destinationSectionId: Type.Optional(Type.String({ maxLength: 128 })),
+    }, { additionalProperties: false }),
+    Type.Object({
+      sectionId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }),
+      title: Type.String({ minLength: 1, maxLength: MAX_SECTION_TITLE }),
+    }, { additionalProperties: false }),
+  ]),
+  measurementPolicy: StringEnum(["retain", "unknown"]),
+  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE })),
+}, { additionalProperties: false });
+const moveQuoteWorkParameters = Type.Object({
+  move: Type.Union([
+    Type.Object({
+      lineIds: Type.Array(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }), { minItems: 1, maxItems: 50, uniqueItems: true }),
+      destinationSectionId: Type.String({ maxLength: 128 }),
+      beforeLineId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" })),
+    }, { additionalProperties: false }),
+    Type.Object({
+      sectionIds: Type.Array(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }), { minItems: 1, maxItems: 50, uniqueItems: true }),
+      beforeSectionId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" })),
+    }, { additionalProperties: false }),
+  ]),
+}, { additionalProperties: false });
+const deleteQuoteLinesParameters = Type.Object({
+  lineIds: Type.Array(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }), { minItems: 1, maxItems: 50, uniqueItems: true }),
+}, { additionalProperties: false });
 
 const detailTextFields = ["reference", "title", "issueDate", "validUntil", "siteAddress", "customerName", "customerAddress", "customerContact", "businessName", "businessAddress", "businessContact", "terms", "vatId", "discount"] as const;
 const detailFields = [...detailTextFields, "vatRegistered", "discountMode"] as const;
@@ -130,6 +163,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const changed = new Set<string>();
   const changedFields = new Set<string>();
   const copyFacts: CopyFact[] = [];
+  const copyMappings: { sourceId: string; newId: string }[] = [];
+  const deletedOriginalLineIds = new Set<string>();
+  const originalLineIds = new Set(originalQuote.lines.map((line) => line.id));
   let lastErrorCode: string | undefined;
 
   const reject = (code = "invalid_tool_input"): never => {
@@ -143,6 +179,8 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     const changedBefore = new Set(changed);
     const changedFieldsBefore = new Set(changedFields);
     const copyFactsBefore = copyFacts.length;
+    const copyMappingsBefore = copyMappings.length;
+    const deletedOriginalBefore = new Set(deletedOriginalLineIds);
     const capturedBefore = [...capturedLineIds];
     try {
       const mutation = operation();
@@ -170,6 +208,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
           const line = staged.lines.find((candidate) => candidate.id === id);
           return line ? [{ id: line.id, quantity: line.quantity, unitPrice: line.unitPrice, amount: line.amount }] : [];
         }) } : {}),
+        ...(copyMappings.length > copyMappingsBefore ? { copyMappings: copyMappings.slice(copyMappingsBefore) } : {}),
       };
       return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
     } catch (error) {
@@ -177,6 +216,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
       changed.clear(); changedBefore.forEach((id) => changed.add(id));
       changedFields.clear(); changedFieldsBefore.forEach((field) => changedFields.add(field));
       copyFacts.length = copyFactsBefore;
+      copyMappings.length = copyMappingsBefore;
+      deletedOriginalLineIds.clear();
+      deletedOriginalBefore.forEach((id) => deletedOriginalLineIds.add(id));
       capturedLineIds.splice(0, capturedLineIds.length, ...capturedBefore);
       lastErrorCode = error instanceof ToolValidationError ? error.code : lastErrorCode ?? "tool_execution_failed";
       throw new Error(toolErrorMessage(lastErrorCode));
@@ -243,74 +285,133 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     }),
   };
 
-  // Structural tools remain until #28. Their established movement, copying and copy-fact behavior is unchanged.
-  const createQuoteSection: AgentTool = {
-    name: "create_quote_section", label: "Create Quote Section", description: "Create a new French-named Quote Section. Section IDs are generated by the application.", parameters: sectionTitleParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { sectionTitleInput(args); }),
+  const editQuoteSections: AgentTool = {
+    name: "edit_quote_sections", label: "Edit Quote Sections",
+    description: "Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. An empty title leaves an incomplete section and never deletes it.",
+    parameters: editQuoteSectionsParameters, executionMode: "sequential",
+    prepareArguments: prepare((args) => { editQuoteSectionsInput(args, evidenceContext, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const { title } = sectionTitleInput(params);
-      if (staged.sections.length >= MAX_QUOTE_SECTIONS) reject();
-      const id = newSectionId(staged); staged.sections.push({ id, title });
-      return { changedFields: [`section:${id}`] };
+      const sections = editQuoteSectionsInput(params, evidenceContext, staged);
+      if (staged.sections.length + sections.filter((section) => !section.id).length > MAX_QUOTE_SECTIONS) reject();
+      const changedNow: string[] = [];
+      for (const submitted of sections) {
+        if (submitted.id) {
+          const section = staged.sections.find((candidate) => candidate.id === submitted.id)!;
+          if (section.title !== submitted.title) { section.title = submitted.title; changedNow.push(`section:${section.id}`); }
+        } else {
+          const id = newSectionId(staged);
+          staged.sections.push({ id, title: submitted.title });
+          changedNow.push(`section:${id}`);
+        }
+      }
+      return changedNow.length ? { changedFields: changedNow } : {};
     }),
   };
-  const renameQuoteSection: AgentTool = {
-    name: "rename_quote_section", label: "Rename Quote Section", description: "Rename one existing Quote Section using its stable section ID.", parameters: Type.Object({ ...sectionIdParameters.properties, title: Type.String({ minLength: 1, maxLength: MAX_SECTION_TITLE }) }, { additionalProperties: false }), executionMode: "sequential",
-    prepareArguments: prepare((args) => { renameSectionInput(args); }),
+
+  const copyQuoteWork: AgentTool = {
+    name: "copy_quote_work", label: "Copy Quote work",
+    description: "Copy up to 50 explicitly identified Quote Lines, or one complete Quote Section with a supplied title. Copies receive fresh IDs and retain values unless measurementPolicy is unknown.",
+    parameters: copyQuoteWorkParameters, executionMode: "sequential",
+    prepareArguments: prepare((args) => { copyQuoteWorkInput(args, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const { sectionId, title } = renameSectionInput(params); const section = staged.sections.find((candidate) => candidate.id === sectionId);
-      if (!section) reject(); if (section!.title === title) return {}; section!.title = title;
-      return { changedFields: [`section:${sectionId}`] };
-    }),
-  };
-  const moveQuoteLine: AgentTool = {
-    name: "move_quote_line", label: "Move Quote Line", description: "Move an existing Quote Line to a section or No section. Moving appends it to the destination group.", parameters: moveLineParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { moveLineInput(args, staged); }),
-    execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const { lineId, sectionId } = moveLineInput(params, staged); const line = staged.lines.find((candidate) => candidate.id === lineId)!;
-      if (line.sectionId === sectionId) return {}; staged.lines = appendQuoteLineToSection(staged.lines, { ...line, sectionId }, staged.sections);
-      return { changed: [lineId] };
-    }),
-  };
-  const duplicateQuoteLine: AgentTool = {
-    name: "duplicate_quote_line", label: "Duplicate Quote Line", description: "Duplicate one existing Quote Line with a fresh application ID. Copy values from the source; when measurements are unknown, use measurementPolicy unknown.", parameters: duplicateLineParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { duplicateLineInput(args, staged); }),
-    execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const copyInput = duplicateLineInput(params, staged); if (staged.lines.length >= MAX_QUOTE_LINES) reject();
-      const source = staged.lines.find((candidate) => candidate.id === copyInput.lineId)!;
+      const copyInput = copyQuoteWorkInput(params, staged);
       const unknownMeasurements = copyInput.measurementPolicy === "unknown";
-      const copy = copyLine(source, newLineId(staged), copyInput.sectionId ?? source.sectionId, unknownMeasurements);
-      staged.lines = insertAfterSource(staged.lines, source.id, copy, staged.sections); copyFacts.push(copyFact(copy, unknownMeasurements));
-      return { changed: [copy.id] };
-    }),
-  };
-  const duplicateQuoteSection: AgentTool = {
-    name: "duplicate_quote_section", label: "Duplicate Quote Section", description: "Duplicate a Quote Section and all its contained work with fresh application IDs. Use measurementPolicy unknown when copied quantities are not known.", parameters: duplicateSectionParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { duplicateSectionInput(args, staged); }),
-    execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const copyInput = duplicateSectionInput(params, staged);
-      if (staged.sections.length >= MAX_QUOTE_SECTIONS || staged.lines.length + staged.lines.filter((line) => line.sectionId === copyInput.sectionId).length > MAX_QUOTE_LINES) reject();
-      const source = staged.sections.find((candidate) => candidate.id === copyInput.sectionId)!; const id = newSectionId(staged);
-      const copy = { ...source, id, title: `${source.title} copie` }; const sourceLines = staged.lines.filter((line) => line.sectionId === source.id);
-      const unknownMeasurements = copyInput.measurementPolicy === "unknown";
-      const uniqueCopies = sourceLines.reduce<QuoteLine[]>((result, line) => {
-        const copied = copyLine(line, newLineId({ ...staged, lines: [...staged.lines, ...result] }), id, unknownMeasurements);
-        copyFacts.push(copyFact(copied, unknownMeasurements)); result.push(copied); return result;
-      }, []);
+      if (copyInput.source.kind === "lines") {
+        if (staged.lines.length + copyInput.source.lineIds.length > MAX_QUOTE_LINES) reject();
+        const copies: QuoteLine[] = [];
+        for (const sourceId of copyInput.source.lineIds) {
+          const source = staged.lines.find((line) => line.id === sourceId)!;
+          const id = newLineId({ ...staged, lines: [...staged.lines, ...copies] });
+          const destination = copyInput.source.destinationSectionId ?? source.sectionId;
+          const copy = copyLine(source, id, destination, unknownMeasurements);
+          copies.push(copy);
+          copyMappings.push({ sourceId, newId: id });
+          copyFacts.push(copyFact(copy, unknownMeasurements));
+        }
+        if (copyInput.source.destinationSectionId !== undefined) {
+          for (const copy of copies) staged.lines = insertAtDestinationEnd(staged.lines, copy, staged.sections);
+        } else {
+          for (const [index, copy] of copies.entries()) {
+            staged.lines = insertAfterSource(staged.lines, copyInput.source.lineIds[index], copy, staged.sections);
+          }
+        }
+        return { changed: copies.map((line) => line.id) };
+      }
+
+      const sectionSource = copyInput.source;
+      if (sectionSource.kind !== "section") reject();
+      const source = staged.sections.find((section) => section.id === sectionSource.sectionId)!;
+      const sourceLines = staged.lines.filter((line) => line.sectionId === source.id);
+      if (staged.sections.length >= MAX_QUOTE_SECTIONS || sourceLines.length > 50 || staged.lines.length + sourceLines.length > MAX_QUOTE_LINES) reject("bulk_limit_exceeded");
+      const id = newSectionId(staged);
+      const section = { id, title: sectionSource.title };
+      const copiesSoFar: QuoteLine[] = [];
+      const copies = sourceLines.map((line) => {
+        const copy = copyLine(line, newLineId({ ...staged, lines: [...staged.lines, ...copiesSoFar] }), id, unknownMeasurements);
+        copyMappings.push({ sourceId: line.id, newId: copy.id });
+        copyFacts.push(copyFact(copy, unknownMeasurements));
+        copiesSoFar.push(copy);
+        return copy;
+      });
       const sectionIndex = staged.sections.findIndex((candidate) => candidate.id === source.id);
-      staged.sections.splice(sectionIndex + 1, 0, copy); staged.lines = groupedWithSections(staged.lines.concat(uniqueCopies), staged.sections);
-      return { changed: uniqueCopies.map((line) => line.id), changedFields: [`section:${id}`] };
+      staged.sections.splice(sectionIndex + 1, 0, section);
+      staged.lines = groupedWithSections(staged.lines.concat(copies), staged.sections);
+      return { changed: copies.map((line) => line.id), changedFields: [`section:${id}`] };
+    }),
+  };
+
+  const moveQuoteWork: AgentTool = {
+    name: "move_quote_work", label: "Move Quote work",
+    description: "Move or reorder up to 50 Quote Lines or Quote Sections. Selected IDs are placed in the supplied order; an omitted anchor appends to the destination.",
+    parameters: moveQuoteWorkParameters, executionMode: "sequential",
+    prepareArguments: prepare((args) => { moveQuoteWorkInput(args, staged); }),
+    execute: async (_toolCallId, params, signal) => mutate(signal, () => {
+      const move = moveQuoteWorkInput(params, staged);
+      if (move.kind === "lines") {
+        const selected = new Set(move.lineIds);
+        const moved = move.lineIds.map((id) => ({ ...staged.lines.find((line) => line.id === id)! , sectionId: move.destinationSectionId }));
+        const remaining = staged.lines.filter((line) => !selected.has(line.id));
+        const at = move.beforeLineId ? remaining.findIndex((line) => line.id === move.beforeLineId) : destinationEndIndex(remaining, move.destinationSectionId, staged.sections);
+        remaining.splice(at < 0 ? remaining.length : at, 0, ...moved);
+        staged.lines = remaining;
+        return { changed: move.lineIds };
+      }
+      const selected = new Set(move.sectionIds);
+      const moved = move.sectionIds.map((id) => staged.sections.find((section) => section.id === id)!);
+      const remaining = staged.sections.filter((section) => !selected.has(section.id));
+      const at = move.beforeSectionId ? remaining.findIndex((section) => section.id === move.beforeSectionId) : remaining.length;
+      remaining.splice(at < 0 ? remaining.length : at, 0, ...moved);
+      staged.sections = remaining;
+      staged.lines = groupedWithSections(staged.lines, staged.sections);
+      return { changedFields: move.sectionIds.map((id) => `section:${id}`) };
+    }),
+  };
+
+  const deleteQuoteLines: AgentTool = {
+    name: "delete_quote_lines", label: "Delete Quote Lines",
+    description: "Delete 1 to 50 explicitly identified Quote Lines. Deleting all work, a whole section, or the last original line is manual-only.",
+    parameters: deleteQuoteLinesParameters, executionMode: "sequential",
+    prepareArguments: prepare((args) => { deleteQuoteLinesInput(args, staged); }),
+    execute: async (_toolCallId, params, signal) => mutate(signal, () => {
+      const lineIds = deleteQuoteLinesInput(params, staged);
+      const deletedOriginals = lineIds.filter((id) => originalLineIds.has(id));
+      if (new Set([...deletedOriginalLineIds, ...deletedOriginals]).size >= originalLineIds.size) reject("destructive_scope_rejected");
+      staged.lines = staged.lines.filter((line) => !lineIds.includes(line.id));
+      deletedOriginals.forEach((id) => deletedOriginalLineIds.add(id));
+      return { changed: lineIds };
     }),
   };
 
   return {
-    tools: [editQuoteDetails, editQuoteLines, createQuoteSection, renameQuoteSection, moveQuoteLine, duplicateQuoteLine, duplicateQuoteSection],
+    tools: [editQuoteDetails, editQuoteLines, editQuoteSections, copyQuoteWork, moveQuoteWork, deleteQuoteLines],
     result: () => ({
       quote: cloneQuote(staged), changed: [...changed], capturedLineIds: [...capturedLineIds],
       ...(changedFields.size ? { changedFields: [...changedFields] } : {}),
-      ...(copyFacts.length ? { copyFacts: copyFacts.map((fact) => {
-        const line = staged.lines.find((candidate) => candidate.id === fact.lineId); return line ? copyFact(line, fact.quantityUnknown) : { ...fact };
+      ...(copyFacts.length ? { copyFacts: copyFacts.flatMap((fact) => {
+        const line = staged.lines.find((candidate) => candidate.id === fact.lineId);
+        return line ? [copyFact(line, fact.quantityUnknown)] : [];
       }) } : {}),
+      ...(copyMappings.length ? { copyMappings: [...copyMappings] } : {}),
     }),
     diagnostic: () => lastErrorCode ? { phase: "tool", code: lastErrorCode } : undefined,
   };
@@ -380,6 +481,79 @@ function editQuoteLinesInput(value: unknown, context: EvidenceContext, quote: Qu
   return lines;
 }
 
+type SectionEdit = { id?: string; title: string };
+type CopyWorkInput = {
+  measurementPolicy: "retain" | "unknown";
+  source: { kind: "lines"; lineIds: string[]; destinationSectionId?: string } | { kind: "section"; sectionId: string; title: string };
+};
+type MoveWorkInput =
+  | { kind: "lines"; lineIds: string[]; destinationSectionId: string; beforeLineId?: string }
+  | { kind: "sections"; sectionIds: string[]; beforeSectionId?: string };
+
+function editQuoteSectionsInput(value: unknown, context: EvidenceContext, quote: QuoteData): SectionEdit[] {
+  if (!isRecord(value) || !isExactKeys(value, ["sections", "evidence"]) || !Array.isArray(value.sections) || value.sections.length < 1 || value.sections.length > 50) {
+    throw new ToolValidationError("invalid_tool_arguments");
+  }
+  const ids = new Set<string>();
+  const sections = value.sections.map((item, index) => {
+    if (!isRecord(item) || !isExactKeys(item, ["id", "title"]) || typeof item.title !== "string" || item.title.length > MAX_SECTION_TITLE) {
+      throw new ToolValidationError("invalid_tool_arguments");
+    }
+    const id = item.id;
+    if (id !== undefined && (typeof id !== "string" || !lineIdSyntax(id) || ids.has(id) || !quote.sections.some((section) => section.id === id))) {
+      throw new ToolValidationError("invalid_section_id");
+    }
+    if (id !== undefined) ids.add(id);
+    return id === undefined ? { title: item.title } : { id, title: item.title };
+  });
+  const requiredEvidence = sections.flatMap((section, index) => {
+    const existing = section.id ? quote.sections.find((candidate) => candidate.id === section.id) : undefined;
+    return section.title && (!existing || existing.title !== section.title) ? [`/sections/${index}/title`] : [];
+  });
+  assertGroupedEvidence(value.evidence, context, requiredEvidence, (field) => /^\/sections\/(?:0|[1-9]\d*)\/title$/.test(field) && Number(field.split("/")[2]) < sections.length);
+  return sections;
+}
+
+function copyQuoteWorkInput(value: unknown, quote: QuoteData): CopyWorkInput {
+  if (!isRecord(value) || !isExactKeys(value, ["source", "measurementPolicy", "evidence"]) || !isRecord(value.source)
+    || (value.measurementPolicy !== "retain" && value.measurementPolicy !== "unknown")) throw new ToolValidationError("invalid_tool_arguments");
+  const source = value.source;
+  if (Object.hasOwn(source, "lineIds")) {
+    if (!isExactKeys(source, ["lineIds", "destinationSectionId"]) || !Array.isArray(source.lineIds) || source.lineIds.length < 1 || source.lineIds.length > 50) throw new ToolValidationError("invalid_tool_arguments");
+    const ids = source.lineIds;
+    if (ids.some((id) => typeof id !== "string" || !lineIdSyntax(id)) || new Set(ids).size !== ids.length || ids.some((id) => !quote.lines.some((line) => line.id === id))) throw new ToolValidationError("invalid_line_id");
+    if (source.destinationSectionId !== undefined && (typeof source.destinationSectionId !== "string" || source.destinationSectionId.length > 128 || (source.destinationSectionId !== "" && !quote.sections.some((section) => section.id === source.destinationSectionId)))) throw new ToolValidationError("invalid_section_id");
+    return { measurementPolicy: value.measurementPolicy, source: { kind: "lines", lineIds: [...ids] as string[], ...(source.destinationSectionId === undefined ? {} : { destinationSectionId: source.destinationSectionId as string }) } };
+  }
+  if (!isExactKeys(source, ["sectionId", "title"]) || typeof source.sectionId !== "string" || !lineIdSyntax(source.sectionId) || typeof source.title !== "string" || !source.title.length || source.title.length > MAX_SECTION_TITLE || !quote.sections.some((section) => section.id === source.sectionId)) throw new ToolValidationError("invalid_section_id");
+  return { measurementPolicy: value.measurementPolicy, source: { kind: "section", sectionId: source.sectionId, title: source.title } };
+}
+
+function moveQuoteWorkInput(value: unknown, quote: QuoteData): MoveWorkInput {
+  if (!isRecord(value) || !isExactRecord(value, ["move"]) || !isRecord(value.move)) throw new ToolValidationError("invalid_tool_arguments");
+  const move = value.move;
+  if (Object.hasOwn(move, "lineIds")) {
+    if (!isExactKeys(move, ["lineIds", "destinationSectionId", "beforeLineId"]) || !Array.isArray(move.lineIds) || move.lineIds.length < 1 || move.lineIds.length > 50 || typeof move.destinationSectionId !== "string" || move.destinationSectionId.length > 128) throw new ToolValidationError("invalid_tool_arguments");
+    const ids = move.lineIds;
+    if (ids.some((id) => typeof id !== "string" || !lineIdSyntax(id)) || new Set(ids).size !== ids.length || ids.some((id) => !quote.lines.some((line) => line.id === id))) throw new ToolValidationError("invalid_line_id");
+    if (move.destinationSectionId !== "" && !quote.sections.some((section) => section.id === move.destinationSectionId)) throw new ToolValidationError("invalid_section_id");
+    if (move.beforeLineId !== undefined && (typeof move.beforeLineId !== "string" || !lineIdSyntax(move.beforeLineId) || !quote.lines.some((line) => line.id === move.beforeLineId) || ids.includes(move.beforeLineId) || quote.lines.find((line) => line.id === move.beforeLineId)!.sectionId !== move.destinationSectionId)) throw new ToolValidationError("invalid_move_anchor");
+    return { kind: "lines", lineIds: [...ids] as string[], destinationSectionId: move.destinationSectionId, ...(move.beforeLineId === undefined ? {} : { beforeLineId: move.beforeLineId as string }) };
+  }
+  if (!isExactKeys(move, ["sectionIds", "beforeSectionId"]) || !Array.isArray(move.sectionIds) || move.sectionIds.length < 1 || move.sectionIds.length > 50) throw new ToolValidationError("invalid_tool_arguments");
+  const ids = move.sectionIds;
+  if (ids.some((id) => typeof id !== "string" || !lineIdSyntax(id)) || new Set(ids).size !== ids.length || ids.some((id) => !quote.sections.some((section) => section.id === id))) throw new ToolValidationError("invalid_section_id");
+  if (move.beforeSectionId !== undefined && (typeof move.beforeSectionId !== "string" || !lineIdSyntax(move.beforeSectionId) || !quote.sections.some((section) => section.id === move.beforeSectionId) || ids.includes(move.beforeSectionId))) throw new ToolValidationError("invalid_move_anchor");
+  return { kind: "sections", sectionIds: [...ids] as string[], ...(move.beforeSectionId === undefined ? {} : { beforeSectionId: move.beforeSectionId as string }) };
+}
+
+function deleteQuoteLinesInput(value: unknown, quote: QuoteData): string[] {
+  if (!isExactRecord(value, ["lineIds"]) || !Array.isArray(value.lineIds) || value.lineIds.length < 1 || value.lineIds.length > 50) throw new ToolValidationError("invalid_tool_arguments");
+  const ids = value.lineIds;
+  if (ids.some((id) => typeof id !== "string" || !lineIdSyntax(id)) || new Set(ids).size !== ids.length || ids.some((id) => !quote.lines.some((line) => line.id === id))) throw new ToolValidationError("invalid_line_id");
+  return [...ids] as string[];
+}
+
 function assertGroupedEvidence(value: unknown, context: EvidenceContext, requiredFields: readonly string[], fieldAllowed: (field: string) => boolean) {
   if (value === undefined) {
     if (requiredFields.length) throw new ToolValidationError("missing_evidence");
@@ -441,7 +615,11 @@ function toolErrorMessage(code: string): string {
     discount_not_applicable: "A nonzero discount cannot be used when discountMode is none.",
     invalid_mode_fields: "Supply empty strings for fields unused by the selected pricing mode.",
     invalid_line_id: "Use each existing stable Quote Line ID at most once; omit id to create a line.",
-    invalid_section_id: "sectionId is allowed only for a new line and must name an existing Quote Section.",
+    invalid_section_id: "The target Section ID is unknown or not allowed for this operation.",
+    invalid_move_anchor: "The move anchor must be an unselected item in the requested destination.",
+    bulk_limit_exceeded: "This batch exceeds the structural operation limit of 50 items.",
+    ambiguous_measurement: "The copied description contains an unrecognised measurement. Clarify that measurement before copying with unknown values.",
+    destructive_scope_rejected: "Deleting all work is manual-only. Use the manual Quote controls; no changes from this assistant turn were applied.",
     draft_payload_limit: "The Working Draft is too large for this change. Continue manually.",
   };
   return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}`;
@@ -462,17 +640,44 @@ function assertInitialInput(input: CreateQuoteToolsInput) {
 }
 
 function newLineId(quote: QuoteData): string { const ids = new Set(quote.lines.map((line) => line.id)); for (let attempt = 0; attempt < 10; attempt += 1) { const id = randomUUID(); if (!ids.has(id)) return id; } throw new Error("invalid"); }
-function sectionTitleInput(value: unknown): { title: string } { if (!isExactRecord(value, ["title"]) || typeof value.title !== "string" || !value.title.trim() || value.title.length > MAX_SECTION_TITLE) throw new Error("invalid"); return { title: value.title.trim() }; }
-function renameSectionInput(value: unknown): { sectionId: string; title: string } { if (!isRecord(value) || !isExactRecord(value, ["sectionId", "title"]) || typeof value.sectionId !== "string" || !value.sectionId || value.sectionId.length > 128) throw new Error("invalid"); return { sectionId: value.sectionId, title: sectionTitleInput({ title: value.title }).title }; }
-function moveLineInput(value: unknown, quote: QuoteData): { lineId: string; sectionId: string } { if (!isExactRecord(value, ["lineId", "sectionId"]) || typeof value.lineId !== "string" || !value.lineId || typeof value.sectionId !== "string" || value.sectionId.length > 128 || !quote.lines.some((line) => line.id === value.lineId) || (value.sectionId !== "" && !quote.sections.some((section) => section.id === value.sectionId))) throw new Error("invalid"); return { lineId: value.lineId, sectionId: value.sectionId }; }
-function duplicateLineInput(value: unknown, quote: QuoteData): { lineId: string; sectionId?: string; measurementPolicy: "retain" | "unknown" } { if (!isRecord(value) || Object.keys(value).some((key) => !["lineId", "sectionId", "measurementPolicy"].includes(key)) || typeof value.lineId !== "string" || !value.lineId || !quote.lines.some((line) => line.id === value.lineId) || (value.sectionId !== undefined && (typeof value.sectionId !== "string" || value.sectionId.length > 128 || (value.sectionId !== "" && !quote.sections.some((section) => section.id === value.sectionId))))) throw new Error("invalid"); if (value.measurementPolicy !== undefined && value.measurementPolicy !== "retain" && value.measurementPolicy !== "unknown") throw new Error("invalid"); return { lineId: value.lineId, ...(value.sectionId === undefined ? {} : { sectionId: value.sectionId }), measurementPolicy: value.measurementPolicy ?? "retain" }; }
-function duplicateSectionInput(value: unknown, quote: QuoteData): { sectionId: string; measurementPolicy: "retain" | "unknown" } { if (!isRecord(value) || Object.keys(value).some((key) => !["sectionId", "measurementPolicy"].includes(key)) || typeof value.sectionId !== "string" || !value.sectionId || !quote.sections.some((section) => section.id === value.sectionId)) throw new Error("invalid"); if (value.measurementPolicy !== undefined && value.measurementPolicy !== "retain" && value.measurementPolicy !== "unknown") throw new Error("invalid"); return { sectionId: value.sectionId, measurementPolicy: value.measurementPolicy ?? "retain" }; }
 function newSectionId(quote: QuoteData): string { const ids = new Set(quote.sections.map((section) => section.id)); for (let attempt = 0; attempt < 10; attempt += 1) { const id = `section-${randomUUID()}`; if (!ids.has(id)) return id; } throw new Error("invalid"); }
-function insertAfterSource(lines: QuoteLine[], sourceId: string, copy: QuoteLine, sections: { id: string }[]): QuoteLine[] { const source = lines.find((line) => line.id === sourceId)!; if (copy.sectionId === source.sectionId) { const result = [...lines]; result.splice(result.findIndex((line) => line.id === sourceId) + 1, 0, copy); return result; } return appendQuoteLineToSection(lines, copy, sections); }
+function insertAfterSource(lines: QuoteLine[], sourceId: string, copy: QuoteLine, sections: { id: string }[]): QuoteLine[] {
+  const source = lines.find((line) => line.id === sourceId)!;
+  if (copy.sectionId === source.sectionId) {
+    const result = [...lines];
+    result.splice(result.findIndex((line) => line.id === sourceId) + 1, 0, copy);
+    return result;
+  }
+  return insertAtDestinationEnd(lines, copy, sections);
+}
+function insertAtDestinationEnd(lines: QuoteLine[], line: QuoteLine, sections: { id: string }[]): QuoteLine[] {
+  const result = [...lines];
+  result.splice(destinationEndIndex(result, line.sectionId, sections), 0, line);
+  return result;
+}
+function destinationEndIndex(lines: QuoteLine[], sectionId: string, sections: { id: string }[]): number {
+  const destination = sectionId === "" ? -1 : sections.findIndex((section) => section.id === sectionId);
+  for (let index = 0; index < lines.length; index += 1) {
+    const rank = lines[index].sectionId === "" ? -1 : sections.findIndex((section) => section.id === lines[index].sectionId);
+    if (rank > destination) return index;
+  }
+  return lines.length;
+}
 function groupedWithSections(lines: QuoteLine[], sections: { id: string }[]): QuoteLine[] { return [...lines.filter((line) => line.sectionId === ""), ...sections.flatMap((section) => lines.filter((line) => line.sectionId === section.id)), ...lines.filter((line) => line.sectionId !== "" && !sections.some((section) => section.id === line.sectionId))]; }
-function copyLine(source: QuoteLine, id: string, sectionId: string, unknownMeasurements: boolean): QuoteLine { const copy = { ...source, id, sectionId }; if (unknownMeasurements && source.mode === "quantity") { copy.quantity = ""; copy.amount = ""; copy.description = withoutMeasurement(copy.description); } return copy; }
+function copyLine(source: QuoteLine, id: string, sectionId: string, unknownMeasurements: boolean): QuoteLine {
+  const copy = { ...source, id, sectionId };
+  if (unknownMeasurements) {
+    if (source.mode === "quantity") {
+      copy.quantity = "";
+      copy.amount = "";
+    }
+    copy.description = withoutMeasurement(copy.description);
+    if (/\b\d+(?:[.,]\d+)?\s+[A-Za-zÀ-ÿ²³]+/u.test(copy.description)) throw new ToolValidationError("ambiguous_measurement");
+  }
+  return copy;
+}
 function copyFact(line: QuoteLine, quantityUnknown: boolean): CopyFact { return { lineId: line.id, mode: line.mode, description: line.description, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, amount: line.amount, quantityUnknown }; }
-function withoutMeasurement(description: string): string { return description.replace(/\b\d+(?:[.,]\d+)?\s*(?:[x×/]\s*\d+(?:[.,]\d+)?)+(?:\s*(?:m|cm|mm))?\b/giu, "").replace(/\b\d+(?:[.,]\d+)?\s*(?:m²|m2|cm|mm|km|m|kg|g|l|cl|ml|h|heures?|jours?|pce|pièces?|mètres? carrés?|metres? carres?|mètres? cubes?|metres? cubes?|square meters?|square metres?|cubic meters?|cubic metres?|sq\.?\s*m|pieds?|feet|litres?|liters?|kilogrammes?|kilograms?)\b/giu, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/([(:])\s+/g, "$1").trim(); }
+function withoutMeasurement(description: string): string { return description.replace(/\b\d+(?:[.,]\d+)?\s*(?:[x×/]\s*\d+(?:[.,]\d+)?)+(?:\s*(?:m|cm|mm))?\b/giu, "").replace(/\b\d+(?:[.,]\d+)?\s*(?:m²|m2|cm|mm|km|m|kg|g|l|cl|ml|h|heures?|jours?|pce|pièces?|mètres? carrés?|metres? carres?|mètres? cubes?|metres? cubes?|square meters?|square metres?|cubic meters?|cubic metres?|sq\.?\s*m|pieds?|feet|litres?|liters?|kilogrammes?|kilograms?)(?=$|[^A-Za-zÀ-ÿ²³])/giu, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/([(:])\s+/g, "$1").trim(); }
 function evidenceAppears(text: string, evidence: string): boolean { const compact = (value: string) => value.normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase(); return compact(text).includes(compact(evidence)); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isExactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> { return isRecord(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key)); }
