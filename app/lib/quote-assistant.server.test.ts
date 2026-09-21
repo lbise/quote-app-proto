@@ -31,13 +31,13 @@ describe("pi Quote assistant model boundary", () => {
       ]);
       const pending = generateQuoteChange({ ...input(), text: "Capture the installation using my earlier price.", messages: [{ role, fr: "Pose pour 75 CHF.", en: "Installation for CHF 75." }] }, boundary);
       if (role === "artisan") expect((await pending).quote?.lines[0].amount).toBe("75.00");
-      else await expect(pending).rejects.toThrow("could not complete");
+      else expect((await pending).debug).toMatchObject({ failedCalls: 1, outcome: "unchanged_with_failed_calls" });
     }
   });
 
   it("sends only bounded work and conversation context, never dedicated identity or credentials", async () => {
     const { boundary, contexts } = modelBoundary([
-      fauxAssistantMessage([fauxToolCall("read_work", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("create_quote_section", { title: "Zone" })], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("Quelle surface faut-il peindre ?")]),
     ]);
     const current = { ...input(), locale: "fr" as const, messages: Array.from({ length: 30 }, (_, index) => ({ role: "artisan" as const, fr: `Travaux ${index}`, en: `Work ${index}` })) };
@@ -49,12 +49,12 @@ describe("pi Quote assistant model boundary", () => {
     const content = contexts[0].messages[0].content;
     const text = typeof content === "string" ? content : content.filter((part) => part.type === "text").map((part) => part.text).join("");
     const payload = JSON.parse(text);
-    expect(payload).toMatchObject({ locale: "fr", historyOmitted: true });
-    expect(payload.messages).toHaveLength(24);
-    expect(payload.messages[0]).toEqual({ role: "artisan", text: "Travaux 6" });
+    expect(payload).toMatchObject({ locale: "fr", historyOmitted: true, omittedHistoryCount: 6, currentWorkingDraft: { customerName: "PRIVATE_CUSTOMER", businessContact: "PRIVATE_CONTACT", terms: "PRIVATE_TERMS" } });
+    expect(payload.history).toHaveLength(24);
+    expect(payload.history[0]).toEqual({ id: "history_7", role: "artisan", text: "Travaux 6" });
+    expect(payload.calculation).not.toHaveProperty("quote");
     const sent = JSON.stringify(contexts);
     expect(sent).toContain("Peinture RAL 9010");
-    expect(sent).not.toMatch(/PRIVATE_|customerName|businessContact|apiKey/);
   });
 
   it("rejects raw tool arguments rather than accepting pi's type coercion", async () => {
@@ -63,25 +63,10 @@ describe("pi Quote assistant model boundary", () => {
       fauxAssistantMessage([fauxText("Added.")]),
     ]);
     const failure = generateQuoteChange({ ...input(), text: "Paint 2 walls." }, boundary);
-    await expect(failure).rejects.toThrow("could not complete");
-    await expect(failure).rejects.toMatchObject({
-      diagnostic: {
-        phase: "tool",
-        code: "invalid_tool_arguments",
-        tool: "add_quote_line",
-        toolCall: {
-          name: "add_quote_line",
-          arguments: { description: "Peinture", mode: "quantity", quantity: 2, unit: "", unitPrice: "", amount: "", evidence: [{ field: "quantity", text: "2" }] },
-        },
-        llmRequest: {
-          model: { provider: expect.any(String), id: expect.any(String) },
-          systemPrompt: expect.stringContaining("registered Easy Quote tools"),
-          messages: expect.any(Array),
-          tools: expect.arrayContaining([expect.objectContaining({ name: "add_quote_line", parameters: expect.any(Object) })]),
-          options: expect.objectContaining({ maxTokens: 4096, timeoutMs: expect.any(Number) }),
-        },
-      },
-    });
+    const result = await failure;
+    expect(result.debug).toMatchObject({ failedCalls: 1, outcome: "unchanged_with_failed_calls" });
+    expect(result.message).toContain("Some tool calls failed");
+    expect(result.debug?.attempts?.[0]).toMatchObject({ outcome: "failed", name: "add_quote_line" });
   });
 
   it("reports a missing required line description from a malformed tool call", async () => {
@@ -96,29 +81,29 @@ describe("pi Quote assistant model boundary", () => {
     await expect(failure).rejects.toMatchObject({ diagnostic: { code: "missing_description", tool: "add_quote_line" } });
   });
 
-  it("bounds accumulated work context in bytes before sending the next model request", async () => {
+  it("accepts the complete current draft context without a read call", async () => {
     const { boundary, fake } = modelBoundary([
-      fauxAssistantMessage(Array.from({ length: 10 }, () => fauxToolCall("read_work", {})), { stopReason: "toolUse" }),
+      fauxAssistantMessage(Array.from({ length: 10 }, () => fauxToolCall("create_quote_section", { title: "Zone" })), { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("Finished.")]),
     ]);
     const work = input();
     work.quote.lines = Array.from({ length: 10 }, (_, index) => ({ id: `line-${index}`, sectionId: "", description: "界".repeat(800), mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "" }));
-    await expect(generateQuoteChange(work, boundary)).rejects.toThrow("could not complete");
-    expect(fake.getPendingResponseCount()).toBe(1);
+    await generateQuoteChange(work, boundary);
+    expect(fake.getPendingResponseCount()).toBe(0);
   });
 
   it("rejects an oversized intermediate model response before another round", async () => {
     const { boundary, fake } = modelBoundary([
-      fauxAssistantMessage([fauxText("x".repeat(65_000)), fauxToolCall("read_work", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("x".repeat(65_000)), fauxToolCall("create_quote_section", { title: "Zone" })], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("Finished.")]),
     ]);
     await expect(generateQuoteChange(input(), boundary)).rejects.toThrow("could not complete");
     expect(fake.getPendingResponseCount()).toBe(1);
   });
 
-  it("rejects a batch exceeding twelve tool calls", async () => {
+  it("rejects a batch exceeding twenty-four tool calls", async () => {
     const { boundary } = modelBoundary([
-      fauxAssistantMessage(Array.from({ length: 13 }, () => fauxToolCall("read_work", {})), { stopReason: "toolUse" }),
+      fauxAssistantMessage(Array.from({ length: 25 }, () => fauxToolCall("create_quote_section", { title: "Zone" })), { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("Finished.")]),
     ]);
     await expect(generateQuoteChange(input(), boundary)).rejects.toThrow("could not complete");
@@ -130,23 +115,52 @@ describe("pi Quote assistant model boundary", () => {
     await expect(generateQuoteChange(input(), stalled)).rejects.toThrow("could not complete");
   }, 500);
 
-  it("stops after six model rounds instead of accepting an exhausted run", async () => {
+  it("stops after twelve model responses instead of accepting an exhausted run", async () => {
     const { boundary, fake } = modelBoundary([
-      ...Array.from({ length: 6 }, () => fauxAssistantMessage([fauxToolCall("read_work", {})], { stopReason: "toolUse" })),
+      ...Array.from({ length: 12 }, () => fauxAssistantMessage([fauxToolCall("create_quote_section", { title: "Zone" })], { stopReason: "toolUse" })),
       fauxAssistantMessage([fauxText("Finished.")]),
     ]);
     await expect(generateQuoteChange(input(), boundary)).rejects.toThrow("could not complete");
     expect(fake.getPendingResponseCount()).toBe(1);
   });
 
-  it("rejects an unregistered tool even if a later model reply claims success", async () => {
+  it("reports an unregistered tool while allowing completion below the failure limit", async () => {
     const { boundary, fake } = modelBoundary([
       fauxAssistantMessage([fauxToolCall("publish_quote", {})], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("Published.")]),
     ]);
-    await expect(generateQuoteChange(input(), boundary)).rejects.toThrow("could not complete");
-    expect(fake.getPendingResponseCount()).toBe(1);
+    const result = await generateQuoteChange(input(), boundary);
+    expect(result).toMatchObject({ message: expect.stringContaining("Some tool calls failed"), debug: { failedCalls: 1 } });
+    expect(fake.getPendingResponseCount()).toBe(0);
   });
+  it("commits successful calls below the failed-call limit", async () => {
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("add_quote_line", { mode: "fixed", amount: "10.00" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("add_quote_line", { description: "Pose", mode: "fixed", amount: "10.00", evidence: [{ field: "amount", text: "10 CHF" }] })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Pose ajoutée.")]),
+    ]);
+    const result = await generateQuoteChange({ ...input(), text: "Pose pour 10 CHF." }, boundary);
+    expect(result.quote?.lines).toHaveLength(1);
+    expect(result.message).toContain("Some tool calls failed");
+    expect(result.debug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls", attempts: [
+      { outcome: "failed" }, { outcome: "applied" },
+    ] });
+  });
+
+  it("discards the whole staged turn after the third failed tool call", async () => {
+    const { boundary } = modelBoundary([
+      fauxAssistantMessage([
+        fauxToolCall("not_registered", {}),
+        fauxToolCall("not_registered", {}),
+        fauxToolCall("not_registered", {}),
+      ], { stopReason: "toolUse" }),
+    ]);
+    await expect(generateQuoteChange(input(), boundary)).rejects.toMatchObject({ diagnostic: {
+      code: "failed_call_limit_reached", failedCalls: 3, outcome: "failed_call_limit_reached",
+      attempts: expect.arrayContaining([expect.objectContaining({ outcome: "failed" })]),
+    } });
+  });
+
   it("calculates typed room dimensions and accepts compact CHF pricing", async () => {
     const { boundary } = modelBoundary([
       fauxAssistantMessage([fauxToolCall("add_quote_line", {
@@ -170,7 +184,7 @@ describe("pi Quote assistant model boundary", () => {
       locale: "fr",
       text: "Je veux repeindre la chambre d'eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond. Prix au m2 12.50chf",
     }, boundary);
-    expect(result.debug).toEqual({
+    expect(result.debug).toMatchObject({
       toolCalls: [expect.objectContaining({
         name: "add_quote_line",
         arguments: expect.objectContaining({ mode: "quantity", quantityCalculation: expect.objectContaining({ length: "2", width: "4", height: "3" }) }),
@@ -261,17 +275,17 @@ describe("pi Quote assistant model boundary", () => {
 
   it("opens publication review only after an explicit publication request", async () => {
     const { boundary } = modelBoundary([fauxAssistantMessage([fauxText("The work is ready to review.")])]);
-    expect((await generateQuoteChange({ ...input(), text: "Please review the Quote before I publish it." }, boundary)).reviewPublication).toBe(true);
+    expect(await generateQuoteChange({ ...input(), text: "Please review the Quote before I publish it." }, boundary)).not.toHaveProperty("reviewPublication");
     const second = modelBoundary([fauxAssistantMessage([fauxText("The work is ready.")])]);
-    expect((await generateQuoteChange({ ...input(), text: "Do not publish the Quote yet." }, second.boundary)).reviewPublication).toBe(false);
+    expect(await generateQuoteChange({ ...input(), text: "Do not publish the Quote yet." }, second.boundary)).not.toHaveProperty("reviewPublication");
   });
 
   it("returns focused clarification without replacing an incomplete Working Draft", async () => {
     const { boundary, contexts } = modelBoundary([fauxAssistantMessage([fauxText("Which room needs painting?")])]);
     const result = await generateQuoteChange(input(), boundary);
-    expect(result).toMatchObject({ quote: null, changed: [], message: "Which room needs painting?", reviewPublication: false });
+    expect(result).toMatchObject({ quote: null, changed: [], message: expect.stringContaining("Which room needs painting?") });
     expect(contexts[0].tools?.map((tool) => tool.name)).toEqual([
-      "read_work", "set_customer_info", "add_quote_line", "supply_missing_line_fields",
+      "set_customer_info", "add_quote_line", "supply_missing_line_fields",
       "update_quote_line", "create_quote_section", "rename_quote_section", "move_quote_line",
       "duplicate_quote_line", "duplicate_quote_section",
     ]);

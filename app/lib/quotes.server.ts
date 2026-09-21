@@ -33,7 +33,7 @@ function assistantDiagnostic(error: unknown, requestId: string, fallback: QuoteA
 }
 
 function assistantSuccessDebug(debug: QuoteAssistantSuccessDebug | undefined, requestId: string): { assistantDebug: QuoteAssistantSuccessDebug } | undefined {
-  if (process.env.QUOTE_AI_DEBUG !== "true" || !debug?.toolCalls.length) return undefined;
+  if (process.env.QUOTE_AI_DEBUG !== "true" || !debug) return undefined;
   return { assistantDebug: { ...debug, requestId } };
 }
 
@@ -494,7 +494,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
   return detail;
 }
 
-async function assistant(database: Database, businessId: string, body: Body, modelBoundary: QuoteAIModelBoundary | undefined, now: Date): Promise<QuoteDetail & { reviewPublication?: boolean }> {
+async function assistant(database: Database, businessId: string, body: Body, modelBoundary: QuoteAIModelBoundary | undefined, now: Date): Promise<QuoteDetail> {
   const id = identifier(body.id, "quote_id");
   const requestId = requestKey(body.requestId);
   const hash = payloadHash(body);
@@ -518,6 +518,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     checkVersion(record, body);
     if (record.pending) throw new RequestFailure(409, "assistant_pending");
     const draft = requireDraft(record);
+    const revisions = await transaction.select({ id: quoteRevision.id }).from(quoteRevision).where(eq(quoteRevision.quoteId, id)).limit(1);
     const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
     if (existing) await transaction.update(quoteRequest).set({ status: "pending", baseVersion: record.version, updatedAt: now }).where(eq(quoteRequest.id, existing.id));
     else await recordRequest(transaction, { businessId, quoteId: id, action: "assistant", requestId, status: "pending", baseVersion: record.version, payloadHash: hash, now });
@@ -529,6 +530,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
       messages: messages.map((entry) => ({ role: entry.role as Message["role"], fr: entry.fr, en: entry.en })),
       text,
       locale,
+      referenceLocked: revisions.length > 0,
       capturedLineIds: trustedCapturedLineIds(record.capturedLineIds, draft),
     };
   });
@@ -594,7 +596,6 @@ async function assistant(database: Database, businessId: string, body: Body, mod
   return {
     ...detail,
     ...assistantSuccessDebug(result.debug, requestId),
-    ...(result.reviewPublication ? { reviewPublication: true } : {}),
   };
 }
 

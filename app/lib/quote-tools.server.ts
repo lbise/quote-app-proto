@@ -36,12 +36,15 @@ export type CreateQuoteToolsInput = {
   artisanText: string;
   /** Trusted, bounded Artisan-only messages retained by the server. */
   artisanHistory?: readonly string[];
+  /** Optional runner-owned preflight for the next application context. */
+  validateStaged?: (quote: QuoteData) => string | undefined;
 };
 
 const MAX_ARTISAN_TEXT = 8_000;
 const MAX_ARTISAN_HISTORY_MESSAGES = 24;
 const MAX_ARTISAN_HISTORY_CHARS = 24_000;
-const MAX_LINES = 200;
+const MAX_LINES = 1_000;
+const MAX_DRAFT_BYTES = 220_000;
 const MAX_DESCRIPTION = 4_000;
 const MAX_CUSTOMER_NAME = 300;
 const MAX_CUSTOMER_ADDRESS = 1_000;
@@ -50,13 +53,11 @@ const MAX_UNIT = 100;
 const MAX_DECIMAL = 20;
 const MAX_EVIDENCE = 8;
 const MAX_EVIDENCE_TEXT = 500;
-const MAX_WORK_PAYLOAD_BYTES = 40_000;
 
-const emptyParameters = Type.Object({}, { additionalProperties: false });
 const evidenceParameters = Type.Array(Type.Object({
   field: StringEnum(["quantity", "unitPrice", "amount"]),
   text: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT }),
-  sourceLineId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Only use an existing original Quote Line ID returned by read_work. Omit this property for evidence from the current Artisan message or history; never use user or a role name." })),
+  sourceLineId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Only use an existing original Quote Line ID from the current Working Draft. Omit this property for evidence from the current Artisan message or history; never use user or a role name." })),
 }, { additionalProperties: false }), { maxItems: MAX_EVIDENCE });
 const lineValueParameters = Type.Object({
   description: Type.String({ minLength: 1, maxLength: MAX_DESCRIPTION }),
@@ -151,62 +152,71 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const changed = new Set<string>();
   const changedFields = new Set<string>();
   const copyFacts: CopyFact[] = [];
-  let poisoned = false;
   let lastErrorCode: string | undefined;
 
   const reject = (code = "invalid_tool_input"): never => {
-    poisoned = true;
     lastErrorCode = code;
-    throw new Error("Tool input rejected.");
+    throw new Error(toolErrorMessage(code));
   };
 
   const mutate = async (signal: AbortSignal | undefined, operation: () => Mutation) => {
-    if (poisoned) reject();
     if (signal?.aborted) reject("tool_aborted");
+    const before = cloneQuote(staged);
+    const changedBefore = new Set(changed);
+    const changedFieldsBefore = new Set(changedFields);
+    const copyFactsBefore = copyFacts.length;
+    const capturedBefore = [...capturedLineIds];
     try {
       const mutation = operation();
       if (calculateQuote(staged).errors.length > 0) reject("invalid_quote_calculation");
-      if (workPayloadBytes(staged) > MAX_WORK_PAYLOAD_BYTES) reject("work_payload_limit");
+      if (draftPayloadBytes(staged) > MAX_DRAFT_BYTES) reject("draft_payload_limit");
+      const contextError = input.validateStaged?.(staged);
+      if (contextError) reject(contextError);
       for (const id of mutation.changed ?? []) changed.add(id);
       for (const field of mutation.changedFields ?? []) changedFields.add(field);
-      const details = { changed: mutation.changed ?? [], changedFields: mutation.changedFields ?? [] };
+      const changedLineIds = mutation.changed ?? [];
+      const calculation = calculateQuote(staged);
+      const details = {
+        changed: changedLineIds,
+        changedFields: mutation.changedFields ?? [],
+        calculation: {
+          lines: calculation.lines.filter((line) => changedLineIds.includes(line.id)),
+          sections: calculation.sections,
+          subtotal: calculation.subtotal,
+          discount: calculation.discount,
+          net: calculation.net,
+          vat: calculation.vat,
+          total: calculation.total,
+        },
+        ...(changedLineIds.length ? {
+          normalizedLines: changedLineIds.flatMap((id) => {
+            const line = staged.lines.find((candidate) => candidate.id === id);
+            return line ? [{ id: line.id, quantity: line.quantity, unitPrice: line.unitPrice, amount: line.amount }] : [];
+          }),
+        } : {}),
+      };
       return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
     } catch (error) {
-      poisoned = true;
+      restoreQuote(staged, before);
+      changed.clear();
+      changedBefore.forEach((id) => changed.add(id));
+      changedFields.clear();
+      changedFieldsBefore.forEach((field) => changedFields.add(field));
+      copyFacts.length = copyFactsBefore;
+      capturedLineIds.splice(0, capturedLineIds.length, ...capturedBefore);
       lastErrorCode = error instanceof ToolValidationError ? error.code : lastErrorCode ?? "tool_execution_failed";
-      throw new Error("Tool input rejected.");
+      throw new Error(toolErrorMessage(lastErrorCode));
     }
   };
 
   const prepare = (validate: (args: unknown) => void) => (args: unknown) => {
     try {
-      if (poisoned) reject();
       validate(args);
       return args;
     } catch (error) {
       lastErrorCode = error instanceof ToolValidationError ? error.code : "invalid_tool_arguments";
       return reject(lastErrorCode);
     }
-  };
-
-  const readWork: AgentTool = {
-    name: "read_work",
-    label: "Read work",
-    description: "Read the current Quote Lines that this turn may discuss. This does not expose administrative Quote fields.",
-    parameters: emptyParameters,
-    executionMode: "sequential",
-    prepareArguments: prepare((args) => {
-      if (!isExactRecord(args, [])) throw new Error("invalid");
-    }),
-    execute: async (_toolCallId, params) => {
-      if (poisoned || !isExactRecord(params, [])) reject();
-      const lines = workLines(staged, capturedLineIds);
-      const details = {
-        sections: staged.sections.map((section, index) => ({ id: section.id, title: section.title, number: index + 1 })),
-        lines,
-      };
-      return { content: [{ type: "text", text: JSON.stringify(details) }], details };
-    },
   };
 
   const setCustomerInfo: AgentTool = {
@@ -270,7 +280,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const updateQuoteLine: AgentTool = {
     name: "update_quote_line",
     label: "Update Quote Line",
-    description: "Correct one existing Quote Line. Use a stable line ID from read_work. Numeric corrections require evidence from the Artisan; never invent a price or measurement.",
+    description: "Correct one existing Quote Line. Use a stable line ID from the current Working Draft. Numeric corrections require evidence from the Artisan; never invent a price or measurement.",
     parameters: linePatchParameters,
     executionMode: "sequential",
     prepareArguments: prepare((args) => { linePatchInput(args, evidenceContext); }),
@@ -382,10 +392,8 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   };
 
   return {
-    tools: [readWork, setCustomerInfo, addQuoteLine, supplyMissingLineFields, updateQuoteLine, createQuoteSection, renameQuoteSection, moveQuoteLine, duplicateQuoteLine, duplicateQuoteSection],
-    result: () => poisoned
-      ? { quote: null, changed: [], capturedLineIds: [] }
-      : {
+    tools: [setCustomerInfo, addQuoteLine, supplyMissingLineFields, updateQuoteLine, createQuoteSection, renameQuoteSection, moveQuoteLine, duplicateQuoteLine, duplicateQuoteSection],
+    result: () => ({
         quote: cloneQuote(staged),
         changed: [...changed],
         capturedLineIds: [...capturedLineIds],
@@ -396,8 +404,8 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
             return line ? copyFact(line, fact.quantityUnknown) : { ...fact };
           }),
         } : {}),
-      },
-    diagnostic: () => poisoned ? { phase: "tool", code: lastErrorCode ?? "tool_input_rejected" } : undefined,
+      }),
+    diagnostic: () => lastErrorCode ? { phase: "tool", code: lastErrorCode } : undefined,
   };
 }
 
@@ -428,6 +436,25 @@ function authoredValueContains(texts: readonly string[], value: string): boolean
   return texts.some((text) => normalize(text).includes(normalizedValue));
 }
 
+function toolErrorMessage(code: string): string {
+  const messages: Record<string, string> = {
+    invalid_tool_arguments: "The tool arguments are invalid. Resubmit the complete call with the required fields.",
+    missing_description: "A Quote Line description is required. Resubmit the complete call with description and mode.",
+    missing_mode: "A Quote Line pricing mode is required. Resubmit the complete call with mode quantity or fixed.",
+    missing_evidence: "A supplied numeric value needs an exact Artisan evidence excerpt. Resubmit the complete call with evidence.",
+    evidence_not_found: "The evidence excerpt was not found in the permitted Artisan source. Resubmit the call with exact evidence.",
+    draft_payload_limit: "The Working Draft is too large for this change. Continue manually.",
+  };
+  return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}`;
+}
+
+function restoreQuote(target: QuoteData, source: QuoteData) {
+  Object.assign(target, source, {
+    sections: source.sections.map((section) => ({ ...section })),
+    lines: source.lines.map((line) => ({ ...line })),
+  });
+}
+
 function cloneQuote(quote: QuoteData): QuoteData {
   return {
     ...quote,
@@ -445,31 +472,13 @@ function assertInitialInput(input: CreateQuoteToolsInput) {
     throw new Error("Tool input rejected.");
   }
   const calculation = calculateQuote(input.quote);
-  if (!calculation.quote || calculation.errors.length || input.quote.lines.length > MAX_LINES || input.quote.sections.length > MAX_LINES || workPayloadBytes(input.quote) > MAX_WORK_PAYLOAD_BYTES) {
+  if (!calculation.quote || calculation.errors.length || input.quote.lines.length > MAX_LINES || input.quote.sections.length > MAX_LINES || draftPayloadBytes(input.quote) > MAX_DRAFT_BYTES) {
     throw new Error("Tool input rejected.");
   }
 }
 
-function workLines(quote: QuoteData, capturedLineIds: readonly string[]) {
-  return quote.lines.map((line, index) => ({
-    number: index + 1,
-    id: line.id,
-    sectionId: line.sectionId,
-    description: line.description,
-    mode: line.mode,
-    quantity: line.quantity,
-    unit: line.unit,
-    unitPrice: line.unitPrice,
-    amount: line.amount,
-    canSupplyMissingFields: capturedLineIds.includes(line.id),
-  }));
-}
-
-function workPayloadBytes(quote: QuoteData): number {
-  return new TextEncoder().encode(JSON.stringify({
-    sections: quote.sections.map((section, index) => ({ id: section.id, title: section.title, number: index + 1 })),
-    lines: workLines(quote, []),
-  })).byteLength;
+function draftPayloadBytes(quote: QuoteData): number {
+  return new TextEncoder().encode(JSON.stringify(quote)).byteLength;
 }
 
 function newLineId(quote: QuoteData): string {

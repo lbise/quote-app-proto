@@ -1,6 +1,6 @@
 # Implementation review and rehearsal
 
-The first two-axis review used `84874fb` as its base and reviewed implementation commit `fd6bcc7`. The changes after that review address the findings below. The original approved design remains layout B v0.4.
+Historical review record: the first two-axis review used `84874fb` as its base and reviewed implementation commit `fd6bcc7`. The changes after that review addressed the findings below; its 50-section/200-line wording is historical, not the current assistant limit. The original approved design remains layout B v0.4.
 
 ## Standards
 

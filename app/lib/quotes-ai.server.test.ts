@@ -90,6 +90,33 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
   }
 
 
+  it("commits successful work after one failed call and exposes the deterministic status", async () => {
+    const detail = await createDraft();
+    const model = scriptedModel([
+      toolTurn(fauxToolCall("add_quote_line", { mode: "fixed", amount: "10.00" })),
+      toolTurn(fauxToolCall("add_quote_line", { description: "Pose", mode: "fixed", amount: "10.00", evidence: [{ field: "amount", text: "10 CHF" }] })),
+      fauxAssistantMessage("Pose ajoutée."),
+    ]);
+    const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Pose pour 10 CHF.", locale: "fr" }, undefined, model.handler);
+    expect(response.status).toBe(200);
+    const next = await response.json();
+    expect(next.draft.lines).toEqual([expect.objectContaining({ description: "Pose", amount: "10.00" })]);
+    expect(next.messages.at(-1).fr).toContain("Certains appels d'outil ont échoué");
+    expect(next.canUndo).toBe(true);
+  });
+
+  it("discards successful staged work at the third failed call", async () => {
+    const detail = await createDraft();
+    const model = scriptedModel([
+      toolTurn(fauxToolCall("add_quote_line", { description: "Pose", mode: "fixed", amount: "10.00", evidence: [{ field: "amount", text: "10 CHF" }] })),
+      toolTurn(fauxToolCall("not_registered", {}), fauxToolCall("not_registered", {}), fauxToolCall("not_registered", {})),
+    ]);
+    const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Pose pour 10 CHF.", locale: "en" }, undefined, model.handler);
+    expect(response.status).toBe(502);
+    const reloaded = await request(undefined, detail.id);
+    expect(await reloaded.json()).toMatchObject({ draft: { lines: [] }, pending: false, assistantRequest: { status: "failed" } });
+  });
+
   it.each([
     ["fr", "Pose de 2 étagères", "Pose de deux étagères", "Dites-moi le prix unitaire.", "75 francs pièce", "Le prix unitaire a été ajouté."],
     ["en", "Install 2 shelves", "Pose de deux étagères", "What is the unit price?", "75 francs per shelf", "The unit price has been added."],

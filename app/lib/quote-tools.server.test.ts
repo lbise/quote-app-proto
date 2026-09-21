@@ -4,7 +4,7 @@ import { createQuoteTools } from "./quote-tools.server";
 import { emptyQuote } from "./quote";
 
 describe("createQuoteTools", () => {
-  it("exposes only the targeted tools and reads a cloned flat-work snapshot", async () => {
+  it("exposes only the targeted tools because the draft is provided in context", async () => {
     const quote = {
       ...emptyQuote("Q-1"),
       title: "Do not expose or change me",
@@ -22,7 +22,6 @@ describe("createQuoteTools", () => {
     const executor = createQuoteTools({ quote, capturedLineIds: [], artisanText: "" });
 
     expect(executor.tools.map((tool) => tool.name)).toEqual([
-      "read_work",
       "set_customer_info",
       "add_quote_line",
       "supply_missing_line_fields",
@@ -34,24 +33,6 @@ describe("createQuoteTools", () => {
       "duplicate_quote_section",
     ]);
 
-    const read = executor.tools[0]!;
-    const response = await read.execute("call-1", {});
-
-    expect(response.details).toEqual({
-      sections: [],
-      lines: [{
-        number: 1,
-        id: "manual-line",
-        sectionId: "",
-        description: "Existing manual work",
-        mode: "fixed",
-        quantity: "",
-        unit: "",
-        unitPrice: "",
-        amount: "0.00",
-        canSupplyMissingFields: false,
-      }],
-    });
     expect(executor.result()).toEqual({ quote, changed: [], capturedLineIds: [] });
   });
 
@@ -333,15 +314,15 @@ describe("createQuoteTools", () => {
         amount: "-5.00",
         evidence: [{ field: "amount", text }],
       })).rejects.toThrow("Tool input rejected.");
-      expect(executor.result()).toEqual({ quote: null, changed: [], capturedLineIds: [] });
+      expect(executor.result()).toMatchObject({ changed: [], capturedLineIds: [], quote: expect.any(Object) });
     }
   });
 
-  it("poisons preflight validation failures and refuses a derived quantity-line amount", async () => {
+  it("keeps preflight failures actionable and refuses a derived quantity-line amount", async () => {
     const preflight = createQuoteTools({ quote: emptyQuote("Q-preflight"), capturedLineIds: [], artisanText: "5 CHF" });
     const add = preflight.tools.find((tool) => tool.name === "add_quote_line")!;
     expect(() => add.prepareArguments?.({ unexpected: true })).toThrow("Tool input rejected.");
-    expect(preflight.result()).toEqual({ quote: null, changed: [], capturedLineIds: [] });
+    expect(preflight.result()).toMatchObject({ changed: [], capturedLineIds: [], quote: emptyQuote("Q-preflight") });
 
     const quote = {
       ...emptyQuote("Q-derived"),
@@ -355,10 +336,10 @@ describe("createQuoteTools", () => {
       fields: { amount: "10.00" },
       evidence: [{ field: "amount", text: "10" }],
     })).rejects.toThrow("Tool input rejected.");
-    expect(executor.result()).toEqual({ quote: null, changed: [], capturedLineIds: [] });
+    expect(executor.result()).toMatchObject({ changed: [], capturedLineIds: ["captured"], quote: expect.any(Object) });
   });
 
-  it("rejects a manual line as a follow-up target and discards the staged snapshot", async () => {
+  it("rejects a manual line as a follow-up target without poisoning later calls", async () => {
     const quote = {
       ...emptyQuote("Q-4"),
       lines: [{ id: "manual", sectionId: "", description: "Manual line", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "" }],
@@ -372,10 +353,10 @@ describe("createQuoteTools", () => {
       evidence: [{ field: "amount", text: "10" }],
     })).rejects.toThrow("Tool input rejected.");
 
-    expect(executor.result()).toEqual({ quote: null, changed: [], capturedLineIds: [] });
+    expect(executor.result()).toMatchObject({ changed: [], capturedLineIds: [], quote });
   });
 
-  it("poisons the staged result after an unknown business or draft argument", async () => {
+  it("rejects an unknown business or draft argument", async () => {
     const quote = {
       ...emptyQuote("Q-5"),
       lines: [{ id: "manual", sectionId: "", description: "Manual line", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "" }],
@@ -403,6 +384,6 @@ describe("createQuoteTools", () => {
       businessId: "other-business",
     } as never)).rejects.toThrow("Tool input rejected.");
 
-    expect(executor.result()).toEqual({ quote: null, changed: [], capturedLineIds: [] });
+    expect(executor.result()).toMatchObject({ changed: [expect.any(String)], capturedLineIds: [expect.any(String)], quote: expect.any(Object) });
   });
 });

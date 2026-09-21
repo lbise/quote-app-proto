@@ -13,7 +13,6 @@ export type QuoteRecord = {
   pending: boolean;
   canUndo: boolean;
   assistantRequest?: { requestId: string; text: string; status: 'pending' | 'complete' | 'failed' | 'stale'; baseVersion: number } | null;
-  reviewPublication?: boolean;
   /** Present only in a debug-enabled assistant action response; never persisted. */
   assistantDebug?: QuoteAssistantSuccessDebug;
 };
@@ -47,19 +46,36 @@ export function assistantDiagnosticFrom(failure: unknown): QuoteAssistantDiagnos
     ...(value.toolCall && typeof value.toolCall === "object" && typeof (value.toolCall as { name?: unknown }).name === "string"
       ? { toolCall: { name: (value.toolCall as { name: string }).name, arguments: (value.toolCall as { arguments?: unknown }).arguments } }
       : {}),
+    ...(Array.isArray(value.attempts) ? { attempts: value.attempts as QuoteAssistantDiagnostic["attempts"] } : {}),
+    ...(Number.isInteger(value.failedCalls) ? { failedCalls: value.failedCalls } : {}),
+    ...(Number.isInteger(value.failureLimit) ? { failureLimit: value.failureLimit } : {}),
+    ...(typeof value.outcome === "string" ? { outcome: value.outcome as QuoteAssistantDiagnostic["outcome"] } : {}),
+    ...(value.validation && typeof value.validation === "object" ? { validation: value.validation as QuoteAssistantDiagnostic["validation"] } : {}),
+    ...(Number.isInteger(value.stateSequence) ? { stateSequence: value.stateSequence as number } : {}),
+    ...(value.notSent === true ? { notSent: true } : {}),
+    ...(Object.hasOwn(value, "applicationContext") ? { applicationContext: value.applicationContext } : {}),
     ...(value.llmRequest && typeof value.llmRequest === "object" && Array.isArray((value.llmRequest as { messages?: unknown }).messages) && Array.isArray((value.llmRequest as { tools?: unknown }).tools)
       ? { llmRequest: value.llmRequest as QuoteAssistantLlmRequest }
       : {}),
+    ...(Array.isArray((value as { llmRequests?: unknown }).llmRequests) ? { llmRequests: (value as { llmRequests: QuoteAssistantLlmRequest[] }).llmRequests } : {}),
     ...(typeof value.requestId === "string" ? { requestId: value.requestId } : {}),
   };
 }
 
 function assistantSuccessDebugFrom(value: unknown): QuoteAssistantSuccessDebug | null {
   if (!value || typeof value !== "object") return null;
-  const debug = value as { toolCalls?: unknown; requestId?: unknown };
+  const debug = value as { toolCalls?: unknown; attempts?: unknown; failedCalls?: unknown; failureLimit?: unknown; outcome?: unknown; finalValidation?: unknown; llmRequest?: unknown; llmRequests?: unknown; requestId?: unknown };
   if (!Array.isArray(debug.toolCalls) || !debug.toolCalls.every((call) => call && typeof call === "object" && typeof (call as { name?: unknown }).name === "string")) return null;
   return {
     toolCalls: debug.toolCalls.map((call) => ({ name: (call as { name: string }).name, arguments: (call as { arguments?: unknown }).arguments })),
+    ...(Array.isArray(debug.attempts) ? { attempts: debug.attempts as QuoteAssistantSuccessDebug["attempts"] } : {}),
+    ...(Number.isInteger(debug.failedCalls) ? { failedCalls: debug.failedCalls as number } : {}),
+    ...(Number.isInteger(debug.failureLimit) ? { failureLimit: debug.failureLimit as number } : {}),
+    ...(typeof debug.outcome === "string" ? { outcome: debug.outcome as QuoteAssistantSuccessDebug["outcome"] } : {}),
+    ...(debug.finalValidation && typeof debug.finalValidation === "object" ? { finalValidation: debug.finalValidation as QuoteAssistantSuccessDebug["finalValidation"] } : {}),
+    ...(debug.llmRequest && typeof debug.llmRequest === "object" && Array.isArray((debug.llmRequest as { messages?: unknown }).messages) && Array.isArray((debug.llmRequest as { tools?: unknown }).tools)
+      ? { llmRequest: debug.llmRequest as QuoteAssistantLlmRequest } : {}),
+    ...(Array.isArray((debug as { llmRequests?: unknown }).llmRequests) ? { llmRequests: (debug as { llmRequests: QuoteAssistantLlmRequest[] }).llmRequests } : {}),
     ...(typeof debug.requestId === "string" ? { requestId: debug.requestId } : {}),
   };
 }
