@@ -4,6 +4,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { calculateQuote, type QuoteData } from "./quote";
 import type { QuoteAssistantAttemptOutcome, QuoteAssistantDiagnostic, QuoteAssistantLlmRequest, QuoteAssistantSuccessDebug, QuoteAssistantToolAttempt, QuoteAssistantToolCall } from "./quote-assistant-debug";
 import { configuredQuoteAI } from "./quote-ai-config.server";
+import { quoteDraftLimit } from "./quote-limits";
 import { createQuoteTools, type CopyFact } from "./quote-tools.server";
 
 export type QuoteAIInput = {
@@ -104,16 +105,20 @@ function historyForProvider(input: QuoteAIInput) {
   return { history: messages.reverse(), historyOmitted: omittedHistoryCount > 0, omittedHistoryCount };
 }
 
-function assistantContext(input: QuoteAIInput, history: ReturnType<typeof historyForProvider>) {
-  const calculation = calculateQuote(input.quote);
+function assistantCalculation(quote: QuoteData) {
+  const calculation = calculateQuote(quote);
   const { quote: _duplicate, ...calculationWithoutQuote } = calculation;
+  return calculationWithoutQuote;
+}
+
+function assistantContext(input: QuoteAIInput, history: ReturnType<typeof historyForProvider>) {
   return {
     contractVersion: "draft-tools-v1",
     locale: input.locale,
     currentWorkingDraft: input.quote,
     referenceLocked: input.referenceLocked ?? false,
     capturedLineIds: [...(input.capturedLineIds ?? [])],
-    calculation: calculationWithoutQuote,
+    calculation: assistantCalculation(input.quote),
     history: history.history,
     historyOmitted: history.historyOmitted,
     omittedHistoryCount: history.omittedHistoryCount,
@@ -143,7 +148,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   }
   const context = assistantContext(input, history);
   try {
-    if (Buffer.byteLength(JSON.stringify(input.quote)) > 220_000) throw new Error("draft_context_too_large");
+    if (quoteDraftLimit(input.quote)) throw new Error("draft_context_too_large");
   } catch (error) {
     const code = error instanceof Error && error.message === "draft_context_too_large" ? "draft_context_too_large" : "invalid_draft_context";
     throw new QuoteAIError({ phase: "validation", code, outcome: code === "draft_context_too_large" ? "draft_context_too_large" : undefined, notSent: true, applicationContext: context }, "The complete Working Draft cannot be sent to the assistant.");
@@ -152,11 +157,10 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     quote: input.quote,
     capturedLineIds: input.capturedLineIds ?? [],
     artisanText: input.text,
-    artisanHistory: history.history.filter((message) => message.role === "artisan").map((message) => message.text),
+    artisanHistorySources: history.history.filter((message) => message.role === "artisan").map((message) => ({ source: message.id, text: message.text })),
+    referenceLocked: input.referenceLocked ?? false,
     validateStaged: (candidate) => {
-      const calculation = calculateQuote(candidate);
-      const { quote: _duplicate, ...calculationWithoutQuote } = calculation;
-      return Buffer.byteLength(JSON.stringify({ ...context, currentWorkingDraft: candidate, calculation: calculationWithoutQuote })) > 600_000
+      return Buffer.byteLength(JSON.stringify({ ...context, currentWorkingDraft: candidate, calculation: assistantCalculation(candidate) })) > 600_000
         ? "context_limit_exceeded" : undefined;
     },
   });

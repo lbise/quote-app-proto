@@ -1,6 +1,5 @@
-// Approved model-facing review artifact. This file is not registered by app/.
+// Approved model-facing definition used by the commercial assistant executor.
 // Derived inputs are model-calculated; no calculation-specific arguments.
-// The application executor is not implemented by this review artifact.
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 

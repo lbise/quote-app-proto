@@ -9,6 +9,7 @@ import { type Database, getDatabase } from "./db.server";
 import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
 import { QuoteAIError, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
 import type { QuoteAssistantDiagnostic, QuoteAssistantSuccessDebug } from "./quote-assistant-debug";
+import { quoteDraftLimit } from "./quote-limits";
 import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -22,7 +23,6 @@ type QuoteDetail = Awaited<ReturnType<typeof readDetail>>;
 const MAX_HTTP_BYTES = 256_000;
 const MAX_REQUEST_ID = 128;
 const MAX_TEXT = 8_000;
-const MAX_QUOTE_BYTES = 220_000;
 const AI_LEASE_MS = 60_000; // Greater than the provider's bounded 45-second timeout.
 const defaultFields = ["businessName", "businessAddress", "businessContact", "vatRegistered", "vatId", "terms"] as const;
 
@@ -100,7 +100,8 @@ async function readJson(request: Request): Promise<Body> {
 }
 
 function assertQuoteBoundary(draft: QuoteData) {
-  if (new TextEncoder().encode(JSON.stringify(draft)).byteLength > MAX_QUOTE_BYTES) throw new RequestFailure(413, "quote_too_large");
+  const limit = quoteDraftLimit(draft);
+  if (limit) throw new RequestFailure(413, "quote_limits_exceeded", { limit });
   const strings = [draft.reference, draft.title, draft.customerName, draft.customerAddress, draft.customerContact, draft.businessName, draft.businessAddress, draft.businessContact, draft.vatId, draft.issueDate, draft.validUntil, draft.siteAddress, draft.terms, draft.discount];
   if (strings.some((value) => value.length > 20_000) || draft.reference.length > 200) throw new RequestFailure(422, "invalid_draft");
   const safeId = (value: string) => /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) && value.length <= 128;
@@ -153,13 +154,21 @@ function capturedResultIds(value: unknown, before: QuoteData, after: QuoteData, 
   return [...value];
 }
 
+const assistantDetailFields = new Set([
+  "reference", "title", "issueDate", "validUntil", "siteAddress",
+  "customerName", "customerAddress", "customerContact",
+  "businessName", "businessAddress", "businessContact", "terms",
+  "vatRegistered", "vatId", "discountMode", "discount",
+]);
+
 function changedFieldsFrom(value: unknown): string[] | undefined {
   const fields = valueRecord(value)?.changedFields;
   if (fields === undefined) return undefined;
-  if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string" || !/^(customer|title|discount|section:[A-Za-z0-9][A-Za-z0-9_-]{0,127})$/.test(field))) {
+  if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string"
+    || (!assistantDetailFields.has(field) && !/^section:[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(field)))) {
     throw new RequestFailure(502, "assistant_invalid_response");
   }
-  return fields;
+  return [...new Set(fields)];
 }
 
 function messageChanges(value: unknown): { changed?: string[]; changedFields?: string[] } {
@@ -518,6 +527,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     checkVersion(record, body);
     if (record.pending) throw new RequestFailure(409, "assistant_pending");
     const draft = requireDraft(record);
+    assertQuoteBoundary(draft);
     const revisions = await transaction.select({ id: quoteRevision.id }).from(quoteRevision).where(eq(quoteRevision.quoteId, id)).limit(1);
     const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
     if (existing) await transaction.update(quoteRequest).set({ status: "pending", baseVersion: record.version, updatedAt: now }).where(eq(quoteRequest.id, existing.id));
@@ -556,7 +566,8 @@ async function assistant(database: Database, businessId: string, body: Body, mod
 
   let detail: QuoteDetail | undefined;
   let stale = false;
-  await database.transaction(async (transaction) => {
+  try {
+    await database.transaction(async (transaction) => {
     await lockRequest(transaction, businessId, requestId);
     await lockQuote(transaction, id);
     const request = await findRequest(transaction, businessId, requestId);
@@ -589,8 +600,12 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     const message = assistantMessage(result.message, result.changed, changedFields);
     await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: message.role, fr: message.fr, en: message.en, changed: storedChanges(result.changed, changedFields) });
     await transaction.update(quoteRequest).set({ status: "complete", updatedAt: now }).where(eq(quoteRequest.id, request.id));
-    detail = await readDetail(transaction, businessId, id);
-  });
+      detail = await readDetail(transaction, businessId, id);
+    });
+  } catch (error) {
+    await failAssistant(database, businessId, id, requestId, now);
+    throw error;
+  }
   if (stale) throw new RequestFailure(409, "assistant_stale");
   if (!detail) throw new RequestFailure(500, "request_failed");
   return {

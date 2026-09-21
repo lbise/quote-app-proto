@@ -30,6 +30,55 @@ test("the assistant data warning is available from the chat header without block
   await expect(page.getByRole("button", { name: "Edit line 1" })).toBeEnabled();
 });
 
+test("failed-call diagnostics are visible after an assistant response", async ({ artisan }) => {
+  const { page } = artisan;
+  const seeded = await createCompleteQuote(artisan);
+
+  await page.goto(`/quotes?id=${seeded.id}`);
+  await page.route("**/api/quotes**", async (route) => {
+    const payload = route.request().postDataJSON() as { action?: string } | null;
+    if (payload?.action !== "assistant") return route.continue();
+    await route.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "assistant_unavailable",
+        details: { diagnostic: { phase: "tool", code: "tool_rejected", failedCalls: 1, failureLimit: 3, outcome: "unchanged_with_failed_calls", attempts: [] } },
+      }),
+    });
+  });
+
+  await page.getByLabel("Your message").fill("Please revise the title.");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByRole("alert")).toContainText("The assistant did not respond");
+  await page.getByText("Developer details", { exact: true }).click();
+  await expect(page.getByText("Failed calls: 1/3", { exact: true })).toBeVisible();
+});
+
+test("an assistant publication request does not open the Publication dialog", async ({ artisan }) => {
+  const { page } = artisan;
+  const seeded = await createCompleteQuote(artisan);
+
+  await page.goto(`/quotes?id=${seeded.id}`);
+  await page.route("**/api/quotes**", async (route) => {
+    const payload = route.request().postDataJSON() as { action?: string } | null;
+    if (payload?.action !== "assistant") return route.continue();
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...seeded,
+        messages: [{ role: "assistant", fr: "Publication contrôlée manuellement.", en: "Publication stays manual.", changed: [] }],
+        assistantRequest: { requestId: "browser-publication-request", text: "Publish this Quote.", status: "complete", baseVersion: seeded.version },
+      }),
+    });
+  });
+
+  await page.getByLabel("Your message").fill("Publish this Quote.");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("Publication stays manual.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("Enter sends and Ctrl+Enter inserts a new line", async ({ artisan }) => {
   const { page } = artisan;
   const seeded = await createCompleteQuote(artisan);

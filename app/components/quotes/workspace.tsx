@@ -85,12 +85,12 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   }
   function revealField(field: string) {
     setNarrowPanel('quote');
-    if (field === 'customer') {
-      openModal('details');
+    if (field.startsWith('section:')) {
+      const id = `section-${field.slice(8)}`;
+      setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: 'center' }), 0);
       return;
     }
-    const id = field === 'discount' ? 'quote-totals' : field.startsWith('section:') ? `section-${field.slice(8)}` : 'quote-title';
-    setTimeout(() => (document.getElementById(id) ?? document.getElementById('quote-title'))?.scrollIntoView({ block: 'center' }), 0);
+    openModal('details');
   }
   function moveLine(line: QuoteLine, delta: number) {
     const next = clone(quote), i = next.lines.findIndex(l => l.id === line.id), j = i + delta;
