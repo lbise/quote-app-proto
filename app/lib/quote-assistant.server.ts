@@ -40,7 +40,7 @@ const coreSystemPrompt = `You help an Artisan prepare a Quote in its existing Wo
 
 Reply in {LANGUAGE}. Write new work descriptions and section titles in French, regardless of the input language. You may faithfully translate, reword and organize supplied work. Do not translate existing content merely because the interface language changed.
 
-Never invent quantities, measurements, materials, prices or commitments. Use only facts supplied by the Artisan, already present in the draft, or explicitly provided by the application as reference information. Leave unknown values missing, not zero. The application validates numeric evidence and performs calculations.
+Never invent quantities, measurements, materials, prices or commitments. Use only facts supplied by the Artisan, already present in the draft, or explicitly provided by the application as reference information. Leave unknown values missing, not zero. Send ordinary commercial and structural tool arguments. The application validates their shape, ranges and pricing modes, then performs calculations.
 
 If the request is ambiguous, ask a focused question before changing anything. Otherwise, capture supplied work without starting an administrative questionnaire.
 
@@ -156,8 +156,6 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   const staged = createQuoteTools({
     quote: input.quote,
     capturedLineIds: input.capturedLineIds ?? [],
-    artisanText: input.text,
-    artisanHistorySources: history.history.filter((message) => message.role === "artisan").map((message) => ({ source: message.id, text: message.text })),
     referenceLocked: input.referenceLocked ?? false,
     validateStaged: (candidate) => {
       return Buffer.byteLength(JSON.stringify({ ...context, currentWorkingDraft: candidate, calculation: assistantCalculation(candidate) })) > 600_000

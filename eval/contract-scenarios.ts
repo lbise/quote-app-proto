@@ -110,8 +110,8 @@ const sectionStart = header("CT-SECTION-001");
 const expectedSectionId = "expected-galerie-nord";
 const sectionLine = line("expected-section-line", expectedSectionId, "Protection temporaire du sol", "fixed", "", "", "", "92.00");
 
-const splitStart = header("CT-PREUVE-001");
-const splitLine = line("expected-split", "", "Pose de ruban d’étanchéité", "quantity", "12.75", "m", "6.80", "");
+const factsStart = header("CT-FAITS-001");
+const factsLine = line("expected-facts", "", "Pose de ruban d’étanchéité", "quantity", "12.75", "m", "6.80", "");
 
 const mixedStart = header("CT-LOTS-001");
 const mixedSections = [{ id: "expected-atelier", title: "Atelier" }, { id: "expected-reserve", title: "Réserve" }];
@@ -170,13 +170,13 @@ export const contractScenarios: Scenario[] = [
     ["Vérifier que le titre de rubrique et la description française restent fidèles aux faits fictifs fournis."],
   ),
   contractScenario(
-    "contract-split-evidence",
-    "Preuves réparties dans deux paragraphes",
-    splitStart,
-    quote(splitStart.reference, [], [splitLine]),
+    "contract-multi-paragraph-facts",
+    "Faits fictifs répartis dans deux paragraphes",
+    factsStart,
+    quote(factsStart.reference, [], [factsLine]),
     "Pour l’orangerie fictive, note une ligne de pose de ruban d’étanchéité. La longueur mesurée est de 12,75 m.\n\nLe tarif convenu pour cette pose est de 6,80 CHF par mètre. Ne modifie rien d’autre.",
-    commercialLineAssertions(splitLine, -1, ["m", "mètre", "mètres"]),
-    ["Vérifier que la prose française relie fidèlement la pose, la longueur et le tarif pourtant fournis dans des paragraphes distincts."],
+    commercialLineAssertions(factsLine, -1, ["m", "mètre", "mètres"]),
+    ["Vérifier que la prose française relie fidèlement la pose, la longueur et le tarif fournis dans des paragraphes distincts."],
   ),
   contractScenario(
     "contract-mixed-batches",

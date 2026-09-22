@@ -10,7 +10,7 @@ describe("evaluation scenario library", () => {
     expect(libraryScenarios.length).toBeGreaterThanOrEqual(24);
     expect(libraryScenarios.length).toBeLessThanOrEqual(28);
     expect(contracts.map((scenario) => scenario.id)).toEqual([
-      "contract-fixed-line", "contract-quantity-line", "contract-section-assignment", "contract-split-evidence", "contract-mixed-batches",
+      "contract-fixed-line", "contract-quantity-line", "contract-section-assignment", "contract-multi-paragraph-facts", "contract-mixed-batches",
     ]);
     expect(scenarios).toHaveLength(31);
     expect(new Set(scenarios.map((scenario) => scenario.id)).size).toBe(scenarios.length);

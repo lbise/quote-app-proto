@@ -12,8 +12,6 @@ import type { Scenario } from "./types";
 const databaseUrl = process.env.EVAL_DATABASE_URL;
 const publishedContractScenarios = scenarios.filter((scenario) => scenario.suite === "contract");
 
-type ToolFields = string[];
-
 function controlled(responses: FauxResponseStep[]): QuoteAIModelBoundary {
   const provider = fauxProvider();
   provider.setResponses(responses);
@@ -22,22 +20,8 @@ function controlled(responses: FauxResponseStep[]): QuoteAIModelBoundary {
   return { model: provider.getModel(), timeoutMs: 1_000, streamFn: (model, context, options) => models.streamSimple(model, context, options) };
 }
 
-function evidence(fields: ToolFields, text: string) {
-  return [{ fields, source: "current", text }];
-}
-
 function lineCall(scenario: Scenario, overrides: Partial<Pick<QuoteLine, "quantity" | "unit" | "unitPrice" | "amount">> = {}) {
-  const text = (scenario.steps[0] as { text: string }).text;
   const expected = scenario.expectedQuote!.lines[0]!;
-  const fields = ["/lines/0/description", "/lines/0/mode"];
-  if (expected.mode === "fixed") fields.push("/lines/0/amount");
-  else fields.push("/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice");
-  const citations = scenario.id === "contract-split-evidence"
-    ? [
-      { fields: ["/lines/0/description", "/lines/0/quantity", "/lines/0/unit"], source: "current", text: "Pour l’orangerie fictive, note une ligne de pose de ruban d’étanchéité. La longueur mesurée est de 12,75 m." },
-      { fields: ["/lines/0/mode", "/lines/0/unitPrice"], source: "current", text: "Le tarif convenu pour cette pose est de 6,80 CHF par mètre." },
-    ]
-    : evidence(fields, text);
   return fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
     lines: [{
       description: expected.description,
@@ -48,7 +32,6 @@ function lineCall(scenario: Scenario, overrides: Partial<Pick<QuoteLine, "quanti
       amount: expected.amount,
       ...overrides,
     }],
-    evidence: citations,
   })], { stopReason: "toolUse" });
 }
 
@@ -65,45 +48,26 @@ function sectionIdsFromResult(context: Context): string[] {
   return ids;
 }
 
-function mixedBatch(scenario: Scenario, context: Context, start: number, end: number, spliceEvidence = false) {
-  const step = scenario.steps[0];
-  if (step.kind !== "artisan") throw new Error("Expected Artisan notes");
-  const paragraphs = step.text.split("\n\n");
+function mixedBatch(scenario: Scenario, context: Context, start: number, end: number) {
   const ids = sectionIdsFromResult(context);
   const lines = scenario.expectedQuote!.lines.slice(start, end).map(({ id: _id, sectionId: _section, ...item }, index) => ({ ...item, sectionId: ids[start + index < 4 ? 0 : 1] }));
-  const citations = lines.flatMap((item, index) => {
-    const prefix = `/lines/${index}`;
-    const passage = paragraphs[start + index < 4 ? 2 : 4];
-    const fields = [`${prefix}/description`, `${prefix}/mode`, ...(item.mode === "fixed" ? [`${prefix}/amount`] : [`${prefix}/quantity`, `${prefix}/unit`, `${prefix}/unitPrice`])];
-    if (item.mode === "fixed") return evidence(fields, passage);
-    if (spliceEvidence) return evidence(fields, `${paragraphs[1]}... ${passage}`);
-    return [
-      ...evidence([`${prefix}/description`, `${prefix}/mode`, `${prefix}/unit`, `${prefix}/unitPrice`], paragraphs[1]),
-      ...evidence([`${prefix}/quantity`], passage),
-    ];
-  });
-  if (start === 0) citations.push(...evidence(["/lines/0/description"], paragraphs[3]));
-  return fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: citations })], { stopReason: "toolUse" });
+  return fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines })], { stopReason: "toolUse" });
 }
 
 function acceptedResponses(scenario: Scenario): FauxResponseStep[] {
   if (scenario.id === "contract-mixed-batches") {
-    const step = scenario.steps[0];
-    if (step.kind !== "artisan") throw new Error("Expected Artisan notes");
     return [
-      fauxAssistantMessage([fauxToolCall("edit_quote_sections", { sections: [{ title: "Atelier" }, { title: "Réserve" }], evidence: evidence(["/sections/0/title", "/sections/1/title"], step.text.split("\n\n")[0]) })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("edit_quote_sections", { sections: [{ title: "Atelier" }, { title: "Réserve" }] })], { stopReason: "toolUse" }),
       context => mixedBatch(scenario, context, 0, 5),
       context => mixedBatch(scenario, context, 5, 8),
       fauxAssistantMessage("Les huit postes ont été ajoutés dans les deux rubriques."),
     ];
   }
   if (scenario.id !== "contract-section-assignment") return [lineCall(scenario), fauxAssistantMessage("Modification enregistrée.")];
-  const text = (scenario.steps[0] as { text: string }).text;
   const expected = scenario.expectedQuote!.lines[0]!;
   return [
     fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
       sections: [{ title: "Galerie nord" }],
-      evidence: evidence(["/sections/0/title"], text),
     })], { stopReason: "toolUse" }),
     (context) => fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
       lines: [{
@@ -115,15 +79,15 @@ function acceptedResponses(scenario: Scenario): FauxResponseStep[] {
         unitPrice: expected.unitPrice,
         amount: expected.amount,
       }],
-      evidence: evidence(["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], text),
     })], { stopReason: "toolUse" }),
     fauxAssistantMessage("Rubrique et ligne enregistrées."),
   ];
 }
 
 describe("synthetic contract scenarios", () => {
-  it("contains only fictional French inputs and keeps prose review outside automated contract checks", () => {
+  it("contains four small fictional French checks and one combined check", () => {
     expect(contractScenarios).toHaveLength(5);
+    expect(contractScenarios.filter((scenario) => scenario.id !== "contract-mixed-batches")).toHaveLength(4);
     expect(publishedContractScenarios.map((scenario) => scenario.id)).toEqual(contractScenarios.map((scenario) => scenario.id));
     for (const scenario of contractScenarios) {
       expect(scenario.suite).toBe("contract");
@@ -150,12 +114,12 @@ describe.runIf(Boolean(databaseUrl))("contract checks through real HTTP, tools a
     expect(run.turns[0].assertions.filter(item => !item.passed)).toEqual([]);
   });
 
-  it("rejects spliced evidence in a later batch and rolls back earlier accepted work at the third failure", async () => {
+  it("rolls back earlier accepted work at the third rejected later call", async () => {
     const scenario = publishedContractScenarios.find(item => item.id === "contract-mixed-batches")!;
     const accepted = acceptedResponses(scenario);
+    const rejected = (): FauxResponseStep => fauxAssistantMessage([fauxToolCall("unknown_tool", {})], { stopReason: "toolUse" });
     const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled([
-      accepted[0], accepted[1],
-      ...Array.from({ length: 3 }, (): FauxResponseStep => context => mixedBatch(scenario, context, 5, 8, true)),
+      accepted[0], accepted[1], rejected(), rejected(), rejected(),
     ]) });
     expect(run.checks).toEqual({ contract: "failed", commercial: "failed" });
     expect(run.turns[0]).toMatchObject({ outcome: "failed_call_limit_reached", failedCalls: 3 });
@@ -166,10 +130,8 @@ describe.runIf(Boolean(databaseUrl))("contract checks through real HTTP, tools a
   it("rejects unrelated section names even when every amount and assignment is correct", async () => {
     const scenario = publishedContractScenarios.find(item => item.id === "contract-mixed-batches")!;
     const accepted = acceptedResponses(scenario);
-    const step = scenario.steps[0];
-    if (step.kind !== "artisan") throw new Error("Expected Artisan notes");
     accepted[0] = fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
-      sections: [{ title: "Grenier" }, { title: "Cave" }], evidence: evidence(["/sections/0/title", "/sections/1/title"], step.text),
+      sections: [{ title: "Grenier" }, { title: "Cave" }],
     })], { stopReason: "toolUse" });
     const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled(accepted) });
     expect(run.checks).toEqual({ contract: "passed", commercial: "failed" });
@@ -200,7 +162,7 @@ describe.runIf(Boolean(databaseUrl))("contract checks through real HTTP, tools a
   it("accepts French unit aliases but rejects a different physical unit", async () => {
     const aliases = [
       ["contract-quantity-line", "pce"],
-      ["contract-split-evidence", "mètre"],
+      ["contract-multi-paragraph-facts", "mètre"],
     ] as const;
     for (const [id, unit] of aliases) {
       const scenario = publishedContractScenarios.find((item) => item.id === id)!;
@@ -216,9 +178,9 @@ describe.runIf(Boolean(databaseUrl))("contract checks through real HTTP, tools a
     expect(wrongPhysicalUnit.automated).toBe("failed");
     expect(wrongPhysicalUnit.checks).toEqual({ contract: "passed", commercial: "failed" });
 
-    const split = publishedContractScenarios.find((scenario) => scenario.id === "contract-split-evidence")!;
-    const undeclaredSymbol = await runScenario(split, { databaseUrl: databaseUrl!, modelBoundary: controlled([
-      lineCall(split, { unit: "ml" }), fauxAssistantMessage("Modification enregistrée."),
+    const facts = publishedContractScenarios.find((scenario) => scenario.id === "contract-multi-paragraph-facts")!;
+    const undeclaredSymbol = await runScenario(facts, { databaseUrl: databaseUrl!, modelBoundary: controlled([
+      lineCall(facts, { unit: "ml" }), fauxAssistantMessage("Modification enregistrée."),
     ]) });
     expect(undeclaredSymbol.checks).toEqual({ contract: "passed", commercial: "failed" });
   });
@@ -245,11 +207,12 @@ describe.runIf(Boolean(databaseUrl))("contract checks through real HTTP, tools a
     expect(wrongPrice.automated).toBe("failed");
   });
 
-  it("separates a repaired tool-contract failure from correct final commercial state", async () => {
+  it("separates a repaired invalid call from correct final commercial state", async () => {
     const fixed = publishedContractScenarios.find((scenario) => scenario.id === "contract-fixed-line")!;
     const repaired = await runScenario(fixed, { databaseUrl: databaseUrl!, modelBoundary: controlled([
       fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
         lines: [{ description: "Réglage final des volets de la verrière", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "486.50" }],
+        unexpected: true,
       })], { stopReason: "toolUse" }),
       lineCall(fixed),
       fauxAssistantMessage("Modification enregistrée."),

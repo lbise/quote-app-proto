@@ -7,7 +7,6 @@ import { Settings } from "typebox/system";
 import {
   editQuoteLinesDescription,
   editQuoteLinesParameters,
-  evidenceTextDescription,
 } from "../../docs/assistant-contract/edit-quote-lines";
 import { calculateQuote, type QuoteData, type QuoteLine } from "./quote";
 import { MAX_QUOTE_LINES, MAX_QUOTE_SECTIONS, quoteDraftLimit } from "./quote-limits";
@@ -35,58 +34,24 @@ export type QuoteToolsResult = {
 
 export type QuoteToolsDiagnostic = { phase: "tool"; code: string; tool?: string };
 
-type EvidenceRepair = { invalidTextField: string; source: string; excerpts: readonly string[]; escapedWhitespace: boolean };
-
 class ToolValidationError extends Error {
-  constructor(
-    readonly code: string,
-    readonly missingEvidenceFields: readonly string[] = [],
-    readonly invalidEvidenceTextFields: readonly string[] = [],
-    readonly evidenceRepairs: readonly EvidenceRepair[] = [],
-  ) { super(code); }
+  constructor(readonly code: string) { super(code); }
 }
 
 export type CreateQuoteToolsInput = {
   quote: QuoteData;
   capturedLineIds: readonly string[];
-  artisanText: string;
-  /** Trusted, bounded Artisan-only messages retained by the server. */
-  artisanHistory?: readonly string[];
-  /** The application-visible IDs for retained Artisan messages. */
-  artisanHistorySources?: readonly { source: string; text: string }[];
   /** A published Quote's reference cannot be changed. */
   referenceLocked?: boolean;
   /** Optional runner-owned preflight for the next application context. */
   validateStaged?: (quote: QuoteData) => string | undefined;
 };
 
-const MAX_ARTISAN_TEXT = 8_000;
-const MAX_ARTISAN_HISTORY_MESSAGES = 24;
-const MAX_ARTISAN_HISTORY_CHARS = 24_000;
 const MAX_DETAIL_TEXT = 20_000;
 const MAX_LINE_DESCRIPTION = 20_000;
 const MAX_SECTION_TITLE = 4_000;
 const MAX_UNIT = 100;
 const MAX_DECIMAL = 20;
-const MAX_EVIDENCE = 200;
-const MAX_EVIDENCE_FIELDS = 200;
-const MAX_EVIDENCE_TEXT = 2_000;
-const MAX_EVIDENCE_SOURCE = 256;
-const MAX_EVIDENCE_FIELD = 160;
-const MAX_EVIDENCE_REPAIR_EXCERPT = 240;
-const MAX_EVIDENCE_REPAIR_PARTS = 3;
-const MAX_EVIDENCE_REPAIRS = 2;
-const ESCAPED_WHITESPACE = /(?:\\r\\n|\\[nrt])+/u;
-
-const evidenceCitationParameters = Type.Object({
-  fields: Type.Array(Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_FIELD }), {
-    minItems: 1, maxItems: MAX_EVIDENCE_FIELDS, uniqueItems: true,
-    description: "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title.",
-  }),
-  source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_SOURCE, description: 'Use "current" for currentMessage.text, not "currentMessage" or "currentMessage.text". Use a supplied history_N ID for an earlier Artisan message. quote.FIELD refers only to that field in the supplied currentWorkingDraft; quote.title contains the existing Quote title, not the Artisan message. line:ID.FIELD and section:ID.FIELD refer to existing supplied work by stable ID. Never invent a source ID or cite an assistant message.' }),
-  text: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT, description: evidenceTextDescription }),
-}, { additionalProperties: false });
-
 const editQuoteDetailsParameters = Type.Object({
   fields: Type.Object({
     reference: Type.Optional(Type.String({ maxLength: 200 })),
@@ -106,7 +71,6 @@ const editQuoteDetailsParameters = Type.Object({
     discountMode: Type.Optional(StringEnum(["none", "percent", "fixed"])),
     discount: Type.Optional(Type.String({ maxLength: MAX_DECIMAL, pattern: "^$|^[0-9]+([.,][0-9]+)?$", description: "Decimal without units, or the empty string to deliberately clear the value. Missing is not zero." })),
   }, { additionalProperties: false, minProperties: 1 }),
-  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE, description: "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values." })),
 }, { additionalProperties: false });
 
 const editQuoteSectionsParameters = Type.Object({
@@ -114,7 +78,6 @@ const editQuoteSectionsParameters = Type.Object({
     id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" })),
     title: Type.String({ maxLength: MAX_SECTION_TITLE }),
   }, { additionalProperties: false }), { minItems: 1, maxItems: 50 }),
-  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE, description: 'Required for every new or changed nonempty title. Cover /sections/0/title, /sections/1/title, etc. for all changed titles, not just the first. These indexes refer to the sections array in this call. One supporting message excerpt can cover multiple titles in one citation with source "current". Omit only for unchanged or cleared titles.' })),
 }, { additionalProperties: false });
 const copyQuoteWorkParameters = Type.Object({
   source: Type.Union([
@@ -128,7 +91,6 @@ const copyQuoteWorkParameters = Type.Object({
     }, { additionalProperties: false }),
   ]),
   measurementPolicy: StringEnum(["retain", "unknown"]),
-  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE, description: "Cite the supplied section title with /source/title when copying a section. Line copies only need evidence when they introduce a new nonempty commercial fact; omit for unchanged values or deliberate clearing." })),
 }, { additionalProperties: false });
 const moveQuoteWorkParameters = Type.Object({
   move: Type.Union([
@@ -150,14 +112,6 @@ const deleteQuoteLinesParameters = Type.Object({
 const detailTextFields = ["reference", "title", "issueDate", "validUntil", "siteAddress", "customerName", "customerAddress", "customerContact", "businessName", "businessAddress", "businessContact", "terms", "vatId", "discount"] as const;
 const detailFields = [...detailTextFields, "vatRegistered", "discountMode"] as const;
 type DetailField = (typeof detailFields)[number];
-type EvidenceCitation = { fields: string[]; source: string; text: string };
-type EvidenceContext = {
-  artisanText: string;
-  artisanHistory: readonly { source: string; text: string }[];
-  originalQuote: QuoteData;
-  originalLines: ReadonlyMap<string, QuoteLine>;
-  originalSections: ReadonlyMap<string, { id: string; title: string }>;
-};
 type Mutation = { changed?: string[]; changedFields?: string[] };
 type EditableLine = Omit<QuoteLine, "id" | "sectionId"> & { id?: string; sectionId?: string };
 
@@ -168,26 +122,18 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
 } {
   assertInitialInput(input);
   const staged = cloneQuote(input.quote);
-  const originalQuote = cloneQuote(input.quote);
-  const evidenceContext: EvidenceContext = {
-    artisanText: input.artisanText,
-    artisanHistory: input.artisanHistorySources ?? (input.artisanHistory ?? []).map((text, index) => ({ source: `history_${index + 1}`, text })),
-    originalQuote,
-    originalLines: new Map(originalQuote.lines.map((line) => [line.id, { ...line }])),
-    originalSections: new Map(originalQuote.sections.map((section) => [section.id, { ...section }])),
-  };
   const capturedLineIds = [...new Set(input.capturedLineIds.filter((id) => staged.lines.some((line) => line.id === id)))];
   const changed = new Set<string>();
   const changedFields = new Set<string>();
   const copyFacts: CopyFact[] = [];
   const copyMappings: { sourceId: string; newId: string }[] = [];
   const deletedOriginalLineIds = new Set<string>();
-  const originalLineIds = new Set(originalQuote.lines.map((line) => line.id));
+  const originalLineIds = new Set(input.quote.lines.map((line) => line.id));
   let lastErrorCode: string | undefined;
 
-  const reject = (code = "invalid_tool_input", details?: ToolValidationError, schemaHints = ""): never => {
+  const reject = (code = "invalid_tool_input", schemaHints = ""): never => {
     lastErrorCode = code;
-    throw new Error(toolErrorMessage(code, details) + schemaHints);
+    throw new Error(toolErrorMessage(code) + schemaHints);
   };
 
   const mutate = async (signal: AbortSignal | undefined, operation: () => Mutation) => {
@@ -238,14 +184,14 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
       deletedOriginalBefore.forEach((id) => deletedOriginalLineIds.add(id));
       capturedLineIds.splice(0, capturedLineIds.length, ...capturedBefore);
       lastErrorCode = error instanceof ToolValidationError ? error.code : lastErrorCode ?? "tool_execution_failed";
-      throw new Error(toolErrorMessage(lastErrorCode, error instanceof ToolValidationError ? error : undefined));
+      throw new Error(toolErrorMessage(lastErrorCode));
     }
   };
 
   const prepare = (parameters: TSchema, validate: (args: unknown) => void) => (args: unknown) => {
     try { validate(args); return args; } catch (error) {
       lastErrorCode = error instanceof ToolValidationError ? error.code : "invalid_tool_arguments";
-      return reject(lastErrorCode, error instanceof ToolValidationError ? error : undefined, schemaRepairHints(parameters, args));
+      return reject(lastErrorCode, schemaRepairHints(parameters, args));
     }
   };
 
@@ -255,9 +201,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     description: "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.",
     parameters: editQuoteDetailsParameters,
     executionMode: "sequential",
-    prepareArguments: prepare(editQuoteDetailsParameters, (args) => { editQuoteDetailsInput(args, evidenceContext, staged, input.referenceLocked ?? false); }),
+    prepareArguments: prepare(editQuoteDetailsParameters, (args) => { editQuoteDetailsInput(args, staged, input.referenceLocked ?? false); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const fields = editQuoteDetailsInput(params, evidenceContext, staged, input.referenceLocked ?? false);
+      const fields = editQuoteDetailsInput(params, staged, input.referenceLocked ?? false);
       const changedNow: string[] = [];
       for (const field of detailFields) {
         if (!Object.hasOwn(fields, field)) continue;
@@ -277,9 +223,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     description: editQuoteLinesDescription,
     parameters: editQuoteLinesParameters,
     executionMode: "sequential",
-    prepareArguments: prepare(editQuoteLinesParameters, (args) => { editQuoteLinesInput(args, evidenceContext, staged); }),
+    prepareArguments: prepare(editQuoteLinesParameters, (args) => { editQuoteLinesInput(args, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const lines = editQuoteLinesInput(params, evidenceContext, staged);
+      const lines = editQuoteLinesInput(params, staged);
       if (staged.lines.length + lines.filter((line) => !line.id).length > MAX_QUOTE_LINES) reject();
       const changedNow: string[] = [];
       for (const submitted of lines) {
@@ -304,11 +250,11 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
 
   const editQuoteSections: AgentTool = {
     name: "edit_quote_sections", label: "Edit Quote Sections",
-    description: 'Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. An empty title leaves an incomplete section and never deletes it. Cite the supplied work or room description for every new or changed nonempty title; faithful French rewording is allowed. For the latest Artisan message, use source "current", which identifies currentMessage.text. "currentMessage" is not a valid source ID. One citation can cover every title supported by the same excerpt, but its fields must list each affected /sections/INDEX/title. Example only: if currentMessage.text contains "Prévois une rubrique Cuisine et une rubrique Couloir.", a valid call is {"sections":[{"title":"Cuisine"},{"title":"Couloir"}],"evidence":[{"fields":["/sections/0/title","/sections/1/title"],"source":"current","text":"Prévois une rubrique Cuisine et une rubrique Couloir."}]}. Use the actual supplied rooms and excerpt, not these example values. After a citation rejection, correct the source, excerpt or missing fields in the complete call; do not replace supporting work notes with unrelated Quote metadata. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.',
+    description: "Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. An empty title leaves an incomplete section and never deletes it. Write new titles in French. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.",
     parameters: editQuoteSectionsParameters, executionMode: "sequential",
-    prepareArguments: prepare(editQuoteSectionsParameters, (args) => { editQuoteSectionsInput(args, evidenceContext, staged); }),
+    prepareArguments: prepare(editQuoteSectionsParameters, (args) => { editQuoteSectionsInput(args, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const sections = editQuoteSectionsInput(params, evidenceContext, staged);
+      const sections = editQuoteSectionsInput(params, staged);
       if (staged.sections.length + sections.filter((section) => !section.id).length > MAX_QUOTE_SECTIONS) reject();
       const changedNow: string[] = [];
       for (const submitted of sections) {
@@ -329,9 +275,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     name: "copy_quote_work", label: "Copy Quote work",
     description: "Copy up to 50 explicitly identified Quote Lines, or one complete Quote Section with a supplied title. Copies receive fresh IDs and retain values unless measurementPolicy is unknown.",
     parameters: copyQuoteWorkParameters, executionMode: "sequential",
-    prepareArguments: prepare(copyQuoteWorkParameters, (args) => { copyQuoteWorkInput(args, evidenceContext, staged); }),
+    prepareArguments: prepare(copyQuoteWorkParameters, (args) => { copyQuoteWorkInput(args, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
-      const copyInput = copyQuoteWorkInput(params, evidenceContext, staged);
+      const copyInput = copyQuoteWorkInput(params, staged);
       const unknownMeasurements = copyInput.measurementPolicy === "unknown";
       if (copyInput.source.kind === "lines") {
         if (staged.lines.length + copyInput.source.lineIds.length > MAX_QUOTE_LINES) reject();
@@ -434,8 +380,8 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   };
 }
 
-function editQuoteDetailsInput(value: unknown, context: EvidenceContext, quote: QuoteData, referenceLocked: boolean): Partial<Pick<QuoteData, DetailField>> {
-  if (!isRecord(value) || !isExactKeys(value, ["fields", "evidence"]) || !isRecord(value.fields)) throw new ToolValidationError("invalid_tool_arguments");
+function editQuoteDetailsInput(value: unknown, quote: QuoteData, referenceLocked: boolean): Partial<Pick<QuoteData, DetailField>> {
+  if (!isRecord(value) || !isExactKeys(value, ["fields"]) || !isRecord(value.fields)) throw new ToolValidationError("invalid_tool_arguments");
   const fields = value.fields;
   const keys = Object.keys(fields);
   if (!keys.length || keys.some((key) => !detailFields.includes(key as DetailField))) throw new ToolValidationError("invalid_tool_arguments");
@@ -456,7 +402,6 @@ function editQuoteDetailsInput(value: unknown, context: EvidenceContext, quote: 
     result.discountMode = fields.discountMode;
   }
   if (referenceLocked && Object.hasOwn(result, "reference") && result.reference !== quote.reference) throw new ToolValidationError("reference_locked");
-  const requestedEvidence = detailFields.filter((field) => Object.hasOwn(result, field) && result[field] !== quote[field] && nonemptyCommercialValue(result[field]));
   const nextMode = result.discountMode ?? quote.discountMode;
   if (nextMode === "none") {
     if (Object.hasOwn(result, "discount") && typeof result.discount === "string" && result.discount !== "" && !isZeroDecimal(result.discount)) {
@@ -466,12 +411,11 @@ function editQuoteDetailsInput(value: unknown, context: EvidenceContext, quote: 
   } else if (Object.hasOwn(result, "discountMode") && result.discountMode !== quote.discountMode && !Object.hasOwn(result, "discount")) {
     result.discount = "";
   }
-  assertGroupedEvidence(value.evidence, context, requestedEvidence, (field) => detailFields.includes(field as DetailField));
   return result;
 }
 
-function editQuoteLinesInput(value: unknown, context: EvidenceContext, quote: QuoteData): EditableLine[] {
-  if (!isRecord(value) || !isExactKeys(value, ["lines", "evidence"]) || !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 50) throw new ToolValidationError("invalid_tool_arguments");
+function editQuoteLinesInput(value: unknown, quote: QuoteData): EditableLine[] {
+  if (!isRecord(value) || !isExactKeys(value, ["lines"]) || !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 50) throw new ToolValidationError("invalid_tool_arguments");
   const ids = new Set<string>();
   const lines = value.lines.map((item, index) => {
     if (!isRecord(item) || !isExactKeys(item, ["id", "sectionId", "description", "mode", "quantity", "unit", "unitPrice", "amount"])
@@ -486,15 +430,6 @@ function editQuoteLinesInput(value: unknown, context: EvidenceContext, quote: Qu
     if ((item.mode === "quantity" && item.amount !== "") || (item.mode === "fixed" && (item.quantity !== "" || item.unit !== "" || item.unitPrice !== ""))) throw new ToolValidationError("invalid_mode_fields");
     return { ...(id === undefined ? {} : { id }), ...(item.sectionId === undefined ? {} : { sectionId: item.sectionId }), description: item.description, mode: item.mode, quantity: item.quantity, unit: item.unit, unitPrice: item.unitPrice, amount: item.amount } as EditableLine;
   });
-  const requiredEvidence: string[] = [];
-  lines.forEach((line, index) => {
-    const existing = line.id ? quote.lines.find((candidate) => candidate.id === line.id)! : undefined;
-    if (!existing || line.mode !== existing.mode) requiredEvidence.push(`/lines/${index}/mode`);
-    for (const field of ["description", "quantity", "unit", "unitPrice", "amount"] as const) {
-      if (nonemptyCommercialValue(line[field]) && (!existing || line[field] !== existing[field])) requiredEvidence.push(`/lines/${index}/${field}`);
-    }
-  });
-  assertGroupedEvidence(value.evidence, context, requiredEvidence, (field) => /^\/lines\/(?:0|[1-9]\d*)\/(?:description|mode|quantity|unit|unitPrice|amount)$/.test(field) && Number(field.split("/")[2]) < lines.length);
   return lines;
 }
 
@@ -507,8 +442,8 @@ type MoveWorkInput =
   | { kind: "lines"; lineIds: string[]; destinationSectionId: string; beforeLineId?: string }
   | { kind: "sections"; sectionIds: string[]; beforeSectionId?: string };
 
-function editQuoteSectionsInput(value: unknown, context: EvidenceContext, quote: QuoteData): SectionEdit[] {
-  if (!isRecord(value) || !isExactKeys(value, ["sections", "evidence"]) || !Array.isArray(value.sections) || value.sections.length < 1 || value.sections.length > 50) {
+function editQuoteSectionsInput(value: unknown, quote: QuoteData): SectionEdit[] {
+  if (!isRecord(value) || !isExactKeys(value, ["sections"]) || !Array.isArray(value.sections) || value.sections.length < 1 || value.sections.length > 50) {
     throw new ToolValidationError("invalid_tool_arguments");
   }
   const ids = new Set<string>();
@@ -523,16 +458,11 @@ function editQuoteSectionsInput(value: unknown, context: EvidenceContext, quote:
     if (id !== undefined) ids.add(id);
     return id === undefined ? { title: item.title } : { id, title: item.title };
   });
-  const requiredEvidence = sections.flatMap((section, index) => {
-    const existing = section.id ? quote.sections.find((candidate) => candidate.id === section.id) : undefined;
-    return section.title && (!existing || existing.title !== section.title) ? [`/sections/${index}/title`] : [];
-  });
-  assertGroupedEvidence(value.evidence, context, requiredEvidence, (field) => /^\/sections\/(?:0|[1-9]\d*)\/title$/.test(field) && Number(field.split("/")[2]) < sections.length);
   return sections;
 }
 
-function copyQuoteWorkInput(value: unknown, context: EvidenceContext, quote: QuoteData): CopyWorkInput {
-  if (!isRecord(value) || !isExactKeys(value, ["source", "measurementPolicy", "evidence"]) || !isRecord(value.source)
+function copyQuoteWorkInput(value: unknown, quote: QuoteData): CopyWorkInput {
+  if (!isRecord(value) || !isExactKeys(value, ["source", "measurementPolicy"]) || !isRecord(value.source)
     || (value.measurementPolicy !== "retain" && value.measurementPolicy !== "unknown")) throw new ToolValidationError("invalid_tool_arguments");
   const source = value.source;
   if (Object.hasOwn(source, "lineIds")) {
@@ -543,7 +473,6 @@ function copyQuoteWorkInput(value: unknown, context: EvidenceContext, quote: Quo
     return { measurementPolicy: value.measurementPolicy, source: { kind: "lines", lineIds: [...ids] as string[], ...(source.destinationSectionId === undefined ? {} : { destinationSectionId: source.destinationSectionId as string }) } };
   }
   if (!isExactKeys(source, ["sectionId", "title"]) || typeof source.sectionId !== "string" || !lineIdSyntax(source.sectionId) || typeof source.title !== "string" || !source.title.length || source.title.length > MAX_SECTION_TITLE || !quote.sections.some((section) => section.id === source.sectionId)) throw new ToolValidationError("invalid_section_id");
-  assertGroupedEvidence(value.evidence, context, ["/source/title"], (field) => field === "/source/title");
   return { measurementPolicy: value.measurementPolicy, source: { kind: "section", sectionId: source.sectionId, title: source.title } };
 }
 
@@ -572,55 +501,6 @@ function deleteQuoteLinesInput(value: unknown, quote: QuoteData): string[] {
   return [...ids] as string[];
 }
 
-function assertGroupedEvidence(value: unknown, context: EvidenceContext, requiredFields: readonly string[], fieldAllowed: (field: string) => boolean) {
-  if (value === undefined) {
-    if (requiredFields.length) throw new ToolValidationError("missing_evidence", requiredFields);
-    return;
-  }
-  if (!Array.isArray(value) || !value.length || value.length > MAX_EVIDENCE) throw new ToolValidationError("invalid_evidence");
-  const supported = new Set<string>();
-  const invalidEvidenceTextFields: string[] = [];
-  const evidenceRepairs: EvidenceRepair[] = [];
-  for (const [index, item] of value.entries()) {
-    if (!isExactRecord(item, ["fields", "source", "text"]) || !Array.isArray(item.fields) || !item.fields.length || item.fields.length > MAX_EVIDENCE_FIELDS
-      || new Set(item.fields).size !== item.fields.length || item.fields.some((field) => typeof field !== "string" || !field || field.length > MAX_EVIDENCE_FIELD || !fieldAllowed(field))
-      || typeof item.source !== "string" || !item.source || item.source.length > MAX_EVIDENCE_SOURCE || typeof item.text !== "string" || !item.text || item.text.length > MAX_EVIDENCE_TEXT) throw new ToolValidationError("invalid_evidence");
-    const sourceText = evidenceSource(context, item.source);
-    if (!evidenceAppears(sourceText, item.text)) {
-      invalidEvidenceTextFields.push(`/evidence/${index}/text`);
-      const repair = evidenceRepairs.length < MAX_EVIDENCE_REPAIRS ? splitEvidenceRepair(sourceText, item.text) : undefined;
-      if (repair) {
-        evidenceRepairs.push({ invalidTextField: `/evidence/${index}/text`, source: item.source, ...repair });
-      }
-    }
-    item.fields.forEach((field) => supported.add(field));
-  }
-  const missingFields = requiredFields.filter((field) => !supported.has(field));
-  if (invalidEvidenceTextFields.length || missingFields.length) {
-    throw new ToolValidationError(invalidEvidenceTextFields.length ? "evidence_not_found" : "missing_evidence", missingFields, invalidEvidenceTextFields, evidenceRepairs);
-  }
-}
-
-function evidenceSource(context: EvidenceContext, source: string): string {
-  if (source === "current") return context.artisanText;
-  const history = context.artisanHistory.find((entry) => entry.source === source);
-  if (history && /^history_\d+$/.test(source)) return history.text;
-  const quoteField = /^quote\.([A-Za-z][A-Za-z0-9]*)$/.exec(source)?.[1];
-  if (quoteField && detailFields.includes(quoteField as DetailField)) return String(context.originalQuote[quoteField as DetailField] ?? "");
-  const lineMatch = /^line:([^.:]+)\.([A-Za-z][A-Za-z0-9]*)$/.exec(source);
-  if (lineMatch) {
-    const line = context.originalLines.get(lineMatch[1]);
-    if (line && ["id", "sectionId", "description", "mode", "quantity", "unit", "unitPrice", "amount"].includes(lineMatch[2])) return line[lineMatch[2] as keyof QuoteLine];
-  }
-  const sectionMatch = /^section:([^.:]+)\.([A-Za-z][A-Za-z0-9]*)$/.exec(source);
-  if (sectionMatch) {
-    const section = context.originalSections.get(sectionMatch[1]);
-    if (section && ["id", "title"].includes(sectionMatch[2])) return section[sectionMatch[2] as "id" | "title"];
-  }
-  throw new ToolValidationError("unknown_evidence_source");
-}
-
-function nonemptyCommercialValue(value: unknown): boolean { return value !== "" && value !== null && value !== undefined; }
 function boundedDecimal(value: string, places: number): boolean {
   if (value === "") return true;
   const match = /^(\d+)(?:[.,](\d+))?$/.exec(value);
@@ -683,33 +563,12 @@ function schemaRepairHints(parameters: TSchema, args: unknown): string {
     hints.set(path, `${path} ${reason}`);
   }
   if (!hints.size) return "";
-  return ` Invalid fields: ${[...hints.values()].slice(0, 12).join("; ")}.${hints.size > 12 || errors.length >= 256 ? " Further schema errors were omitted." : ""} Resubmit the complete call, including its evidence.`;
+  return ` Invalid fields: ${[...hints.values()].slice(0, 12).join("; ")}.${hints.size > 12 || errors.length >= 256 ? " Further schema errors were omitted." : ""} Resubmit the complete call.`;
 }
 
-function splitEvidenceRepair(sourceText: string, evidenceText: string): Pick<EvidenceRepair, "excerpts" | "escapedWhitespace"> | undefined {
-  const whitespaceParts = evidenceText.split(ESCAPED_WHITESPACE);
-  // Diagnose escaping only when that change alone produces a source-contained excerpt.
-  // This is a repair proposal, never an additional acceptance rule.
-  const escapedWhitespace = whitespaceParts.length > 1 && evidenceAppears(sourceText, whitespaceParts.join(" "));
-  const excerpts = escapedWhitespace ? whitespaceParts : evidenceText.includes("...")
-    ? evidenceText.split("...")
-    : evidenceText.includes("…")
-      ? evidenceText.split("…")
-      : evidenceText.split(/(?<=[.!?])\s+/u);
-  const trimmed = excerpts.map((excerpt) => excerpt.trim());
-  if (trimmed.length < 2 || trimmed.length > MAX_EVIDENCE_REPAIR_PARTS || trimmed.some((excerpt) => !excerpt || excerpt.length > MAX_EVIDENCE_REPAIR_EXCERPT)) return undefined;
-  return trimmed.every((excerpt) => evidenceAppears(sourceText, excerpt)) ? { excerpts: trimmed, escapedWhitespace } : undefined;
-}
-
-function toolErrorMessage(code: string, details?: ToolValidationError): string {
-  const missingEvidenceFields = details?.missingEvidenceFields ?? [];
-  const invalidEvidenceTextFields = details?.invalidEvidenceTextFields ?? [];
-  const evidenceRepairs = details?.evidenceRepairs ?? [];
+function toolErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     invalid_tool_arguments: "The tool arguments are invalid. Resubmit the complete call with the required fields.",
-    missing_evidence: "Each changed nonempty commercial fact needs a citation from an application-supplied source.",
-    evidence_not_found: "The evidence excerpt was not found in the cited application-supplied source.",
-    unknown_evidence_source: "The evidence source is not available in the current application context.",
     reference_locked: "The Quote reference is fixed after first Publication and cannot be changed.",
     discount_not_applicable: "A nonzero discount cannot be used when discountMode is none.",
     invalid_mode_fields: "Supply empty strings for fields unused by the selected pricing mode.",
@@ -721,31 +580,14 @@ function toolErrorMessage(code: string, details?: ToolValidationError): string {
     destructive_scope_rejected: "Deleting all work is manual-only. Use the manual Quote controls; no changes from this assistant turn were applied.",
     draft_payload_limit: "The Working Draft is too large for this change. Continue manually.",
   };
-  const repair = missingEvidenceFields.length
-    ? ` Missing evidence fields: ${missingEvidenceFields.join(", ")}. Resubmit the complete call with evidence entries containing fields, source and text. Add these fields to citations with supporting exact excerpts; one citation may cover several fields.`
-    : "";
-  const excerpts = invalidEvidenceTextFields.length
-    ? ` Invalid evidence text: ${invalidEvidenceTextFields.slice(0, 12).join(", ")}.${invalidEvidenceTextFields.length > 12 ? " Further invalid excerpts were omitted." : ""} Copy exact contiguous excerpts from the cited source. Use separate citations for separate passages, without inserting ellipses or other text.`
-    : "";
-  const suggestedRepairs = evidenceRepairs.length
-    ? ` ${evidenceRepairs.map((repair) => `${repair.escapedWhitespace ? "The citation contains literal JSON whitespace escapes instead of source whitespace. Copy decoded source text, preferably one paragraph per citation. " : ""}Suggested exact excerpts for ${repair.invalidTextField}: ${repair.excerpts.map((excerpt) => JSON.stringify(excerpt)).join(" | ")}. Keep source ${JSON.stringify(repair.source)} and submit separate evidence entries, assigning each only the fields it supports.`).join(" ")}`
-    : "";
-  const completeResubmission = invalidEvidenceTextFields.length
-    ? " Invalid excerpt: this call was not applied. Resubmit the COMPLETE call with unchanged valid citations and coverage for every required field."
-    : "";
-  return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}${excerpts}${suggestedRepairs}${repair}${completeResubmission}`;
+  return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}`;
 }
 
 function restoreQuote(target: QuoteData, source: QuoteData) { Object.assign(target, source, { sections: source.sections.map((section) => ({ ...section })), lines: source.lines.map((line) => ({ ...line })) }); }
 function cloneQuote(quote: QuoteData): QuoteData { return { ...quote, sections: quote.sections.map((section) => ({ ...section })), lines: quote.lines.map((line) => ({ ...line })) }; }
 
 function assertInitialInput(input: CreateQuoteToolsInput) {
-  const history = input.artisanHistorySources ?? input.artisanHistory;
-  if (typeof input.artisanText !== "string" || input.artisanText.length > MAX_ARTISAN_TEXT || !Array.isArray(input.capturedLineIds)
-    || (history !== undefined && (!Array.isArray(history) || history.length > MAX_ARTISAN_HISTORY_MESSAGES
-      || history.some((entry) => typeof entry === "string" ? entry.length > MAX_ARTISAN_TEXT : !isRecord(entry) || typeof entry.source !== "string" || !/^history_\d+$/.test(entry.source) || entry.source.length > MAX_EVIDENCE_SOURCE || typeof entry.text !== "string" || entry.text.length > MAX_ARTISAN_TEXT)
-      || (input.artisanHistorySources !== undefined && new Set(input.artisanHistorySources.map((entry) => entry.source)).size !== input.artisanHistorySources.length)
-      || history.reduce((total, entry) => total + (typeof entry === "string" ? entry.length : typeof entry === "object" && entry !== null && "text" in entry && typeof entry.text === "string" ? entry.text.length : MAX_ARTISAN_TEXT + 1), 0) > MAX_ARTISAN_HISTORY_CHARS))) throw new Error("Tool input rejected.");
+  if (!Array.isArray(input.capturedLineIds)) throw new Error("Tool input rejected.");
   const calculation = calculateQuote(input.quote);
   if (!calculation.quote || calculation.errors.length || quoteDraftLimit(input.quote)) throw new Error("Tool input rejected.");
 }
@@ -789,7 +631,6 @@ function copyLine(source: QuoteLine, id: string, sectionId: string, unknownMeasu
 }
 function copyFact(line: QuoteLine, quantityUnknown: boolean): CopyFact { return { lineId: line.id, mode: line.mode, description: line.description, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, amount: line.amount, quantityUnknown }; }
 function withoutMeasurement(description: string): string { return description.replace(/\b\d+(?:[.,]\d+)?\s*(?:[x×/]\s*\d+(?:[.,]\d+)?)+(?:\s*(?:m|cm|mm))?\b/giu, "").replace(/\b\d+(?:[.,]\d+)?\s*(?:m²|m2|cm|mm|km|m|kg|g|l|cl|ml|h|heures?|jours?|pce|pièces?|mètres? carrés?|metres? carres?|mètres? cubes?|metres? cubes?|square meters?|square metres?|cubic meters?|cubic metres?|sq\.?\s*m|pieds?|feet|litres?|liters?|kilogrammes?|kilograms?)(?=$|[^A-Za-zÀ-ÿ²³])/giu, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/([(:])\s+/g, "$1").trim(); }
-function evidenceAppears(text: string, evidence: string): boolean { const compact = (value: string) => value.normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase(); return compact(text).includes(compact(evidence)); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isExactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> { return isRecord(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key)); }
 /** Allows optional schema properties while rejecting unknown keys. */

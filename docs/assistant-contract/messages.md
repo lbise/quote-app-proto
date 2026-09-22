@@ -84,4 +84,4 @@ Use committed/enregistré, unchanged/inchangé and discarded/abandonné as local
 | Remove a section | I can't delete a section. Delete the section manually instead. | Je ne peux pas supprimer une section. Supprimez la section manuellement. |
 | Scope rejected after staging | Nothing from this turn was saved. Delete the work manually instead. | Aucune modification de ce tour n'a été enregistrée. Supprimez les travaux manuellement. |
 
-`delete_quote_lines` can remove only 1 through 50 explicitly identified lines. It has no evidence, section or all-work target. A request that would remove every line present at the start of the turn discards the whole staged turn. Manual Undo reverses a committed permitted deletion.
+`delete_quote_lines` can remove only 1 through 50 explicitly identified lines. It has no section or all-work target. A request that would remove every line present at the start of the turn discards the whole staged turn. Manual Undo reverses a committed permitted deletion.

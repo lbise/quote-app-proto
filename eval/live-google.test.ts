@@ -109,7 +109,7 @@ it.runIf(Boolean(process.env.EVAL_DATABASE_URL)).each(["success", "http-error"])
     expect(ledger.at(-1).call).toMatchObject({ number: requests + 1, status: "reserved", reservedUsd: 0.58466304 });
     requests += 1;
     if (responseMode === "http-error") return new Response(JSON.stringify({ error: { code: 503, message: "Controlled outage", status: "UNAVAILABLE" } }), { status: 503, headers: { "content-type": "application/json" } });
-    const part = requests === 1 ? { functionCall: { name: "edit_quote_details", args: { fields: { title: "SDK bounded" }, evidence: [{ fields: ["title"], source: "current", text }] } } } : { text: "Saved." };
+    const part = requests === 1 ? { functionCall: { name: "edit_quote_details", args: { fields: { title: "SDK bounded" } } } } : { text: "Saved." };
     return new Response(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [part] }, finishReason: "STOP" }],
       usageMetadata: { promptTokenCount: 120, cachedContentTokenCount: 20, candidatesTokenCount: 30, thoughtsTokenCount: 10, totalTokenCount: 160 } })}\n\n`,
       { status: 200, headers: { "content-type": "text/event-stream" } });

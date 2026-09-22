@@ -182,7 +182,7 @@ def main() -> None:
         "contract-fixed-line": 48650,
         "contract-quantity-line": 12880,
         "contract-section-assignment": 9200,
-        "contract-split-evidence": 8670,
+        "contract-multi-paragraph-facts": 8670,
         "contract-mixed-batches": 78430,
     }.items():
         result = calculated[scenario_id]

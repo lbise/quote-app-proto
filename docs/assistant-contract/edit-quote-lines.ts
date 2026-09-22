@@ -46,47 +46,9 @@ const line = Type.Object(
   },
 );
 
-export const evidenceTextDescription =
-  'Copy an exact excerpt from the decoded source text, not its JSON-escaped representation. Prefer a short excerpt within one paragraph; cite other paragraphs separately. Do not copy literal backslash-n or backslash-t sequences in place of whitespace. For source "current", copy from currentMessage.text, not from the Quote title or your proposed output. One citation may cover several fields when the excerpt supports every listed field.';
-
-const evidence = Type.Object(
-  {
-    fields: Type.Array(
-      Type.String({ minLength: 1, maxLength: 160 }),
-      {
-        minItems: 1,
-        maxItems: 200,
-        uniqueItems: true,
-        description:
-          "Input fields supported by this citation, such as /lines/0/quantity and /lines/0/unitPrice.",
-      },
-    ),
-    source: Type.String({
-      minLength: 1,
-      maxLength: 256,
-      description:
-        'Use "current" for currentMessage.text, not "currentMessage" or "currentMessage.text". Use a supplied history_N ID for an earlier Artisan message. quote.FIELD refers only to that field in the supplied currentWorkingDraft; quote.title contains the existing Quote title, not the Artisan message. line:ID.FIELD and section:ID.FIELD refer to existing supplied work by stable ID. Never invent a source ID or cite an assistant message.',
-    }),
-    text: Type.String({
-      minLength: 1,
-      maxLength: 2000,
-      description: evidenceTextDescription,
-    }),
-  },
-  { additionalProperties: false },
-);
-
 export const editQuoteLinesParameters = Type.Object(
   {
     lines: Type.Array(line, { minItems: 1, maxItems: 50 }),
-    evidence: Type.Optional(
-      Type.Array(evidence, {
-        minItems: 1,
-        maxItems: 200,
-        description:
-          "Cite sources for new nonempty commercial facts. Unchanged values and deliberate clearing do not need new evidence.",
-      }),
-    ),
   },
   { additionalProperties: false },
 );
@@ -97,13 +59,12 @@ type EditQuoteLinesTool = AgentTool<typeof editQuoteLinesParameters, unknown>;
 
 export const editQuoteLinesDescription =
   "Create or edit Quote Lines. The schema allows up to 50 lines, but that is not a target batch size. " +
-  "Each response has a 4096-token output limit, including tool arguments and evidence. " +
-  "For long requests, use batches of about 5 lines, fewer for long descriptions or citations. " +
+  "Each response has a 4096-token output limit, including tool arguments. " +
+  "For long requests, use batches of about 5 lines, fewer for long descriptions. " +
   "Send only one batch per response and wait for its tool result before the next batch; do not bundle several batches into one response. " +
   "Continue until all supplied work is captured, without recreating lines from accepted batches. " +
   "Keep the supplied work order and section assignments across batches. " +
-  "Evidence indexes restart at /lines/0 in every call. Group supported fields in one citation instead of repeating its excerpt. " +
-  "Keep complete descriptions and evidence; reduce batch size instead of omitting facts. " +
+  "Keep complete descriptions; reduce batch size instead of omitting facts. " +
   "Supply each line's complete description and pricing information. " +
   "Include its existing ID to edit it; omit the ID to create a new line. " +
   "Preserve unchanged values from the current draft. " +
@@ -112,9 +73,6 @@ export const editQuoteLinesDescription =
   "Write new Quote Line descriptions in French, even for an English interface. " +
   'Use mode "fixed" for a forfait or one stated total; "amount" is a field, never a mode. ' +
   'Use mode "quantity" for per-unit pricing. ' +
-  "When evidence is needed for a new or changed mode, include its /lines/N/mode path with the fields supported by that excerpt. " +
-  "Each evidence text must be one exact contiguous excerpt from its source. Do not join separate passages or insert ellipses. " +
-  'Example only, currentMessage.text shown decoded:\nInspect 3 smoke alarms.\n\nInspection costs 19 per alarm.\n\nThe travel forfait is 47.\nSend separate single-paragraph citations: {"lines":[{"description":"Contrôle de détecteurs de fumée","mode":"quantity","quantity":"3","unit":"pièce","unitPrice":"19","amount":""},{"description":"Déplacement","mode":"fixed","quantity":"","unit":"","unitPrice":"","amount":"47"}],"evidence":[{"fields":["/lines/0/description","/lines/0/quantity"],"source":"current","text":"Inspect 3 smoke alarms."},{"fields":["/lines/0/mode","/lines/0/unit","/lines/0/unitPrice"],"source":"current","text":"Inspection costs 19 per alarm."},{"fields":["/lines/1/description","/lines/1/mode","/lines/1/amount"],"source":"current","text":"The travel forfait is 47."}]}. Use the supplied work and exact excerpts, not these example values. ' +
   "Do not copy, move or delete lines with this tool.";
 
 export function createEditQuoteLinesTool(

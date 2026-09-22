@@ -4,7 +4,7 @@ Issue [#29](https://github.com/lbise/quote-app-proto/issues/29). This is local r
 
 ## Current status
 
-The library has two suites: four fictional contract checks and 26 scenario cases. The scenario suite prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately. Adding contract checks does not change the existing scenarios or their approval hashes.
+The library has two suites: four small fictional contract checks, one combined contract check and 26 scenario cases. The scenario suite prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately. Adding contract checks does not change the existing scenarios or their approval hashes.
 
 Inputs and expected outcomes still need human review. The product owner allowed retaining prices and technical specifications in local anonymized fixtures. That is **not provider-data approval**. Every scenario starts with provider use blocked.
 
@@ -85,7 +85,7 @@ The snapshot conservatively uses the highest published text rates: 540 nanodolla
 
 The boundary uses no retries, permits at most 4,096 output tokens including thinking tokens, and uses minimal thinking even though ordinary app settings say thinking is off. Missing, partial, malformed, errored, or aborted usage stops the session and retains its reservation. Artifacts record estimated usage separately from reserved upper bounds. This is a bound under the recorded document rates, not a promise about a provider invoice or an account-wide spending guarantee.
 
-The line tool recommends about five lines per response for long requests, with smaller batches for long descriptions or citations. It must continue through the supplied work without omitting facts or duplicating accepted lines. This is model guidance, not a guarantee of live interpretation quality; the 50-line schema maximum and all execution budgets remain unchanged.
+The line tool recommends about five lines per response for long requests, with smaller batches for long descriptions. It must continue through the supplied work without omitting facts or duplicating accepted lines. This is model guidance, not a guarantee of live interpretation quality; the 50-line schema maximum and all execution budgets remain unchanged.
 
 Saved live calls show the SDK stop reason and provider finish reason when available. A call marked `complete` has usable usage accounting, not necessarily a successful Quote edit. Google `MAX_TOKENS` maps to SDK `length`; the application reports `assistant_output_limit_exceeded` and discards the whole turn without requesting another model response. Developer details also show these terminal codes. Older artifacts lack this metadata and display `not recorded`; their missing reasons cannot be reconstructed from the report.
 
@@ -99,10 +99,10 @@ Use these to check whether the configured model can construct valid calls from t
 
 | Case ID | What it checks |
 | --- | --- |
-| `contract-fixed-line` | Capture one fixed-price line with its pricing-mode evidence. |
+| `contract-fixed-line` | Capture one fixed-price line with its pricing mode. |
 | `contract-quantity-line` | Capture one line with quantity, unit and unit price. |
 | `contract-section-assignment` | Create a section, then use its returned ID to place a line. |
-| `contract-split-evidence` | Capture a line whose quantity and price are supplied in separate passages. |
+| `contract-multi-paragraph-facts` | Capture a line whose facts are supplied in separate paragraphs. |
 | `contract-mixed-batches` | Capture eight lines in two sections, mixing fixed and quantity pricing, distant shared rates, composite descriptions and continuation beyond a five-line batch. |
 
 Preview the selection without loading provider credentials or making calls:
@@ -123,7 +123,7 @@ npm run eval:run -- --live --suite contract \
 
 The 16-call limit is shared across all five checks, not granted to each one. At the recorded rates, 16 calls reserve at most USD 9.35460864, not an actual charge. Repetitions share that same invocation budget. No full scenario runs automatically after these checks.
 
-If the four basics have already passed, select only the new combined check with `--scenario contract-mixed-batches`. A separately approved invocation can use `--max-calls 6 --max-elapsed-ms 120000 --max-spend-usd 4`; six calls reserve at most USD 3.50797824. The scripted clean replay takes four responses, but live-model call counts can differ.
+To run only the combined check, select `--scenario contract-mixed-batches`. A separately approved invocation can use `--max-calls 6 --max-elapsed-ms 120000 --max-spend-usd 4`; six calls reserve at most USD 3.50797824. The scripted clean replay takes four responses, but live-model call counts can differ.
 
 Use `--suite contract --scenario contract-fixed-line` for one check. A scenario ID outside the selected suite is an error. `--suite scenario` previews the original 26 cases; select explicit IDs for live execution because selections containing `controlled-only` fault-injection cases are rejected.
 
@@ -134,9 +134,9 @@ Contract runs report two outcomes separately:
 
 Both must pass for the automated run to pass. French wording, faithful interpretation and invented commitments still require human review. The first four checks cover individual operations. The fifth combines them under a longer input and multiple batches. It does not force a particular batch partition or prove reliable interpretation of a 30-line Quote. Forced failures, transport errors, rollback and concurrency stay in controlled offline tests. Passing small live checks does not establish full-scenario quality.
 
-The four basic checks passed live in session `cdc11ef3-416b-4b5b-9a47-9db4136673b7`. The subsequent full reconstruction, run `7651d62f-1c54-4e8b-984e-e7738ee6bc54`, still failed because the model joined separate passages into purported exact excerpts. It repaired one batch, then repeated the mistake in the next batch and reached the third-failed-call rollback. The combined fixture targets this missing coverage. Rejected citations now get bounded split suggestions when each of two or three short fragments independently matches the same permitted source. This includes omitted passages between whole sentences and inserted ellipses. Suggestions do not authorize edits: the entire rejected call remains unapplied, and the model must resubmit complete arguments with valid citations. A clean offline replay does not prove that the live model will construct or repair the citations correctly.
+The combined fixture adds coverage for facts distributed across paragraphs and for continuation after the first batch. A clean offline replay does not predict live-model interpretation quality.
 
-Run `09bec8b6-3235-4603-a89e-ccd205388d48` exposed a separate encoding error in the combined fixture: the model copied literal `\n\n` from the JSON wrapper instead of decoded paragraph breaks. Offline replay isolated that difference in all three rejected line calls. Citation descriptions now recommend decoded, single-paragraph excerpts, with a multiline worked example. Escaped-whitespace repair suggestions are offered only when replacing those separators alone produces a source-contained excerpt, and the existing fragment/count bounds still apply. No argument is automatically decoded or accepted; literal backslashes actually present in a source remain valid.
+Older saved runs retain their original scenario ID and hash. The report can still read them, but they are not comparable to `contract-multi-paragraph-facts` because the renamed fixture has a new ID and hash.
 
 Run the offline replays without provider calls:
 

@@ -15,8 +15,6 @@ import type { Assertion, Scenario } from "./types";
 
 const databaseUrl = process.env.EVAL_DATABASE_URL;
 let artifactRoot: string;
-const evidence = (fields: string[], text: string) => [{ fields, source: "current", text }];
-
 function controlled(responses: FauxResponseStep[]): QuoteAIModelBoundary {
   const provider = fauxProvider();
   provider.setResponses(responses);
@@ -152,7 +150,7 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
     example.suite = "contract";
     const modelBoundary = controlled([
       ...(repair ? [fauxAssistantMessage([fauxToolCall("unknown_tool", {})], { stopReason: "toolUse" })] : []),
-      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title }, evidence: evidence(["title"], title) })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title } })], { stopReason: "toolUse" }),
       fauxAssistantMessage("Done."),
     ]);
     const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary });
@@ -162,11 +160,39 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
     expect(run.turns[0].assertions.filter(assertion => assertion.category === "contract")).toHaveLength(2);
   });
 
+  it("does not send expected Quotes, calculations, or review metadata to the model", async () => {
+    const expectedQuoteMarker = "expected-quote-only-marker";
+    const expectedCalculationMarker = 987_654_321;
+    const reviewMarker = "review-only-marker";
+    const example = scenario({ kind: "artisan", text: "No change", assertions: [titleAssertion("")] });
+    example.expectedQuote = { ...emptyQuote("Q-EVAL"), title: expectedQuoteMarker };
+    example.expectedCalculation = {
+      lines: [], sections: [], subtotal: expectedCalculationMarker, discount: 0, net: expectedCalculationMarker,
+      vat: null, total: expectedCalculationMarker, complete: true, missing: [], errors: [],
+    };
+    example.provenance.notes = [reviewMarker];
+    const boundary = controlled([fauxAssistantMessage("No change.")]);
+    const stream = boundary.streamFn;
+    const modelInputs: string[] = [];
+    boundary.streamFn = (model, context, options) => {
+      modelInputs.push(JSON.stringify(context));
+      return stream(model, context, options);
+    };
+
+    const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: boundary });
+
+    expect(run.automated).toBe("passed");
+    expect(modelInputs).toHaveLength(1);
+    expect(modelInputs.join(" ")).not.toContain(expectedQuoteMarker);
+    expect(modelInputs.join(" ")).not.toContain(String(expectedCalculationMarker));
+    expect(modelInputs.join(" ")).not.toContain(reviewMarker);
+  });
+
   it("runs approved live-mode work through real tools with one shared, pre-reserved spending cap", async () => {
     const text = "Set title Bounded";
     const example = scenario({ kind: "artisan", text, assertions: [titleAssertion("Bounded")] });
     const { boundary, transports } = controlledGoogle([
-      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Bounded" }, evidence: evidence(["title"], text) })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Bounded" } })], { stopReason: "toolUse" }),
       fauxAssistantMessage("Saved."),
     ]);
     const live = liveSession(boundary, [example], { maxCalls: 2 });
@@ -184,7 +210,7 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
     const example = scenario({ kind: "artisan", text, assertions: [titleAssertion("Before"), { label: "limit", path: "outcome", operator: "equals", expected: "discarded" }] }, { ...emptyQuote("Q-EVAL"), title: "Before" });
     const usage = { input: 100, output: 40, cacheRead: 20, cacheWrite: 0, totalTokens: 160, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
     const controlled = scriptedGoogle([
-      done(googleMessage([fauxToolCall("edit_quote_details", { fields: { title: "Staged" }, evidence: evidence(["title"], text) })], "toolUse", usage)),
+      done(googleMessage([fauxToolCall("edit_quote_details", { fields: { title: "Staged" } })], "toolUse", usage)),
     ]);
     const live = liveSession(controlled.boundary, [example], { maxCalls: 1 });
     try {
@@ -295,10 +321,8 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
 
   it.each([false, true])("accepts a zero-quantity clarification with a rejected tool call: %s", async (attemptTool) => {
     const example = scenarios.find(item => item.id === "joinery-zero-is-not-missing")!;
-    const text = (example.steps[0] as { text: string }).text;
     const rejection = fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
       lines: [{ description: "Fenêtre", mode: "quantity", quantity: "0", unit: "pce", unitPrice: "240.00", amount: "" }],
-      evidence: evidence(["/lines/0/description", "/lines/0/mode", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], text),
     })], { stopReason: "toolUse" });
     const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled([
       ...(attemptTool ? [rejection] : []), fauxAssistantMessage("La quantité doit être positive. Combien de fenêtres souhaitez-vous ?"),
@@ -334,8 +358,8 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
     const run = await runScenario(scenario({ kind: "artisan", text, assertions: [titleAssertion("Repaired"), { label: "one failed call", path: "failedCalls", operator: "equals", expected: 1 }] }), {
       databaseUrl: databaseUrl!,
       modelBoundary: controlled([
+        fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Repaired" }, unexpected: true })], { stopReason: "toolUse" }),
         fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Repaired" } })], { stopReason: "toolUse" }),
-        fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Repaired" }, evidence: evidence(["title"], text) })], { stopReason: "toolUse" }),
         fauxAssistantMessage("Repaired."),
       ]),
     });
@@ -349,8 +373,8 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
       databaseUrl: databaseUrl!,
       modelBoundary: controlled([
         fauxAssistantMessage([
-          fauxToolCall("edit_quote_details", { fields: { title: "Partial" }, evidence: evidence(["title"], text) }),
-          fauxToolCall("edit_quote_details", { fields: { title: "Missing evidence" } }),
+          fauxToolCall("edit_quote_details", { fields: { title: "Partial" } }),
+          fauxToolCall("edit_quote_details", { fields: { title: "Invalid arguments" }, unexpected: true }),
         ], { stopReason: "toolUse" }),
         fauxAssistantMessage("Partial change saved."),
       ]),
@@ -366,7 +390,7 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
       modelBoundary: controlled([
         fauxAssistantMessage([
           fauxToolCall("unknown_tool", {}),
-          fauxToolCall("edit_quote_details", { fields: { title: "Staged" }, evidence: evidence(["title"], text) }),
+          fauxToolCall("edit_quote_details", { fields: { title: "Staged" } }),
           fauxToolCall("unknown_tool", {}), fauxToolCall("unknown_tool", {}),
         ], { stopReason: "toolUse" }),
       ]),
@@ -382,7 +406,7 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
     }), {
       databaseUrl: databaseUrl!,
       modelBoundary: controlled([
-        fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Assistant" }, evidence: evidence(["title"], text) })], { stopReason: "toolUse" }),
+        fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Assistant" } })], { stopReason: "toolUse" }),
         fauxAssistantMessage("Assistant."),
       ]),
     });
@@ -410,7 +434,7 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
     const run = await runScenario(scenario({ kind: "artisan", text, assertions: [titleAssertion("Reviewed later")] }), {
       databaseUrl: databaseUrl!,
       modelBoundary: controlled([
-        fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Reviewed later" }, evidence: evidence(["title"], text) })], { stopReason: "toolUse" }),
+        fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Reviewed later" } })], { stopReason: "toolUse" }),
         fauxAssistantMessage("Saved."),
       ]),
     });

@@ -1,271 +1,117 @@
 # Proposed contract examples
 
-These are review examples, not executed tests or claims about live-model quality. IDs are fictional stable IDs. No provider receives these examples in addition to the approved prompt. Each example identifies its capability stage. Results describe model-visible acknowledgements; full diagnostics remain internal.
+These are fictional review examples, not executed tests or claims about live-model quality. IDs are stable application IDs. The examples show replacement tool arguments only. Tools take commercial and structural values directly, without source excerpts.
 
-## Legacy initial capture without administrative questions, #26
+## Fixed-price line
 
-This documents existing `add_quote_line` behavior, retained until its replacement is implemented. The approved `edit_quote_lines` definition below instead accepts the model-derived quantity without room-specific calculation arguments.
-
-Artisan, English: `Paint the bedroom walls. The room is 2 m long, 4 m wide and 3 m high. CHF 12.50 per m².`
-
-```json
-{
-  "name": "add_quote_line",
-  "arguments": {
-    "description": "Peinture des murs de la chambre, longueur 2 m, largeur 4 m, hauteur 3 m",
-    "mode": "quantity",
-    "quantityCalculation": {
-      "kind": "room_wall_area",
-      "length": "2",
-      "width": "4",
-      "height": "3",
-      "source": "The room is 2 m long, 4 m wide and 3 m high."
-    },
-    "unit": "m²",
-    "unitPrice": "12.50",
-    "evidence": [{ "field": "unitPrice", "text": "CHF 12.50 per m²" }]
-  }
-}
-```
-
-The application returns new line ID `line_new`, quantity `36`, unit price `12.50` and line amount 45,000 CHF cents. Quote totals may remain incomplete because other commercial fields are missing. Model reply: `Added the bedroom wall painting: 36 m² at CHF 12.50 per m².` The application prepends the committed status only after committing. There is no question about Customer or business identity before capture.
-
-Artisan, French: `Peindre les murs de la chambre, dimensions et prix encore inconnus.`
-
-```json
-{
-  "name": "add_quote_line",
-  "arguments": { "description": "Peinture des murs de la chambre", "mode": "quantity" }
-}
-```
-
-The new line retains missing quantity, unit and price. Model reply: `J'ai ajouté la peinture des murs de la chambre. Quelle surface faut-il prévoir ?` The assistant must not choose zero or infer a room size.
-
-## Correction of a manually entered line, #26
-
-Context has manually entered `line_manual`, description `Peinture des murs`, quantity `36`, unit `m²`, unitPrice `12.50`.
-
-Artisan: `Le prix de la ligne 1 est 14 CHF par m², pas 12.50.`
-
-```json
-{
-  "name": "update_quote_line",
-  "arguments": {
-    "lineId": "line_manual",
-    "fields": { "unitPrice": "14" },
-    "evidence": [{ "field": "unitPrice", "text": "Le prix de la ligne 1 est 14 CHF par m²" }]
-  }
-}
-```
-
-The application accepts the correction and returns the recalculated line amount of 50,400 cents. It does not repeat every unchanged line field. It does not require the line to be assistant-captured. The temporary supply_missing_line_fields tool is not used to overwrite a populated value. No read_work call precedes the correction.
-
-## Copy with unknown measurements, #26
-
-Context section `section_bedroom` contains a quantity line with `36 m²`, price `14`, and dimensions in its description.
-
-Artisan: `Copie cette section pour une autre chambre dont les dimensions sont encore inconnues. Garde le prix au m².`
-
-```json
-{
-  "name": "duplicate_quote_section",
-  "arguments": { "sectionId": "section_bedroom", "measurementPolicy": "unknown" }
-}
-```
-
-The application returns a fresh section ID and fresh line IDs. It clears the copied quantity and removable embedded dimensions, retains the `m²` unit and price `14`, and marks the copied work incomplete. The original section stays unchanged. If a measurement cannot safely be removed, the whole call rejects for clarification.
-
-Model reply: `J'ai copié la section. Les quantités restent à renseigner ; le prix de 14 CHF par m² est conservé.` The application adds its deterministic retained/missing-value disclosure. A later rename can use the new section ID from this result without rereading the initial context.
-
-## Failed calls and atomic turn commit, #27
-
-Context has Quote title `Bedroom refresh` and `line_manual`, description `Peinture des murs`, quantity `36`, unit `m²`, unit price `12.50`.
-
-The model first changes the title successfully. The result is staged, not committed:
-
-```json
-{
-  "name": "edit_quote_details",
-  "arguments": {
-    "fields": { "title": "Bedroom repaint" },
-    "evidence": [{ "fields": ["title"], "source": "current", "text": "Rename the quote to Bedroom repaint." }]
-  }
-}
-```
-
-It then submits an invalid full-line edit:
+Artisan: `Add a fixed price of CHF 486.50 for the final adjustment of the conservatory shutters.`
 
 ```json
 {
   "name": "edit_quote_lines",
   "arguments": {
     "lines": [{
-      "id": "line_manual",
-      "description": "Peinture des murs",
+      "description": "Réglage final des volets de la verrière",
+      "mode": "fixed",
+      "quantity": "",
+      "unit": "",
+      "unitPrice": "",
+      "amount": "486.50"
+    }]
+  }
+}
+```
+
+The application validates the line shape and fixed-price mode, then calculates Quote totals. The Artisan reviews whether the description and amount match the request.
+
+## Quantity line from separate paragraphs
+
+Artisan:
+
+```text
+Pour l'orangerie, note une ligne de pose de ruban d'étanchéité.
+La longueur mesurée est de 12,75 m.
+
+Le tarif convenu est de 6,80 CHF par mètre.
+```
+
+```json
+{
+  "name": "edit_quote_lines",
+  "arguments": {
+    "lines": [{
+      "description": "Pose de ruban d'étanchéité",
       "mode": "quantity",
-      "quantity": "36",
-      "unit": "m²",
-      "unitPrice": "CHF 14",
+      "quantity": "12.75",
+      "unit": "m",
+      "unitPrice": "6.80",
       "amount": ""
-    }],
-    "evidence": [{ "fields": ["/lines/0/unitPrice"], "source": "current", "text": "Set the price to CHF 14 per m²." }]
+    }]
   }
 }
 ```
 
-Pi marks the result as an error: `Unit price must be a decimal without currency or units. Resubmit the complete call.` This is failure `1/3`. The price edit applies nothing. If the model now stops, normal completion commits the staged title in one transaction and creates one manual Undo target. The price remains `12.50`. The application, not the model, shows: `Some tool calls failed. Review the applied changes.`
+The separated paragraphs are ordinary conversation context. They do not add a tool argument or validation rule. The application validates decimal values and quantity mode, then calculates the amount.
 
-If the model makes two more failed tool calls in the same turn, the third failure stops the turn and discards the title and every other staged change. The calls may be retries of the price edit or different calls. A successful retry does not reset the count. The next Artisan message starts at `0/3`.
+## Derived quantity and adjusted price
 
-Each individual call is atomic, including bulk calls. If the draft changes manually while the provider is working, the turn is discarded as stale. If another business's Quote is requested, authorization aborts before inference; the model receives no corrective information about that Quote.
-
-## Quote-local commercial correction, #27
-
-Artisan: `Pour ce devis seulement, remplace l'adresse du client par Rue du Lac 9, 1000 Lausanne. Valable jusqu'au 2026-12-31.`
-
-```json
-{
-  "name": "edit_quote_details",
-  "arguments": {
-    "fields": { "customerAddress": "Rue du Lac 9, 1000 Lausanne", "validUntil": "2026-12-31" },
-    "evidence": [
-      { "fields": ["customerAddress", "validUntil"], "source": "current", "text": "Pour ce devis seulement, remplace l'adresse du client par Rue du Lac 9, 1000 Lausanne. Valable jusqu'au 2026-12-31." }
-    ]
-  }
-}
-```
-
-Only this Working Draft changes. The reusable Customer, business defaults, other Quotes and Published Revisions do not change. Under #26 the assistant instead explains that date editing is unavailable through its tools; it must not partially pretend to complete this compound request.
-
-## Model-derived price adjustment, #27
-
-Context line `line_1` is `Peinture des murs` with quantity `36`, unit `m²`, unit price `12.50` and no fixed amount. Artisan: `Increase the unit price on line 1 by 5%.`
+For a room 2 m by 4 m with 3 m walls, the assistant may enter a derived wall quantity. For a requested 5% increase from CHF 12.50, it may enter the adjusted price `13.13` after CHF half-up rounding.
 
 ```json
 {
   "name": "edit_quote_lines",
   "arguments": {
     "lines": [{
-      "id": "line_1",
-      "description": "Peinture des murs",
+      "id": "line_paint",
+      "description": "Peinture des murs de la chambre, longueur 2 m, largeur 4 m, hauteur 3 m",
       "mode": "quantity",
       "quantity": "36",
       "unit": "m²",
       "unitPrice": "13.13",
       "amount": ""
-    }],
-    "evidence": [
-      { "fields": ["/lines/0/unitPrice"], "source": "current", "text": "Increase the unit price on line 1 by 5%." },
-      { "fields": ["/lines/0/unitPrice"], "source": "line:line_1.unitPrice", "text": "12.50" }
-    ]
+    }]
   }
 }
 ```
 
-The two citations record the requested adjustment and the current price. The model uses expected CHF half-up rounding to send `13.13`. The application validates both sources and the complete flat line, but does not independently check the 5% calculation or rounding. It calculates the resulting line amount and Quote totals under its existing rules. There is no calculation schema or percentage-adjust operation.
+The application checks shape, precision, ranges, mode, and resulting Quote calculations. It does not verify the wall-area formula, percentage adjustment, rounding choice, or interpretation. The Artisan must review the result.
 
-## Model-derived room-wall quantity in No section, #27
+## Section then assigned line
 
-Artisan: `Paint the bedroom walls. The room is 2 m long, 4 m wide and 3 m high. CHF 12.50 per m².`
+```json
+{
+  "name": "edit_quote_sections",
+  "arguments": { "sections": [{ "title": "Galerie nord" }] }
+}
+```
+
+The successful result returns the generated section ID. The next call uses that returned ID:
 
 ```json
 {
   "name": "edit_quote_lines",
   "arguments": {
     "lines": [{
-      "description": "Peinture des murs de la chambre, longueur 2 m, largeur 4 m, hauteur 3 m",
-      "mode": "quantity",
-      "quantity": "36",
-      "unit": "m²",
-      "unitPrice": "12.50",
-      "amount": ""
-    }],
-    "evidence": [{ "fields": ["/lines/0/description", "/lines/0/mode", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], "source": "current", "text": "Paint the bedroom walls. The room is 2 m long, 4 m wide and 3 m high. CHF 12.50 per m²." }]
-  }
-}
-```
-
-All editable values are strings. The omitted `id` creates the line and the omitted `sectionId` puts it in No section. The dimensions cite the derived `quantity` field, but the application does not require `36` to equal a numeric input in the excerpt. It checks that the excerpt occurs in the current Artisan message, not that it establishes the submitted value, wall-area formula or arithmetic. Quantity pricing requires the empty incompatible `amount` string.
-
-## Pricing-mode change and missing replacement amount, #27
-
-Context line `line_1` has description `Peinture des murs`. Artisan: `Make line 1 fixed-price; the amount is not known yet.`
-
-```json
-{
-  "name": "edit_quote_lines",
-  "arguments": {
-    "lines": [{
-      "id": "line_1",
-      "description": "Peinture des murs",
+      "sectionId": "section_new",
+      "description": "Protection temporaire du sol",
       "mode": "fixed",
       "quantity": "",
       "unit": "",
       "unitPrice": "",
-      "amount": ""
-    }],
-    "evidence": [{ "fields": ["/lines/0/mode"], "source": "current", "text": "Make line 1 fixed-price" }]
+      "amount": "92.00"
+    }]
   }
 }
 ```
 
-The full line supplies empty quantity, unit, unit price and amount. It does not reuse the old calculated quantity-times-price amount. The line and whole Quote remain incomplete. Setting amount to `0` requires evidence of a deliberately supplied zero price.
+## Mixed batches
 
-## Clarification instead of guessing, all stages
+A long request can create two sections and eight lines in separate batches. The assistant creates the sections, uses their returned IDs, then sends complete line batches in the requested order. It must wait for each accepted result and must not recreate accepted lines. Smaller batches are appropriate for long descriptions.
 
-Two current sections are bedrooms, each with a painting line. Artisan: `Use the same price for the other room.`
+The combined evaluation case checks this behavior with shared rates, fixed and quantity lines, and facts spread across paragraphs. Passing it proves the scripted contract and expected commercial state, not reliable interpretation of longer Quotes.
 
-No mutation tool call. Reply: `Which room should receive the price, and which line should it copy from?` In French: `Quelle chambre doit recevoir ce prix, et quelle ligne faut-il prendre comme référence ?`
+## Clarification and manual actions
 
-If historyOmitted is true and the source was mentioned only in omitted conversation, the assistant asks again rather than reconstructing the price. Prior assistant prose containing a price is not permitted evidence.
+If two bedrooms could be the target of `Use the same price for the other room`, the assistant asks which room and which source line the Artisan means. It does not mutate the draft.
 
-## Explicit copying and ordering, #28
-
-Artisan: `Copy lines 1 and 2 into the kitchen section, with the same measurements and prices.`
-
-```json
-{
-  "name": "copy_quote_work",
-  "arguments": { "source": { "lineIds": ["line_1", "line_2"], "destinationSectionId": "section_kitchen" }, "measurementPolicy": "retain" }
-}
-```
-
-The new IDs are `line_copy_1` and `line_copy_2`, appended in that order. Source lines and multiline content remain unchanged. A subsequent request to move these two before `line_kitchen_existing` uses:
-
-```json
-{
-  "name": "move_quote_work",
-  "arguments": { "move": { "lineIds": ["line_copy_1", "line_copy_2"], "destinationSectionId": "section_kitchen", "beforeLineId": "line_kitchen_existing" } }
-}
-```
-
-The stable new IDs come from the accepted copy result, not the outdated initial draft. Unrelated lines retain their relative order.
-
-## Narrow line deletion, #28
-
-Context starts with `line_paint`, `line_trim` and `line_cleanup`. Artisan: `Remove the cleanup line.`
-
-```json
-{
-  "name": "delete_quote_lines",
-  "arguments": { "lineIds": ["line_cleanup"] }
-}
-```
-
-The application deletes only `line_cleanup`. It takes no evidence. `line_paint` and `line_trim` remain, and the Artisan can use manual Undo to reverse the committed turn. The tool cannot remove the section that contained `line_cleanup`, even if that deletion leaves the section empty.
-
-Artisan: `Clear all the work.`
-
-No deletion tool call. Reply: `I can't remove all work. Delete the work manually instead.` The assistant also asks for explicit line targets when a deletion request is ambiguous.
-
-If a turn first stages another change and later tries to delete every line that existed at the start of the turn, the application rejects the destructive scope and discards all staged changes. Adding replacement lines or splitting the deletions across calls does not bypass the original-line check. No earlier successful subset is saved.
-
-## Publication and Undo are manual, all stages
-
-Artisan: `Publie le devis.`
-
-No tool call and no Publication dialog opened. Reply: `Utilisez le bouton de publication pour vérifier le devis et confirmer la publication.`
-
-Artisan: `Undo that change.`
-
-No inverse-edit simulation and no tool call. Reply: `Use the manual Undo control to reverse the last change.`
+Publication, Undo, deletion of a section, and clearing all work are manual actions. For a permitted deletion, the assistant calls `delete_quote_lines` with explicit line IDs only. If a request would delete every original line in the turn, the application discards the staged turn.
