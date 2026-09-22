@@ -554,10 +554,10 @@
       }
     ],
     "subtotal": 357380,
-    "discount": 3573800,
-    "net": -3216420,
-    "vat": -260530,
-    "total": -3476950,
+    "discount": 35738,
+    "net": 321642,
+    "vat": 26053,
+    "total": 347695,
     "complete": true,
     "missing": [],
     "errors": []

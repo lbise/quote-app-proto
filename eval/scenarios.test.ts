@@ -100,6 +100,14 @@ describe("evaluation scenario library", () => {
     expect(evaluateAssertions(bulk.steps[0].assertions, bulk.startingQuote, bulkAfter, "committed", 0).every((result) => result.passed)).toBe(true);
   });
 
+  it("agrees with every independently authored final commercial calculation", () => {
+    for (const scenario of scenarios) {
+      const assertions = scenario.steps.at(-1)!.assertions.filter(assertion => assertion.path.startsWith("calculation."));
+      const failures = evaluateAssertions(assertions, scenario.startingQuote, scenario.expectedQuote!, "committed", 0).filter(result => !result.passed);
+      expect(failures, scenario.id).toEqual([]);
+    }
+  });
+
   it("covers clarification, manual-only fallback, ordering, arithmetic, safety, and both languages", () => {
     const ids = scenarios.map((scenario) => scenario.id).join(" ");
     expect(ids).toMatch(/clarification/);

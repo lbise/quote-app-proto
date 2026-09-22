@@ -1,6 +1,6 @@
 # Local assistant evaluation
 
-Issue [#29](https://github.com/lbise/quote-app-proto/issues/29). This is local review tooling, not a product-owner sign-off or a model benchmark.
+Issue [#29](https://github.com/lbise/quote-app-proto/issues/29). This is local review tooling, not a product-owner sign-off or a model benchmark. See [implementation review and verification](evaluation-review.md).
 
 ## Current status
 

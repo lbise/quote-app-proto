@@ -110,7 +110,7 @@ def calculate_expected(quote: dict[str, Any]) -> dict[str, Any]:
         discount = None if incomplete_pricing else 0
     elif quote["discountMode"] == "percent":
         rate = decimal_or_missing(quote["discount"], "discount", missing)
-        discount = None if incomplete_pricing or rate is None else cents(Decimal(subtotal) / 100 * rate)
+        discount = None if incomplete_pricing or rate is None else cents(Decimal(subtotal) / 100 * rate / 100)
     elif quote["discountMode"] == "fixed":
         fixed = decimal_or_missing(quote["discount"], "discount", missing)
         discount = None if incomplete_pricing or fixed is None else cents(fixed)
@@ -174,6 +174,9 @@ def check_synthetic_and_adapted_arithmetic() -> None:
 def main() -> None:
     authored = dump_expected_quotes()
     calculated = {scenario_id: calculate_expected(quote) for scenario_id, quote in authored.items()}
+    # Hand-worked check: CHF 3573.80 less 10% = CHF 3216.42, plus CHF 260.53 VAT.
+    percent = calculated["joinery-percent-discount"]
+    assert (percent["discount"], percent["net"], percent["vat"], percent["total"]) == (35738, 321642, 26053, 347695)
     if "--write" in sys.argv:
         EXPECTED_FILE.write_text(json.dumps(calculated, indent=2, ensure_ascii=False) + "\n")
     else:
