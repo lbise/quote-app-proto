@@ -328,7 +328,7 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       const outcome = response.ok
         ? safeDebug?.outcome ?? (step.kind === "manual" ? "manual_saved" : "unchanged")
         : outcomeFor(response.status, payload);
-      const message = response.ok && payload && typeof payload === "object"
+      const message = step.kind === "artisan" && response.ok && payload && typeof payload === "object"
         ? ((payload as { messages?: { en?: string }[] }).messages?.at(-1)?.en ?? "")
         : "";
       const assertions = assertionsFor(step, before, after, outcome, failedCalls);

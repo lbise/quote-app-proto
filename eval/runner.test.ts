@@ -5,6 +5,7 @@ import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type FauxRe
 import { emptyQuote } from "../app/lib/quote";
 import type { QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
 import { runScenario } from "./runner";
+import { scenarios } from "./scenarios";
 import type { Assertion, Scenario } from "./types";
 
 const databaseUrl = process.env.EVAL_DATABASE_URL;
@@ -46,6 +47,27 @@ it("requires live opt-in before accepting a non-faux provider", async () => {
 });
 
 describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL seam", () => {
+  it("keeps manual fallback separate from the assistant conversation", async () => {
+    const example = scenarios.find(item => item.id === "joinery-manual-fallback-section-delete")!;
+    const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled([fauxAssistantMessage("Utilisez les commandes manuelles pour supprimer cette section.")]) });
+    expect(run.automated).toBe("passed");
+    expect(run.turns[1]).toMatchObject({ kind: "manual", outcome: "manual_saved", message: "" });
+  });
+
+  it.each([false, true])("accepts a zero-quantity clarification with a rejected tool call: %s", async (attemptTool) => {
+    const example = scenarios.find(item => item.id === "joinery-zero-is-not-missing")!;
+    const text = (example.steps[0] as { text: string }).text;
+    const rejection = fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
+      lines: [{ description: "Fenêtre", mode: "quantity", quantity: "0", unit: "pce", unitPrice: "240.00", amount: "" }],
+      evidence: evidence(["/lines/0/description", "/lines/0/mode", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], text),
+    })], { stopReason: "toolUse" });
+    const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled([
+      ...(attemptTool ? [rejection] : []), fauxAssistantMessage("La quantité doit être positive. Combien de fenêtres souhaitez-vous ?"),
+    ]) });
+    expect(run.automated).toBe("passed");
+    expect(run.turns[0]).toMatchObject({ outcome: attemptTool ? "unchanged_with_failed_calls" : "unchanged", failedCalls: attemptTool ? 1 : 0 });
+  });
+
   it("returns a timed-out run even when the model never supplies final usage", async () => {
     const modelBoundary = controlled([]);
     const run = await runScenario(scenario({ kind: "artisan", text: "Set title Waiting", assertions: [{ label: "timeout", path: "outcome", operator: "equals", expected: "later_budget_exhausted" }] }), {

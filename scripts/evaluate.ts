@@ -44,12 +44,12 @@ function fail(message: string): never {
 }
 
 function positiveInteger(name: string, value: string): number {
-  if (!/^\d+$/.test(value) || Number(value) < 1) fail(`${name} must be a positive integer.`);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) fail(`${name} must be a positive integer.`);
   return Number(value);
 }
 
 function positiveUsd(value: string): number {
-  if (!/^\d+(?:\.\d+)?$/.test(value) || Number(value) <= 0) fail("--max-spend-usd must be a positive amount.");
+  if (!/^\d+(?:\.\d+)?$/.test(value) || !Number.isFinite(Number(value)) || Number(value) <= 0) fail("--max-spend-usd must be a positive amount.");
   return Number(value);
 }
 
@@ -114,7 +114,7 @@ function assertOfflineSmoke(parsed: Arguments, selected: Scenario[]) {
     fail("Provider approval and live limits cannot be used with --offline-smoke.");
   }
   if (!parsed.databaseUrl) fail("--offline-smoke requires --database-url from npm run eval:db -- up. DATABASE_URL is never used.");
-  if (selected.length !== 1 || selected[0].provenance.kind !== "source-derived" || !selected[0].expectedQuote) {
+  if (selected.length !== 1 || !selected[0].id.endsWith("-full-reconstruction") || selected[0].provenance.kind !== "source-derived" || !selected[0].expectedQuote) {
     fail("--offline-smoke requires exactly one source-derived reconstruction scenario selected with --scenario.");
   }
 }

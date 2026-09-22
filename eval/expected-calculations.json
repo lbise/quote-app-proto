@@ -1,0 +1,918 @@
+{
+  "joinery-full-reconstruction": {
+    "lines": [
+      {
+        "amount": 120000
+      },
+      {
+        "amount": 480000
+      },
+      {
+        "amount": 190000
+      },
+      {
+        "amount": 70000
+      },
+      {
+        "amount": 189900
+      },
+      {
+        "amount": 120000
+      },
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 33280
+      },
+      {
+        "amount": 63200
+      },
+      {
+        "amount": 38000
+      },
+      {
+        "amount": 18000
+      },
+      {
+        "amount": 75770
+      },
+      {
+        "amount": 24000
+      },
+      {
+        "amount": 138250
+      },
+      {
+        "amount": 38000
+      },
+      {
+        "amount": 11200
+      },
+      {
+        "amount": 23710
+      },
+      {
+        "amount": 24000
+      },
+      {
+        "amount": 37130
+      },
+      {
+        "amount": 76000
+      },
+      {
+        "amount": 12800
+      },
+      {
+        "amount": 131280
+      },
+      {
+        "amount": 48000
+      },
+      {
+        "amount": 242530
+      },
+      {
+        "amount": 15000
+      },
+      {
+        "amount": 25690
+      },
+      {
+        "amount": 37130
+      },
+      {
+        "amount": 15000
+      },
+      {
+        "amount": 22580
+      },
+      {
+        "amount": 31600
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 1503280,
+        "incomplete": false
+      },
+      {
+        "subtotal": 96480,
+        "incomplete": false
+      },
+      {
+        "subtotal": 294020,
+        "incomplete": false
+      },
+      {
+        "subtotal": 134040,
+        "incomplete": false
+      },
+      {
+        "subtotal": 510610,
+        "incomplete": false
+      },
+      {
+        "subtotal": 77820,
+        "incomplete": false
+      },
+      {
+        "subtotal": 69180,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 2685430,
+    "discount": 0,
+    "net": 2685430,
+    "vat": 217520,
+    "total": 2902950,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "landscape-full-reconstruction": {
+    "lines": [
+      {
+        "amount": 20000
+      },
+      {
+        "amount": 528000
+      },
+      {
+        "amount": 180000
+      },
+      {
+        "amount": 54000
+      },
+      {
+        "amount": 11200
+      },
+      {
+        "amount": 33000
+      },
+      {
+        "amount": 85000
+      },
+      {
+        "amount": 255000
+      },
+      {
+        "amount": 130000
+      },
+      {
+        "amount": 43200
+      },
+      {
+        "amount": 5400
+      },
+      {
+        "amount": 9400
+      },
+      {
+        "amount": 45000
+      },
+      {
+        "amount": 104000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 1296200,
+        "incomplete": false
+      },
+      {
+        "subtotal": 207000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 1503200,
+    "discount": 0,
+    "net": 1503200,
+    "vat": 121759,
+    "total": 1624959,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "civil-full-reconstruction": {
+    "lines": [
+      {
+        "amount": 80000
+      },
+      {
+        "amount": 24000
+      },
+      {
+        "amount": 108300
+      },
+      {
+        "amount": 8000
+      },
+      {
+        "amount": 49600
+      },
+      {
+        "amount": 45000
+      },
+      {
+        "amount": 117000
+      },
+      {
+        "amount": 22000
+      },
+      {
+        "amount": 78000
+      },
+      {
+        "amount": 17000
+      },
+      {
+        "amount": 114000
+      },
+      {
+        "amount": 10000
+      },
+      {
+        "amount": 56500
+      },
+      {
+        "amount": 75000
+      },
+      {
+        "amount": 27500
+      },
+      {
+        "amount": 78000
+      },
+      {
+        "amount": 21250
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 104000,
+        "incomplete": false
+      },
+      {
+        "subtotal": 444900,
+        "incomplete": false
+      },
+      {
+        "subtotal": 382250,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 931150,
+    "discount": 0,
+    "net": 931150,
+    "vat": 75423,
+    "total": 1006573,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-panel-correction": {
+    "lines": [
+      {
+        "amount": 345625
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 345625,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 369625,
+    "discount": 0,
+    "net": 369625,
+    "vat": 29940,
+    "total": 399565,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-copy-section": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 690760,
+    "discount": 0,
+    "net": 690760,
+    "vat": 55952,
+    "total": 746712,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-section-order": {
+    "lines": [
+      {
+        "amount": 24000
+      },
+      {
+        "amount": 333380
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      },
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 357380,
+    "discount": 0,
+    "net": 357380,
+    "vat": 28948,
+    "total": 386328,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-targeted-delete": {
+    "lines": [
+      {
+        "amount": 333380
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 0,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 333380,
+    "discount": 0,
+    "net": 333380,
+    "vat": 27004,
+    "total": 360384,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-manual-fallback-section-delete": {
+    "lines": [
+      {
+        "amount": 333380
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 333380,
+    "discount": 0,
+    "net": 333380,
+    "vat": 27004,
+    "total": 360384,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-manual-fallback-all-work": {
+    "lines": [],
+    "sections": [],
+    "subtotal": 0,
+    "discount": null,
+    "net": null,
+    "vat": null,
+    "total": null,
+    "complete": false,
+    "missing": [
+      {
+        "path": "lines",
+        "code": "required"
+      }
+    ],
+    "errors": []
+  },
+  "joinery-uncertain-unit-clarification": {
+    "lines": [
+      {
+        "amount": 50000
+      }
+    ],
+    "sections": [],
+    "subtotal": 50000,
+    "discount": 0,
+    "net": 50000,
+    "vat": null,
+    "total": null,
+    "complete": false,
+    "missing": [
+      {
+        "path": "title",
+        "code": "required"
+      },
+      {
+        "path": "customerName",
+        "code": "required"
+      },
+      {
+        "path": "customerAddress",
+        "code": "required"
+      },
+      {
+        "path": "businessName",
+        "code": "required"
+      },
+      {
+        "path": "businessAddress",
+        "code": "required"
+      },
+      {
+        "path": "businessContact",
+        "code": "required"
+      },
+      {
+        "path": "issueDate",
+        "code": "required"
+      },
+      {
+        "path": "vatRegistered",
+        "code": "required"
+      }
+    ],
+    "errors": []
+  },
+  "joinery-missing-measurement-clarification": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 24000
+      },
+      {
+        "amount": 37130
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 61130,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 394510,
+    "discount": 0,
+    "net": 394510,
+    "vat": 31955,
+    "total": 426465,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-zero-is-not-missing": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 357380,
+    "discount": 0,
+    "net": 357380,
+    "vat": 28948,
+    "total": 386328,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-percent-discount": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 357380,
+    "discount": 3573800,
+    "net": -3216420,
+    "vat": -260530,
+    "total": -3476950,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-bulk-percent-price-adjustment": {
+    "lines": [
+      {
+        "amount": 300042
+      },
+      {
+        "amount": 56880
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 300042,
+        "incomplete": false
+      },
+      {
+        "subtotal": 80880,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 380922,
+    "discount": 0,
+    "net": 380922,
+    "vat": 30855,
+    "total": 411777,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-half-up-rounding": {
+    "lines": [
+      {
+        "amount": 1003
+      }
+    ],
+    "sections": [],
+    "subtotal": 1003,
+    "discount": 0,
+    "net": 1003,
+    "vat": 81,
+    "total": 1084,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-room-measurement": {
+    "lines": [
+      {
+        "amount": 94010
+      }
+    ],
+    "sections": [],
+    "subtotal": 94010,
+    "discount": 0,
+    "net": 94010,
+    "vat": 7615,
+    "total": 101625,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-pricing-mode-change": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 27550
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 27550,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 360930,
+    "discount": 0,
+    "net": 360930,
+    "vat": 29235,
+    "total": 390165,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-administrative-fields-en": {
+    "lines": [],
+    "sections": [],
+    "subtotal": 0,
+    "discount": null,
+    "net": null,
+    "vat": null,
+    "total": null,
+    "complete": false,
+    "missing": [
+      {
+        "path": "lines",
+        "code": "required"
+      }
+    ],
+    "errors": []
+  },
+  "joinery-injection-resistance": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 357380,
+    "discount": 0,
+    "net": 357380,
+    "vat": 28948,
+    "total": 386328,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-preserve-manual-work": {
+    "lines": [
+      {
+        "amount": 316000
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 316000,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 340000,
+    "discount": 0,
+    "net": 340000,
+    "vat": 27540,
+    "total": 367540,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-stale-turn-rollback": {
+    "lines": [
+      {
+        "amount": 323900
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 323900,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 347900,
+    "discount": 0,
+    "net": 347900,
+    "vat": 28180,
+    "total": 376080,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-partial-failure-visible-success": {
+    "lines": [
+      {
+        "amount": 316000
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 316000,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 340000,
+    "discount": 0,
+    "net": 340000,
+    "vat": 27540,
+    "total": 367540,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-third-failure-discard": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 24000
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 357380,
+    "discount": 0,
+    "net": 357380,
+    "vat": 28948,
+    "total": 386328,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "joinery-copy-unknown-measurement": {
+    "lines": [
+      {
+        "amount": 333380
+      },
+      {
+        "amount": 24000
+      },
+      {
+        "amount": null
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 333380,
+        "incomplete": false
+      },
+      {
+        "subtotal": 24000,
+        "incomplete": true
+      }
+    ],
+    "subtotal": 357380,
+    "discount": null,
+    "net": null,
+    "vat": null,
+    "total": null,
+    "complete": false,
+    "missing": [
+      {
+        "path": "lines[2].quantity",
+        "code": "required"
+      }
+    ],
+    "errors": []
+  },
+  "civil-unpriced-position-clarification": {
+    "lines": [
+      {
+        "amount": null
+      }
+    ],
+    "sections": [],
+    "subtotal": 0,
+    "discount": null,
+    "net": null,
+    "vat": null,
+    "total": null,
+    "complete": false,
+    "missing": [
+      {
+        "path": "title",
+        "code": "required"
+      },
+      {
+        "path": "customerName",
+        "code": "required"
+      },
+      {
+        "path": "customerAddress",
+        "code": "required"
+      },
+      {
+        "path": "businessName",
+        "code": "required"
+      },
+      {
+        "path": "businessAddress",
+        "code": "required"
+      },
+      {
+        "path": "businessContact",
+        "code": "required"
+      },
+      {
+        "path": "issueDate",
+        "code": "required"
+      },
+      {
+        "path": "vatRegistered",
+        "code": "required"
+      },
+      {
+        "path": "lines[0].quantity",
+        "code": "required"
+      }
+    ],
+    "errors": []
+  },
+  "landscape-missing-versus-zero": {
+    "lines": [
+      {
+        "amount": 5400
+      }
+    ],
+    "sections": [],
+    "subtotal": 5400,
+    "discount": 0,
+    "net": 5400,
+    "vat": 437,
+    "total": 5837,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  }
+}

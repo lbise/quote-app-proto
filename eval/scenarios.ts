@@ -1,5 +1,6 @@
 import type { QuoteData, QuoteLine } from "../app/lib/quote";
-import type { Assertion, Scenario, ScenarioStep } from "./types";
+import expectedCalculations from "./expected-calculations.json";
+import type { Assertion, ExpectedCalculation, Scenario, ScenarioStep } from "./types";
 
 type LineFact = Omit<QuoteLine, "id" | "sectionId"> & { section: number };
 
@@ -299,6 +300,40 @@ const expectedFocusedQuotes: Record<string, QuoteData> = {
   "landscape-missing-versus-zero": complete("LAND-MISSING-001", { lines: [line("geotextile", "", "Natte géotextile", "quantity", "18.000", "m2", "3.00", "")] }),
 };
 
+function finalCalculationAssertions(expected: ExpectedCalculation): Assertion[] {
+  return [
+    ...expected.lines.map((line, index) => equalsAssertion(`expected line ${index + 1} amount`, `calculation.lines[${index}].amount`, line.amount)),
+    ...expected.sections.flatMap((section, index) => [
+      equalsAssertion(`expected section ${index + 1} subtotal`, `calculation.sections[${index}].subtotal`, section.subtotal),
+      equalsAssertion(`expected section ${index + 1} completeness`, `calculation.sections[${index}].incomplete`, section.incomplete),
+    ]),
+    equalsAssertion("expected subtotal", "calculation.subtotal", expected.subtotal),
+    equalsAssertion("expected discount", "calculation.discount", expected.discount),
+    equalsAssertion("expected net", "calculation.net", expected.net),
+    equalsAssertion("expected VAT", "calculation.vat", expected.vat),
+    equalsAssertion("expected total", "calculation.total", expected.total),
+    equalsAssertion("expected completeness", "calculation.complete", expected.complete),
+    equalsAssertion("expected missing fields", "calculation.missing", expected.missing),
+    equalsAssertion("expected calculation errors", "calculation.errors", expected.errors),
+  ];
+}
+
+function withExpectedCalculation(scenario: Scenario): Scenario {
+  const expected = (expectedCalculations as Record<string, ExpectedCalculation>)[scenario.id];
+  if (!expected) {
+    if (process.env.GENERATE_EXPECTED_CALCULATIONS === "1") return scenario;
+    throw new Error(`Missing expected calculation for ${scenario.id}`);
+  }
+  const finalIndex = scenario.steps.length - 1;
+  return {
+    ...scenario,
+    expectedCalculation: expected,
+    steps: scenario.steps.map((step, index) => index === finalIndex
+      ? { ...step, assertions: [...step.assertions, ...finalCalculationAssertions(expected)] }
+      : step),
+  };
+}
+
 function joineryEdit(...args: Parameters<typeof synthetic>): Scenario {
   if (args[2] !== "joinery") throw new Error("joinery edits require the joinery profession");
   return sourceDerivedEdit(...args);
@@ -312,7 +347,7 @@ function controlledJoineryEdit(...args: Parameters<typeof synthetic>): Scenario 
   ] } };
 }
 
-export const scenarios: Scenario[] = [
+const scenarioLibrary: Scenario[] = [
   sourceScenario({ id: "joinery-full-reconstruction", profession: "joinery", locale: "fr", alias: "joinery-cladding-reference", notes: ["30 positive priced lines across seven source-adapted sections.", "pce, ml and m2 are uncertain-unit adaptations stated explicitly in the Artisan message; they are not source claims."], quote: joineryQuote, sourceFacts: joineryFacts, expectedLineCents: joineryLineCents, subtotal: 2_685_430, vat: 217_520, total: 2_902_950 }),
   sourceScenario({ id: "landscape-full-reconstruction", profession: "landscape", locale: "fr", alias: "landscape-reference", notes: ["14 priced lines across two sections; adapted units are explicitly supplied.", "Fixture VAT is a synthetic 8.1% calculation treatment."], quote: landscapeQuote, sourceFacts: landscapeFacts, expectedLineCents: landscapeLineCents, subtotal: 1_503_200, vat: 121_759, total: 1_624_959 }),
   sourceScenario({ id: "civil-full-reconstruction", profession: "civil-works", locale: "en", alias: "civil-works-reference", notes: ["17 priced lines across three sections; the unpriced source position is deliberately excluded.", "Source-inspired terms are anonymized paraphrases; fictional administrative fields are in the Artisan message."], quote: civilQuote, sourceFacts: civilFacts, expectedLineCents: civilLineCents, subtotal: 931_150, vat: 75_423, total: 1_006_573 }),
@@ -353,3 +388,5 @@ export const scenarios: Scenario[] = [
   sourceDerivedEdit("civil-unpriced-position-clarification", "Civil unpriced source position remains incomplete", "civil-works", "fr", draft("CIV-UNKNOWN-001"), [artisan("Ajoute «Fourniture et mise en place d’un sac coupe vent» à CHF 340.00 par pce; la quantité source est «par» et aucun montant final n’est fourni.", [equalsAssertion("incomplete source position captured", "quote.lines.length", 1), equalsAssertion("numeric quantity not invented", "quote.lines[0].quantity", ""), equalsAssertion("source unit captured", "quote.lines[0].unit", "pce"), equalsAssertion("source unit price captured", "quote.lines[0].unitPrice", "340.00"), contains("quantity is incomplete", "calculation.missing", { path: "lines[0].quantity", code: "required" }), unchanged("quote.reference")])], ["quote.reference"], ["Ask for a numeric quantity; do not convert the source’s nonnumeric marker into a Quote value."]),
   sourceDerivedEdit("landscape-missing-versus-zero", "Landscape missing quantity is not zero", "landscape", "en", complete("LAND-MISSING-001", { lines: [] }), [artisan("Add the source-derived geotextile work at CHF 3.00 per m2; the area has not been measured. Do not use zero.", [equalsAssertion("incomplete line captured", "quote.lines.length", 1), equalsAssertion("quantity stays missing", "quote.lines[0].quantity", ""), equalsAssertion("known unit captured", "quote.lines[0].unit", "m2"), equalsAssertion("known price captured", "quote.lines[0].unitPrice", "3.00"), contains("quantity is incomplete", "calculation.missing", { path: "lines[0].quantity", code: "required" }), unchanged("quote.reference")]), artisan("The measured area is 18.000 m2.", [equalsAssertion("added quantity", "quote.lines[0].quantity", "18.000"), equalsAssertion("calculated amount", "calculation.lines[0].amount", 5_400)])], ["quote.reference"], ["Ask for the missing area; absence is not a supplied zero."]),
 ];
+
+export const scenarios: Scenario[] = scenarioLibrary.map(withExpectedCalculation);

@@ -38,3 +38,13 @@ it("keeps automatic success separate from human approval and displays failed ass
   const review: HumanReview = { format: "quote-evaluation-review/v1", id: "review-1", runId: run.id, scenarioHash: run.scenarioHash, createdAt: run.startedAt, reviewer: "Maintainer", wording: "pass", inventedFacts: "pass", clarification: "pending", notes: "Still checking" };
   expect(renderReport({ scenarios: [scenario], runs: [run], runId: run.id, reviews: [review] })).toContain("Human review: <strong>pending</strong>");
 });
+it("renders independent expected amounts and missing information without replacing them with calculator output", () => {
+  const example: Scenario = { ...scenario,
+    expectedQuote: { ...scenario.startingQuote, lines: [{ id: "panel", sectionId: "", description: "Panneau", mode: "quantity", quantity: "1", unit: "pce", unitPrice: "123.00", amount: "" }] },
+    // Deliberately different from quantity × price to detect accidentally using the calculator in the expected pane.
+    expectedCalculation: { lines: [{ amount: 999 }], sections: [], subtotal: 999, discount: 0, net: 999, vat: null, total: null, complete: false, missing: [{ path: "vatRegistered", code: "required" }], errors: [] },
+  };
+  const html = renderReport({ scenarios: [example], runs: [], reviews: [] });
+  expect(html).toContain("9.99\u00a0CHF");
+  expect(html).toContain("Expected missing information (1)");
+});

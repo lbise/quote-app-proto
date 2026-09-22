@@ -15,7 +15,17 @@ describe("evaluation scenario library", () => {
       expect(scenario.review.provider).toBe("blocked");
       expect(scenario.history).toEqual([]); // The runner can seed only real Quote state, not invented prior conversation.
       expect(scenario.steps.every((step) => step.assertions.length > 0)).toBe(true);
-      if (scenario.id !== "joinery-half-up-rounding") expect(scenario.expectedQuote).toBeDefined();
+      expect(scenario.expectedQuote).toBeDefined();
+      expect(scenario.expectedCalculation).toBeDefined();
+      const finalAssertions = scenario.steps.at(-1)!.assertions;
+      expect(finalAssertions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: "calculation.subtotal", expected: scenario.expectedCalculation?.subtotal }),
+        expect.objectContaining({ path: "calculation.complete", expected: scenario.expectedCalculation?.complete }),
+        expect.objectContaining({ path: "calculation.missing", expected: scenario.expectedCalculation?.missing }),
+        expect.objectContaining({ path: "calculation.errors", expected: scenario.expectedCalculation?.errors }),
+      ]));
+      expect(finalAssertions.filter((assertion) => /^calculation\.lines\[\d+\]\.amount$/.test(assertion.path)).length).toBeGreaterThanOrEqual(scenario.expectedCalculation!.lines.length);
+      expect(finalAssertions.filter((assertion) => /^calculation\.sections\[\d+\]\.subtotal$/.test(assertion.path)).length).toBeGreaterThanOrEqual(scenario.expectedCalculation!.sections.length);
       for (const forbiddenPath of scenario.forbiddenMutations) {
         expect(scenario.steps.some((step) => step.assertions.some((assertion) => assertion.operator === "unchanged" && assertion.path === forbiddenPath))).toBe(true);
       }

@@ -1,4 +1,4 @@
-import type { QuoteData } from "../app/lib/quote";
+import type { QuoteData, QuoteProblem } from "../app/lib/quote";
 import type { QuoteAssistantDiagnostic, QuoteAssistantSuccessDebug } from "../app/lib/quote-assistant-debug";
 
 export type Assertion = {
@@ -20,6 +20,18 @@ export type ScenarioStep = {
   quote: QuoteData;
   assertions: Assertion[];
 };
+export type ExpectedCalculation = {
+  lines: { amount: number | null }[];
+  sections: { subtotal: number; incomplete: boolean }[];
+  subtotal: number;
+  discount: number | null;
+  net: number | null;
+  vat: number | null;
+  total: number | null;
+  complete: boolean;
+  missing: QuoteProblem[];
+  errors: QuoteProblem[];
+};
 export type Scenario = {
   id: string;
   version: number;
@@ -35,6 +47,8 @@ export type Scenario = {
   history: { role: "artisan" | "assistant" | "note"; fr: string; en: string }[];
   steps: ScenarioStep[];
   expectedQuote?: QuoteData;
+  /** Independently worked final amounts and incompleteness, never production-calculated. */
+  expectedCalculation?: ExpectedCalculation;
   requiredClarification: string[];
   forbiddenMutations: string[];
   humanReview: string[];
