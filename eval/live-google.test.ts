@@ -9,6 +9,60 @@ import { runScenario } from "./runner";
 import { scenarios } from "./scenarios";
 import type { Scenario } from "./types";
 
+it("records a bounded Google terminal reason before wrapping a provider error", async () => {
+  const root = await mkdtemp(join(tmpdir(), "eval-google-terminal-"));
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
+  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+  const live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
+    maxCalls: 1, maxElapsedMs: 10_000, maxSpendUsd: 1, artifactRoot: root });
+  const network = vi.fn(async () => new Response(`data: ${JSON.stringify({ candidates: [{ finishReason: "SAFETY" }],
+    usageMetadata: { promptTokenCount: 120, cachedContentTokenCount: 20, candidatesTokenCount: 0, thoughtsTokenCount: 0, totalTokenCount: 120 } })}\n\n`,
+  { status: 200, headers: { "content-type": "text/event-stream" } }));
+  vi.stubGlobal("fetch", network);
+  try {
+    const { boundary: wrapped, evidence } = live.forRun(scenarios[0], boundary);
+    const stream = await wrapped.streamFn(boundary.model, { messages: [{ role: "user", content: "Controlled terminal response", timestamp: Date.now() }] });
+    const events = [];
+    for await (const event of stream) events.push(event);
+
+    expect(network).toHaveBeenCalledTimes(1);
+    expect(evidence().calls).toMatchObject([{ status: "uncertain", stopReason: "error", rawStopReason: "SAFETY" }]);
+    expect(events).toContainEqual(expect.objectContaining({ type: "error", error: expect.objectContaining({ stopReason: "error", rawStopReason: "SAFETY", errorMessage: "Live evaluation stopped: provider_error." }) }));
+  } finally {
+    live.close();
+    vi.unstubAllGlobals();
+    clock.mockRestore();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("records MAX_TOKENS on a complete zero-output Google completion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "eval-google-length-"));
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
+  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+  const live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
+    maxCalls: 1, maxElapsedMs: 10_000, maxSpendUsd: 1, artifactRoot: root });
+  const network = vi.fn(async () => new Response(`data: ${JSON.stringify({ candidates: [{ finishReason: "MAX_TOKENS" }],
+    usageMetadata: { promptTokenCount: 120, cachedContentTokenCount: 20, candidatesTokenCount: 0, thoughtsTokenCount: 0, totalTokenCount: 120 } })}\n\n`,
+  { status: 200, headers: { "content-type": "text/event-stream" } }));
+  vi.stubGlobal("fetch", network);
+  try {
+    const { boundary: wrapped, evidence } = live.forRun(scenarios[0], boundary);
+    const stream = await wrapped.streamFn(boundary.model, { messages: [{ role: "user", content: "Controlled length response", timestamp: Date.now() }] });
+    const events = [];
+    for await (const event of stream) events.push(event);
+
+    expect(network).toHaveBeenCalledTimes(1);
+    expect(evidence().calls).toMatchObject([{ status: "complete", stopReason: "length", rawStopReason: "MAX_TOKENS", usage: { input: 120, output: 0, cacheRead: 20 } }]);
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", reason: "length", message: expect.objectContaining({ stopReason: "length", rawStopReason: "MAX_TOKENS" }) }));
+  } finally {
+    live.close();
+    vi.unstubAllGlobals();
+    clock.mockRestore();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("rejects manual-only scenarios instead of labeling a zero-call case a live-model pass", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-manual-only-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));

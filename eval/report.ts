@@ -49,10 +49,11 @@ function turnView(turn: TurnResult): string {
 }
 function liveStatus(run: EvaluationRun): string {
   if (!run.live) return "";
-  const { limits, sessionCalls, sessionReservedUsd, stopReason } = run.live;
+  const { calls, limits, sessionCalls, sessionReservedUsd, stopReason } = run.live;
   return `<p>Provider transmission authorized at launch for the selected scenarios in this invocation. Library approval and human review remain separate.</p>
     ${stopReason ? `<p class="failure">Live session stopped: ${h(stopReason)}</p>` : ""}
     <p>Invocation budget: ${sessionCalls} / ${limits.maxCalls} calls; USD ${h(sessionReservedUsd)} reserved / ${h(limits.maxSpendUsd)} cap; ${limits.maxElapsedMs} ms deadline.</p>
+    <details open><summary>Provider calls (${calls.length})</summary>${calls.length ? `<ol>${calls.map(call => `<li><strong>Call ${call.number}</strong> · ${h(call.status)} · USD ${h(call.reservedUsd)} reserved${call.estimatedUsd === null ? "" : ` · USD ${h(call.estimatedUsd)} estimated`}<br>SDK stop reason: ${h(call.stopReason ?? "not recorded")} · Provider finish reason: ${h(call.rawStopReason ?? "not recorded")}</li>`).join("")}</ol>` : "<p>No provider calls were recorded.</p>"}</details>
     <p>${run.cost.estimatedUsd === null ? "No reliable complete usage estimate" : `This run's reported usage estimate: USD ${h(run.cost.estimatedUsd)}`}. Reservations are conservative upper bounds, not actual charges.</p>
     <p>${h(run.cost.assumptions)}</p>`;
 }

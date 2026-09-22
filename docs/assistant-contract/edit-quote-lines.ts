@@ -91,7 +91,14 @@ export type EditQuoteLinesArguments = Static<typeof editQuoteLinesParameters>;
 type EditQuoteLinesTool = AgentTool<typeof editQuoteLinesParameters, unknown>;
 
 export const editQuoteLinesDescription =
-  "Create or edit up to 50 Quote Lines in one call. " +
+  "Create or edit Quote Lines. The schema allows up to 50 lines, but that is not a target batch size. " +
+  "Each response has a 4096-token output limit, including tool arguments and evidence. " +
+  "For long requests, use batches of about 5 lines, fewer for long descriptions or citations. " +
+  "Send only one batch per response and wait for its tool result before the next batch; do not bundle several batches into one response. " +
+  "Continue until all supplied work is captured, without recreating lines from accepted batches. " +
+  "Keep the supplied work order and section assignments across batches. " +
+  "Evidence indexes restart at /lines/0 in every call. Group supported fields in one citation instead of repeating its excerpt. " +
+  "Keep complete descriptions and evidence; reduce batch size instead of omitting facts. " +
   "Supply each line's complete description and pricing information. " +
   "Include its existing ID to edit it; omit the ID to create a new line. " +
   "Preserve unchanged values from the current draft. " +

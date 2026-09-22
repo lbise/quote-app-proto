@@ -40,13 +40,21 @@ it("keeps automatic success separate from human approval and displays failed ass
     live: { sessionId: "bounded-session", approvedScenarioHashes: [run.scenarioHash], approval: { at: run.startedAt, scenarioHash: run.scenarioHash, provider: "google", model: "gemini-3.5-flash-lite", method: "explicit-launch" },
       limits: { maxCalls: 8, maxElapsedMs: 120000, maxSpendUsd: 5 },
       pricing: { id: "test-prices", checkedAt: "2026-09-22", expiresAt: "2026-09-29T00:00:00Z", source: "https://ai.google.dev", inputNanoUsd: 540, outputNanoUsd: 4500, maxInputTokens: 1048576, maxOutputTokens: 4096 },
-      calls: [], sessionCalls: 1, sessionReservedUsd: 0.58466304, stopReason: "usage_unavailable" },
+      calls: [
+        { number: 1, reservedUsd: 0.58466304, status: "complete", estimatedUsd: 0.0004896, usage: { input: 120, output: 80, cacheRead: 20 }, stopReason: "length", rawStopReason: "MAX_TOKENS" },
+        { number: 2, reservedUsd: 0.58466304, status: "uncertain", estimatedUsd: null },
+      ], sessionCalls: 2, sessionReservedUsd: 1.16932608, stopReason: "usage_unavailable" },
   };
   const liveHtml = renderReport({ scenarios: [scenario], runs: [live], runId: live.id, reviews: [] });
   expect(liveHtml).toContain("Provider transmission authorized at launch for the selected scenarios in this invocation");
   expect(liveHtml).toContain("usage_unavailable");
   expect(liveHtml).toContain("0.58466304");
   expect(liveHtml).toContain("No reliable complete usage estimate");
+  expect(liveHtml).toContain("Call 1");
+  expect(liveHtml).toContain("SDK stop reason: length");
+  expect(liveHtml).toContain("Provider finish reason: MAX_TOKENS");
+  expect(liveHtml).toContain("Call 2");
+  expect(liveHtml).toContain("SDK stop reason: not recorded");
   expect(liveHtml).toContain("Human review: <strong>pending</strong>");
   const review: HumanReview = { format: "quote-evaluation-review/v1", id: "review-1", runId: run.id, scenarioHash: run.scenarioHash, createdAt: run.startedAt, reviewer: "Maintainer", wording: "pass", inventedFacts: "pass", clarification: "pending", notes: "Still checking" };
   expect(renderReport({ scenarios: [scenario], runs: [run], runId: run.id, reviews: [review] })).toContain("Human review: <strong>pending</strong>");

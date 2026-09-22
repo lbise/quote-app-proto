@@ -38,6 +38,7 @@ export function assistantDiagnosticFrom(failure: unknown): QuoteAssistantDiagnos
   const diagnostic = (failure.details as { diagnostic?: unknown }).diagnostic;
   if (!diagnostic || typeof diagnostic !== "object") return null;
   const value = diagnostic as Partial<QuoteAssistantDiagnostic>;
+  const modelResponse = value.modelResponse;
   if ((value.phase !== "model" && value.phase !== "tool" && value.phase !== "validation" && value.phase !== "persistence") || typeof value.code !== "string") return null;
   return {
     phase: value.phase,
@@ -59,6 +60,14 @@ export function assistantDiagnosticFrom(failure: unknown): QuoteAssistantDiagnos
       : {}),
     ...(Array.isArray((value as { llmRequests?: unknown }).llmRequests) ? { llmRequests: (value as { llmRequests: QuoteAssistantLlmRequest[] }).llmRequests } : {}),
     ...(typeof value.requestId === "string" ? { requestId: value.requestId } : {}),
+    ...(modelResponse && typeof modelResponse === "object" && typeof modelResponse.stopReason === "string"
+      ? {
+        modelResponse: {
+          stopReason: modelResponse.stopReason,
+          ...(typeof modelResponse.rawStopReason === "string" ? { rawStopReason: modelResponse.rawStopReason } : {}),
+        },
+      }
+      : {}),
   };
 }
 

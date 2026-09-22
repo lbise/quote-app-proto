@@ -36,6 +36,8 @@ export type QuoteAssistantSuccessDebug = {
 };
 
 export type QuoteAssistantDiagnostic = {
+  /** Terminal reason codes only, never provider response text or error bodies. */
+  modelResponse?: { stopReason: string; rawStopReason?: string };
   phase: QuoteAssistantDiagnosticPhase;
   code: string;
   tool?: string;

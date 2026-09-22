@@ -181,6 +181,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   let lastToolName: string | undefined;
   let stateSequence = 0;
   let lastModelRequest: QuoteAssistantLlmRequest | undefined;
+  let modelResponse: QuoteAssistantDiagnostic["modelResponse"];
   const modelRequests: QuoteAssistantLlmRequest[] = [];
   let diagnostic: QuoteAssistantDiagnostic = { phase: "model", code: "assistant_failed" };
   const diagnosticWithRequest = (value: QuoteAssistantDiagnostic): QuoteAssistantDiagnostic => ({
@@ -188,6 +189,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     attempts,
     failedCalls,
     failureLimit,
+    ...(modelResponse ? { modelResponse } : {}),
     ...(lastModelRequest ? { llmRequest: lastModelRequest } : {}),
     ...(modelRequests.length ? { llmRequests: [...modelRequests] } : {}),
   });
@@ -197,6 +199,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     streamFn: (model, context, options) => {
       const contextBytes = Buffer.byteLength(JSON.stringify(context));
       if (failed) throw new Error("The Quote assistant could not complete this request.");
+      modelResponse = undefined;
       if (contextBytes > 600_000) {
         diagnostic = { phase: "model", code: "context_limit_exceeded", outcome: "later_budget_exhausted", notSent: true, applicationContext: context };
         throw new Error("The Quote assistant context exceeded its safety limit.");
@@ -244,6 +247,12 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     },
     shouldStopAfterTurn: ({ message }) => {
       rounds += 1;
+      if (failed) return true;
+      if (message.stopReason === "length") {
+        diagnostic = { phase: "model", code: "assistant_output_limit_exceeded", outcome: "later_budget_exhausted" };
+        failed = true;
+        return true;
+      }
       if (failedCalls >= failureLimit) {
         diagnostic = { phase: "tool", code: "failed_call_limit_reached", outcome: "failed_call_limit_reached" };
         failed = true;
@@ -263,7 +272,13 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     }
     if ((event.type === "message_update" || event.type === "message_end") && event.message.role === "assistant") {
       const size = Buffer.byteLength(JSON.stringify(event.message));
-      if (event.type === "message_end") responseBytes += size;
+      if (event.type === "message_end") {
+        responseBytes += size;
+        const raw = event.message.rawStopReason;
+        modelResponse = { stopReason: event.message.stopReason,
+          ...(raw && /^[A-Z][A-Z0-9_]{0,63}$/.test(raw) ? { rawStopReason: raw } : {}),
+        };
+      }
       if (size > 64_000 || responseBytes > 256_000) {
         diagnostic = { phase: "model", code: "assistant_response_limit_exceeded" };
         failed = true;

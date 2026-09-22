@@ -66,6 +66,46 @@ for (const locale of ["en", "fr"] as const) {
     await debugDialog.getByRole("button", { name: "Close" }).click();
     await expect(debugDialog).toHaveCount(0);
   });
+
+  test(`model terminal metadata is visible in developer details in ${locale}`, async ({ artisan }) => {
+    const { page } = artisan;
+    const seeded = await createCompleteQuote(artisan);
+    await page.goto(`/quotes?id=${seeded.id}`);
+    await setInterfaceLanguage(page, locale);
+
+    await page.route("**/api/quotes**", async (route) => {
+      const payload = route.request().postDataJSON() as { action?: string } | null;
+      if (payload?.action !== "assistant") return route.continue();
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "assistant_unavailable",
+          details: {
+            diagnostic: {
+              phase: "model",
+              code: "model_response_incomplete",
+              modelResponse: { stopReason: "length", rawStopReason: "MAX_TOKENS" },
+            },
+          },
+        }),
+      });
+    });
+
+    const copy = locale === "fr"
+      ? { message: "Votre message", send: "Envoyer le message", trigger: "Détails développeur", modelResponse: "Réponse du modèle", stopReason: "Motif d’arrêt", rawStopReason: "Motif d’arrêt brut" }
+      : { message: "Your message", send: "Send message", trigger: "Developer details", modelResponse: "Model response", stopReason: "Stop reason", rawStopReason: "Raw stop reason" };
+    await page.getByLabel(copy.message).fill("Please revise the title.");
+    await page.getByRole("button", { name: copy.send }).click();
+    await page.getByRole("button", { name: copy.trigger }).click();
+
+    const debugDialog = page.getByRole("dialog");
+    await expect(debugDialog).toContainText(copy.modelResponse);
+    await expect(debugDialog).toContainText(copy.stopReason);
+    await expect(debugDialog).toContainText("length");
+    await expect(debugDialog).toContainText(copy.rawStopReason);
+    await expect(debugDialog).toContainText("MAX_TOKENS");
+  });
 }
 
 test("an assistant publication request does not open the Publication dialog", async ({ artisan }) => {

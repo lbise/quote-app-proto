@@ -74,6 +74,10 @@ export type LiveCall = {
   reservedUsd: number;
   status: "reserved" | "complete" | "uncertain";
   estimatedUsd: number | null;
+  /** Bounded terminal reason emitted by the SDK. */
+  stopReason?: string;
+  /** Bounded provider-native terminal reason, when supplied by the SDK. */
+  rawStopReason?: string;
   usage?: { input: number; output: number; cacheRead: number };
 };
 export type LiveEvidence = {

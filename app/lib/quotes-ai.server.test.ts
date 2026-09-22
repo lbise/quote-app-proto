@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
@@ -190,6 +190,95 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
       expect.objectContaining({ id: "two", amount: "75.00" }),
     ]);
     expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 17_500, total: 17_500, complete: true });
+  });
+
+  it("advertises small line batches and commits all supplied work as one undoable turn", async () => {
+    let detail = await createDraft();
+    const baseline = { ...complete(detail.draft.reference), lines: [] };
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: baseline })).json();
+    const notes = Array.from({ length: 30 }, (_, index) => `Pose de panneau ${index + 1}, forfait 100 CHF.`);
+    let description = "";
+    let lineTool: unknown;
+    let maxTokens: number | undefined;
+    const batches = [0, 1, 2, 3, 4, 5].map((batch): FauxResponseStep => context => {
+      const sectionResult = context.messages.find(message => message.role === "toolResult" && message.toolName === "edit_quote_sections");
+      if (sectionResult?.role !== "toolResult") throw new Error("Section tool result missing.");
+      const content = sectionResult.content.find(part => part.type === "text");
+      const sections = JSON.parse(content?.type === "text" ? content.text : "{}").calculation.sections;
+      const offset = batch * 5;
+      return fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
+        lines: notes.slice(offset, offset + 5).map((_, index) => ({
+          sectionId: sections[batch < 3 ? 0 : 1].id,
+          description: `Pose de panneau ${offset + index + 1}`, mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "100.00",
+        })),
+        evidence: notes.slice(offset, offset + 5).map((text, index) => ({
+          fields: [`/lines/${index}/description`, `/lines/${index}/mode`, `/lines/${index}/amount`], source: "current", text,
+        })),
+      })], { stopReason: "toolUse" });
+    });
+    const model = scriptedModel([
+      (context, options) => {
+        const tool = context.tools?.find(tool => tool.name === "edit_quote_lines");
+        lineTool = tool;
+        description = tool?.description ?? "";
+        maxTokens = options?.maxTokens;
+        return fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
+          sections: [{ title: "Atelier" }, { title: "Entrée" }],
+          evidence: [{ fields: ["/sections/0/title", "/sections/1/title"], source: "current", text: "Rubriques Atelier et Entrée." }],
+        })], { stopReason: "toolUse" });
+      },
+      ...batches,
+      fauxAssistantMessage("Les trente postes ont été ajoutés."),
+    ]);
+    const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: `Rubriques Atelier et Entrée. Postes 1 à 15 dans Atelier, puis 16 à 30 dans Entrée.\n${notes.join("\n")}`, locale: "fr" }, undefined, model.handler);
+    expect(response.status).toBe(200);
+    expect(description).toContain("batches of about 5 lines");
+    expect(description).toContain("one batch per response");
+    expect(description).toContain("until all supplied work is captured");
+    expect(description).toContain("indexes restart at /lines/0");
+    expect(lineTool).toMatchObject({ parameters: { properties: { lines: { maxItems: 50 } } } });
+    expect(maxTokens).toBe(4096);
+    const reopened = await (await request(undefined, detail.id)).json();
+    expect(reopened.draft.lines.map((line: { description: string }) => line.description)).toEqual(Array.from({ length: 30 }, (_, index) => `Pose de panneau ${index + 1}`));
+    expect(reopened.draft.lines.map((line: { sectionId: string }) => line.sectionId)).toEqual([
+      ...Array(15).fill(reopened.draft.sections[0].id), ...Array(15).fill(reopened.draft.sections[1].id),
+    ]);
+    expect(calculateQuote(reopened.draft)).toMatchObject({ subtotal: 300_000, vat: 24_300, total: 324_300, complete: true });
+    expect(reopened.canUndo).toBe(true);
+    const undone = await request({ action: "undo", id: detail.id, expectedVersion: reopened.version, requestId: crypto.randomUUID() });
+    expect(undone.status).toBe(200);
+    expect((await undone.json()).draft).toEqual(baseline);
+  });
+
+  it.each([false, true])("reports an output-token limit and discards staged work even with truncated tool calls: %s", async (hasToolCall) => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
+          sections: [{ title: "Cuisine" }],
+          evidence: [{ fields: ["/sections/0/title"], source: "current", text: "Cuisine" }],
+        })], { stopReason: "toolUse" }),
+        { ...fauxAssistantMessage(hasToolCall ? [fauxToolCall("edit_quote_lines", {
+          lines: [{ description: "Pose", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "25.00" }],
+          evidence: [{ fields: ["/lines/0/mode", "/lines/0/description", "/lines/0/amount"], source: "current", text: "Pose pour 25 CHF" }],
+        })] : "", { stopReason: "length" }), rawStopReason: "MAX_TOKENS" },
+        fauxAssistantMessage("This response must never be requested after truncation."),
+      ]);
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Cuisine. Pose pour 25 CHF.", locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(502);
+      expect(await response.json()).toMatchObject({ error: "assistant_unavailable", details: { diagnostic: {
+        phase: "model", code: "assistant_output_limit_exceeded", outcome: "later_budget_exhausted",
+        modelResponse: { stopReason: "length", rawStopReason: "MAX_TOKENS" },
+        attempts: expect.arrayContaining([expect.objectContaining({ name: "edit_quote_sections", outcome: "applied" })]),
+      } } });
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft).toEqual(detail.draft);
+      expect(reopened).toMatchObject({ pending: false, canUndo: false });
+      expect(JSON.stringify(reopened)).not.toContain("MAX_TOKENS");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("retries a failed assistant request without duplicating its Artisan message", async () => {

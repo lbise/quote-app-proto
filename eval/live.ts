@@ -79,6 +79,12 @@ function validatePayload(value: unknown, modelId: string) {
     }
   }
 }
+const sdkTerminalStopReasons = new Set(["stop", "toolUse", "length", "error", "aborted", "deferred"]);
+const googleFinishReason = /^[A-Z][A-Z0-9_]{0,63}$/;
+function preserveTerminalReason(call: LiveCall, message: AssistantMessage) {
+  if (sdkTerminalStopReasons.has(message.stopReason)) call.stopReason = message.stopReason;
+  if (typeof message.rawStopReason === "string" && googleFinishReason.test(message.rawStopReason)) call.rawStopReason = message.rawStopReason;
+}
 function finalUsage(message: AssistantMessage): LiveCall["usage"] | undefined {
   const usage = message.usage;
   if (!["stop", "toolUse", "length"].includes(message.stopReason) || !usage) return;
@@ -185,6 +191,7 @@ export class LiveSession {
         this.stop(reason);
         const error: AssistantMessage = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
           content: [], timestamp: Date.now(), stopReason: "error", errorMessage: `Live evaluation stopped: ${this.reason}.`,
+          ...(call.rawStopReason ? { rawStopReason: call.rawStopReason } : {}),
           usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
         stream.push({ type: "error", reason: "error", error });
         stream.end();
@@ -213,8 +220,13 @@ export class LiveSession {
           });
           for await (const event of upstream) {
             if (settled) break;
-            if (event.type === "error") { failed("provider_error"); break; }
+            if (event.type === "error") {
+              preserveTerminalReason(call, event.error);
+              failed("provider_error");
+              break;
+            }
             if (event.type === "done") {
+              preserveTerminalReason(call, event.message);
               const usage = finalUsage(event.message);
               if (!usage) { failed("usage_unavailable"); break; }
               call.usage = usage;

@@ -64,9 +64,11 @@ function ToolDebugContent({ debug, t, outcomeLabel, attempts, requests }: DebugC
 }
 
 function FailureDebugContent({ debug, t, outcomeLabel, attempts, requests }: DebugContentProps & { debug: QuoteAssistantDiagnostic }) {
+  const modelResponse = debug.modelResponse;
   return <dl>
     <dt>{t('Phase', 'Phase')}</dt><dd><code>{debug.phase}</code></dd>
     <dt>{t('Code', 'Code')}</dt><dd><code>{debug.code}</code></dd>
+    {modelResponse && <><dt>{t('Réponse du modèle', 'Model response')}</dt><dd><dl><dt>{t('Motif d’arrêt', 'Stop reason')}</dt><dd><code>{modelResponse.stopReason}</code></dd>{modelResponse.rawStopReason !== undefined && <><dt>{t('Motif d’arrêt brut', 'Raw stop reason')}</dt><dd><code>{modelResponse.rawStopReason}</code></dd></>}</dl></dd></>}
     {debug.failedCalls !== undefined && <><dt>{t('Compteur', 'Counter')}</dt><dd>{t(`Appels d’outil en échec : ${debug.failedCalls}/${debug.failureLimit ?? 3}`, `Failed calls: ${debug.failedCalls}/${debug.failureLimit ?? 3}`)}</dd></>}
     {debug.outcome && <><dt>{t('Résultat du tour', 'Turn outcome')}</dt><dd>{outcomeLabel(debug.outcome)}</dd></>}
     {debug.tool && <><dt>{t('Outil', 'Tool')}</dt><dd><code>{debug.tool}</code></dd></>}
