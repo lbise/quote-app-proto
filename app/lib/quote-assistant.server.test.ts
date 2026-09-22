@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type Context } from "@earendil-works/pi-ai";
 
+import proposedTools from "../../docs/assistant-contract/proposed-tools.json";
+import { editQuoteLinesDescription } from "../../docs/assistant-contract/edit-quote-lines";
 import { emptyQuote } from "./quote";
 import { generateQuoteChange, type QuoteAIModelBoundary } from "./quote-assistant.server";
 
@@ -61,7 +63,8 @@ describe("pi Quote assistant model boundary", () => {
     const lineTool = contexts[0].tools?.find((tool) => tool.name === "edit_quote_lines");
     const sectionTool = contexts[0].tools?.find((tool) => tool.name === "edit_quote_sections");
     const copyTool = contexts[0].tools?.find((tool) => tool.name === "copy_quote_work");
-    expect(JSON.stringify(lineTool?.parameters)).toContain("Cite /lines/N/mode for every new line or changed mode.");
+    expect(lineTool?.description).toBe(editQuoteLinesDescription);
+    expect(lineTool?.description).toBe(proposedTools.find((tool) => tool.name === "edit_quote_lines")?.description);
     expect(lineTool?.parameters).toMatchObject({
       properties: {
         lines: { items: { properties: { description: { type: "string" }, mode: {}, quantity: {}, unit: {}, unitPrice: {}, amount: {} } } },

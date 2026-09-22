@@ -1,4 +1,4 @@
-import { createCompleteQuote, expect, test } from "./fixtures";
+import { createCompleteQuote, expect, setInterfaceLanguage, test } from "./fixtures";
 
 test("the assistant data warning is available from the chat header without blocking messages", async ({ artisan }) => {
   const { page } = artisan;
@@ -30,37 +30,43 @@ test("the assistant data warning is available from the chat header without block
   await expect(page.getByRole("button", { name: "Edit line 1" })).toBeEnabled();
 });
 
-test("failed-call diagnostics are visible after an assistant response", async ({ artisan }) => {
-  const { page } = artisan;
-  const seeded = await createCompleteQuote(artisan);
+for (const locale of ["en", "fr"] as const) {
+  test(`failed-call diagnostics are visible after an assistant response in ${locale}`, async ({ artisan }) => {
+    const { page } = artisan;
+    const seeded = await createCompleteQuote(artisan);
+    await page.goto(`/quotes?id=${seeded.id}`);
+    await setInterfaceLanguage(page, locale);
 
-  await page.goto(`/quotes?id=${seeded.id}`);
-  await page.route("**/api/quotes**", async (route) => {
-    const payload = route.request().postDataJSON() as { action?: string } | null;
-    if (payload?.action !== "assistant") return route.continue();
-    await route.fulfill({
-      status: 502,
-      contentType: "application/json",
-      body: JSON.stringify({
-        error: "assistant_unavailable",
-        details: { diagnostic: { phase: "tool", code: "tool_rejected", failedCalls: 1, failureLimit: 3, outcome: "unchanged_with_failed_calls", attempts: [] } },
-      }),
+    await page.route("**/api/quotes**", async (route) => {
+      const payload = route.request().postDataJSON() as { action?: string } | null;
+      if (payload?.action !== "assistant") return route.continue();
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "assistant_unavailable",
+          details: { diagnostic: { phase: "tool", code: "tool_rejected", failedCalls: 1, failureLimit: 3, outcome: "unchanged_with_failed_calls", attempts: [] } },
+        }),
+      });
     });
-  });
 
-  await page.getByLabel("Your message").fill("Please revise the title.");
-  await page.getByRole("button", { name: "Send message" }).click();
-  await expect(page.getByRole("alert")).toContainText("The assistant did not respond");
-  const debugTrigger = page.getByRole("button", { name: "Developer details" });
-  await debugTrigger.click();
-  const debugDialog = page.getByRole("dialog");
-  await expect(debugDialog).toBeVisible();
-  await expect(debugDialog).toContainText("Failed calls: 1/3");
-  const bounds = await debugDialog.boundingBox();
-  expect(bounds?.width ?? 0).toBeGreaterThan(680);
-  await debugDialog.getByRole("button", { name: "Close" }).click();
-  await expect(debugDialog).toHaveCount(0);
-});
+    const copy = locale === "fr"
+      ? { message: "Votre message", send: "Envoyer le message", alert: "L’assistant n’a pas répondu", trigger: "Détails développeur", failed: "Appels d’outil en échec : 1/3" }
+      : { message: "Your message", send: "Send message", alert: "The assistant did not respond", trigger: "Developer details", failed: "Failed calls: 1/3" };
+    await page.getByLabel(copy.message).fill("Please revise the title.");
+    await page.getByRole("button", { name: copy.send }).click();
+    await expect(page.getByRole("alert")).toContainText(copy.alert);
+    const debugTrigger = page.getByRole("button", { name: copy.trigger });
+    await debugTrigger.click();
+    const debugDialog = page.getByRole("dialog");
+    await expect(debugDialog).toBeVisible();
+    await expect(debugDialog).toContainText(copy.failed);
+    const bounds = await debugDialog.boundingBox();
+    expect(bounds?.width ?? 0).toBeGreaterThan(680);
+    await debugDialog.getByRole("button", { name: "Close" }).click();
+    await expect(debugDialog).toHaveCount(0);
+  });
+}
 
 test("an assistant publication request does not open the Publication dialog", async ({ artisan }) => {
   const { page } = artisan;

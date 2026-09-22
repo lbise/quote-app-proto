@@ -2,7 +2,10 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
-import { editQuoteLinesParameters } from "../../docs/assistant-contract/edit-quote-lines";
+import {
+  editQuoteLinesDescription,
+  editQuoteLinesParameters,
+} from "../../docs/assistant-contract/edit-quote-lines";
 import { calculateQuote, type QuoteData, type QuoteLine } from "./quote";
 import { MAX_QUOTE_LINES, MAX_QUOTE_SECTIONS, quoteDraftLimit } from "./quote-limits";
 import { randomUUID } from "./random-id";
@@ -257,7 +260,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const editQuoteLines: AgentTool = {
     name: "edit_quote_lines",
     label: "Edit Quote lines",
-    description: "Create or edit up to 50 Quote Lines in one call. Supply each line's complete description and pricing information. Include its existing ID to edit it; omit the ID to create a new line. Preserve unchanged values from the current draft. Use empty strings for unknown values, deliberately cleared values and fields unused by the selected pricing mode. Cite evidence for every new or changed nonempty commercial field, including mode and unit, with paths such as /lines/0/mode and /lines/0/unit. One citation may cover several fields. Do not copy, move or delete lines with this tool.",
+    description: editQuoteLinesDescription,
     parameters: editQuoteLinesParameters,
     executionMode: "sequential",
     prepareArguments: prepare((args) => { editQuoteLinesInput(args, evidenceContext, staged); }),
