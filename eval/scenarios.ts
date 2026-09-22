@@ -52,7 +52,18 @@ function factText(sections: string[], facts: LineFact[]): string {
 }
 
 function equalsAssertion(label: string, path: string, expected: unknown): Assertion { return { label, path, operator: "equals", expected }; }
+function oneOfAssertion(label: string, path: string, expected: readonly unknown[]): Assertion { return { label, path, operator: "oneOf", expected: [...expected] }; }
 function contains(label: string, path: string, expected: unknown): Assertion { return { label, path, operator: "contains", expected }; }
+function unitAssertion(label: string, path: string, expected: string): Assertion {
+  const equivalents: Record<string, readonly string[]> = {
+    pce: ["pce", "pièce", "pièces"],
+    m2: ["m2", "m²"],
+    ml: ["ml", "m", "mètre", "mètres", "mètre linéaire", "mètres linéaires"],
+    m3: ["m3", "m³"],
+    h: ["h", "heure", "heures"],
+  };
+  return equivalents[expected] ? oneOfAssertion(label, path, equivalents[expected]) : equalsAssertion(label, path, expected);
+}
 function unchanged(path: string): Assertion { return { label: `unchanged ${path}`, path, operator: "unchanged" }; }
 function artisan(text: string, assertions: Assertion[], concurrentManualQuote?: QuoteData): ScenarioStep {
   return { kind: "artisan", text, assertions, ...(concurrentManualQuote ? { concurrentManualQuote } : {}) };
@@ -90,7 +101,7 @@ function sourceAssertions(expected: QuoteData, expectedLineCents: readonly numbe
     assertions.push(equalsAssertion(`line ${index + 1} amount`, `calculation.lines[${index}].amount`, expectedLineCents[index]!));
     if (expectedLine.mode === "quantity") {
       assertions.push(equalsAssertion(`line ${index + 1} quantity`, `quote.lines[${index}].quantity`, expectedLine.quantity));
-      assertions.push(equalsAssertion(`line ${index + 1} unit`, `quote.lines[${index}].unit`, expectedLine.unit));
+      assertions.push(unitAssertion(`line ${index + 1} unit`, `quote.lines[${index}].unit`, expectedLine.unit));
       assertions.push(equalsAssertion(`line ${index + 1} unit price`, `quote.lines[${index}].unitPrice`, expectedLine.unitPrice));
     } else {
       assertions.push(equalsAssertion(`line ${index + 1} fixed amount`, `quote.lines[${index}].amount`, expectedLine.amount));

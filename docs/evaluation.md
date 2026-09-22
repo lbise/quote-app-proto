@@ -4,7 +4,7 @@ Issue [#29](https://github.com/lbise/quote-app-proto/issues/29). This is local r
 
 ## Current status
 
-The library has two suites: four small fictional contract checks, one combined contract check and 26 scenario cases. The scenario suite prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately. Adding contract checks does not change the existing scenarios or their approval hashes.
+The library has two suites: four small fictional contract checks, one combined contract check and 26 scenario cases. The scenario suite prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately. The contract additions do not change the 26 scenario definitions, but the joinery reconstruction now accepts explicit French unit spellings such as `pièce` for `pce` and `m²` for `m2`; its scenario hash changed and requires fresh live approval.
 
 Inputs and expected outcomes still need human review. The product owner allowed retaining prices and technical specifications in local anonymized fixtures. That is **not provider-data approval**. Every scenario starts with provider use blocked.
 

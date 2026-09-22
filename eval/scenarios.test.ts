@@ -60,6 +60,18 @@ describe("evaluation scenario library", () => {
     expect(evaluateAssertions(step.assertions, scenario.startingQuote, reworded, "committed", 0).filter(result => !result.passed)).toEqual([]);
   });
 
+  it("accepts ordinary French spellings for source-derived units without mixing physical units", () => {
+    const joinery = scenarios.find((scenario) => scenario.id === "joinery-full-reconstruction")!;
+    const actual = structuredClone(joinery.expectedQuote!);
+    for (const line of actual.lines) {
+      if (line.unit === "pce") line.unit = "pièce";
+      if (line.unit === "m2") line.unit = "m²";
+    }
+    expect(evaluateAssertions(joinery.steps[0]!.assertions, joinery.startingQuote, actual, "committed", 0).filter(result => !result.passed)).toEqual([]);
+    actual.lines.find(line => line.unit === "pièce")!.unit = "kg";
+    expect(evaluateAssertions(joinery.steps[0]!.assertions, joinery.startingQuote, actual, "committed", 0).some(result => result.path === "quote.lines[2].unit" && !result.passed)).toBe(true);
+  });
+
   it("retains the three source-derived reconstructions and independently supplied totals", () => {
     const joinery = scenarios.find((scenario) => scenario.id === "joinery-full-reconstruction");
     const landscape = scenarios.find((scenario) => scenario.id === "landscape-full-reconstruction");
