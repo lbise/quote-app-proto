@@ -35,6 +35,19 @@ it("keeps automatic success separate from human approval and displays failed ass
   expect(html).toContain("[missing]");
   expect(html).toContain("Save a new review");
   expect(html).toContain("Expected / actual final Quote");
+  const live: EvaluationRun = { ...run, model: { provider: "google", id: "gemini-3.5-flash-lite", settings: {} },
+    cost: { estimatedUsd: null, reservedUsd: 0.58466304, ceilingEnforceable: true, assumptions: "Recorded rates, not an invoice guarantee." },
+    live: { sessionId: "bounded-session", approvedScenarioHashes: [run.scenarioHash], approval: { at: run.startedAt, scenarioHash: run.scenarioHash, provider: "google", model: "gemini-3.5-flash-lite", method: "explicit-launch" },
+      limits: { maxCalls: 8, maxElapsedMs: 120000, maxSpendUsd: 5 },
+      pricing: { id: "test-prices", checkedAt: "2026-09-22", expiresAt: "2026-09-29T00:00:00Z", source: "https://ai.google.dev", inputNanoUsd: 540, outputNanoUsd: 4500, maxInputTokens: 1048576, maxOutputTokens: 4096 },
+      calls: [], sessionCalls: 1, sessionReservedUsd: 0.58466304, stopReason: "usage_unavailable" },
+  };
+  const liveHtml = renderReport({ scenarios: [scenario], runs: [live], runId: live.id, reviews: [] });
+  expect(liveHtml).toContain("Provider transmission authorized at launch for the selected scenarios in this invocation");
+  expect(liveHtml).toContain("usage_unavailable");
+  expect(liveHtml).toContain("0.58466304");
+  expect(liveHtml).toContain("No reliable complete usage estimate");
+  expect(liveHtml).toContain("Human review: <strong>pending</strong>");
   const review: HumanReview = { format: "quote-evaluation-review/v1", id: "review-1", runId: run.id, scenarioHash: run.scenarioHash, createdAt: run.startedAt, reviewer: "Maintainer", wording: "pass", inventedFacts: "pass", clarification: "pending", notes: "Still checking" };
   expect(renderReport({ scenarios: [scenario], runs: [run], runId: run.id, reviews: [review] })).toContain("Human review: <strong>pending</strong>");
 });

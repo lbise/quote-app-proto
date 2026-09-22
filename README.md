@@ -68,7 +68,7 @@ npm run build
 
 ## Assistant evaluation
 
-Run `npm run eval:review` to browse source-derived scenarios and saved results locally, without provider calls. See [evaluation.md](docs/evaluation.md) for isolated offline runs, source handling and human review. Live evaluation remains blocked pending provider-data approval and enforceable spending controls.
+Run `npm run eval:review` to browse source-derived scenarios and saved results on your trusted network, without provider calls. See [evaluation.md](docs/evaluation.md) for offline checks and bounded live Gemini runs. Live runs require explicit scenario selection, provider-data approval and call/time/spending limits. Human review remains separate from execution.
 
 ## Releases
 

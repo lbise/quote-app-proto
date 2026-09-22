@@ -69,6 +69,24 @@ export type TurnResult = {
   diagnostic?: QuoteAssistantDiagnostic;
   error?: string;
 };
+export type LiveCall = {
+  number: number;
+  reservedUsd: number;
+  status: "reserved" | "complete" | "uncertain";
+  estimatedUsd: number | null;
+  usage?: { input: number; output: number; cacheRead: number };
+};
+export type LiveEvidence = {
+  sessionId: string;
+  approvedScenarioHashes: string[];
+  approval: { at: string; scenarioHash: string; provider: string; model: string; method: "explicit-launch" };
+  limits: { maxCalls: number; maxElapsedMs: number; maxSpendUsd: number };
+  pricing: { id: string; checkedAt: string; expiresAt: string; source: string; inputNanoUsd: number; outputNanoUsd: number; maxInputTokens: number; maxOutputTokens: number };
+  calls: LiveCall[];
+  sessionCalls: number;
+  sessionReservedUsd: number;
+  stopReason?: string;
+};
 export type EvaluationRun = {
   format: "quote-evaluation/v1";
   id: string;
@@ -80,7 +98,8 @@ export type EvaluationRun = {
   repetition: number;
   elapsedMs: number;
   usage: { input: number; output: number; total: number } | null;
-  cost: { estimatedUsd: number | null; assumptions: string; ceilingEnforceable: boolean };
+  cost: { estimatedUsd: number | null; assumptions: string; ceilingEnforceable: boolean; reservedUsd?: number };
+  live?: LiveEvidence;
   modelCalls: number;
   turns: TurnResult[];
   automated: "passed" | "failed" | "invalid";

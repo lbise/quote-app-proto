@@ -7,15 +7,9 @@ import type { QuoteData } from "../app/lib/quote";
 import type { QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
 import { evaluateAssertions } from "./assertions";
 import { openIsolatedEvaluationDatabase } from "./isolation";
+import type { LiveSession } from "./live";
+import { scenarioHash } from "./scenario-hash";
 import type { AssertionResult, EvaluationRun, Scenario, ScenarioStep, TurnResult } from "./types";
-
-export type LiveEvaluationOptions = {
-  approvedProviderDataReview: true;
-  maxCalls: number;
-  maxElapsedMs: number;
-  /** No provider price schedule is tracked yet, so a monetary ceiling is refused. */
-  maxSpendUsd?: number;
-};
 
 export type RunScenarioOptions = {
   /** URL for the local quote_evaluation template created by scripts/eval-db.sh. */
@@ -24,24 +18,13 @@ export type RunScenarioOptions = {
   modelBoundary: QuoteAIModelBoundary;
   repetition?: number;
   modelSettings?: Record<string, unknown>;
-  live?: LiveEvaluationOptions;
+  live?: LiveSession;
 };
 
 type QuoteDetail = { id: string; version: number; draft: QuoteData; pending: boolean; assistantDebug?: TurnResult["debug"]; diagnostic?: TurnResult["diagnostic"] };
 type Handler = (request: Request) => Promise<Response>;
 
 const origin = "http://evaluation.local";
-
-function stable(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stable(record[key])}`).join(",")}}`;
-}
-
-function scenarioHash(scenario: Scenario): string {
-  return createHash("sha256").update(stable(scenario)).digest("hex");
-}
 
 function git(command: string[]): string {
   try {
@@ -116,12 +99,13 @@ function outcomeFor(status: number, payload: unknown): string {
 
 function recordedModelSettings(options: RunScenarioOptions): Record<string, unknown> {
   return {
-    ...(redact(options.modelSettings ?? { transport: "controlled" }) as Record<string, unknown>),
+    ...(redact(options.modelSettings ?? (options.live ? { transport: "live", providerCalls: true } : { transport: "controlled" })) as Record<string, unknown>),
     generation: {
       maxTokens: 4096,
       maxRetries: 0,
       cacheRetention: "none",
       thinkingLevel: "off",
+      ...(options.live ? { candidateCount: 1, providerThinking: "MINIMAL; Gemini 3 cannot fully disable thinking. Included in maxTokens." } : {}),
       timeoutMs: options.modelBoundary.timeoutMs,
     },
   };
@@ -218,16 +202,8 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
   if (!options.live && options.modelBoundary.model.provider !== "faux") {
     throw new Error("A non-faux provider requires explicit live opt-in and provider-data approval.");
   }
-  if (options.live) {
-    if (scenario.execution === "controlled-only") throw new Error("Fault-injection scenarios require a controlled model transport, not live interpretation.");
-    if (!options.live.approvedProviderDataReview || scenario.review.provider !== "approved") {
-      throw new Error("Live evaluation is blocked: this scenario has no approved provider-data review.");
-    }
-    if (!Number.isInteger(options.live.maxCalls) || options.live.maxCalls < 1 || !Number.isInteger(options.live.maxElapsedMs) || options.live.maxElapsedMs < 1) {
-      throw new Error("Live evaluation requires positive maxCalls and maxElapsedMs limits.");
-    }
-    throw new Error("Live evaluation is disabled: provider usage and pricing are not captured reliably enough to enforce a monetary ceiling.");
-  }
+  const liveRun = options.live?.forRun(scenario, options.modelBoundary);
+  const transportBoundary = liveRun?.boundary ?? options.modelBoundary;
   if (scenario.history.length) return invalidRun(scenario, options, "Scenario history cannot be seeded through the real HTTP path");
   if (!scenario.steps.length) return invalidRun(scenario, options, "Scenario has no executable steps");
   const missingExpectation = missingExpectations(scenario);
@@ -251,10 +227,10 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
     const usage: CapturedUsage = { input: 0, output: 0 };
     let usageReports = 0;
     const observedBoundary: QuoteAIModelBoundary = {
-      ...options.modelBoundary,
+      ...transportBoundary,
       streamFn: async (model, context, streamOptions) => {
         modelCalls += 1;
-        const stream = await options.modelBoundary.streamFn(model, context, streamOptions);
+        const stream = await transportBoundary.streamFn(model, context, streamOptions);
         void stream.result().then((message) => {
           const reported = usageFrom(message);
           if (!reported) return;
@@ -273,6 +249,7 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
     const turns: TurnResult[] = [];
 
     for (const [index, step] of scenario.steps.entries()) {
+      if (options.live?.stopped) break;
       const before = cloneQuote(current.draft);
       const turnStarted = Date.now();
       let response: Response | undefined;
@@ -353,7 +330,10 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       });
     }
 
-    const allPassed = turns.every((turn) => turn.assertions.every((assertion) => assertion.passed));
+    const live = liveRun?.evidence();
+    const liveUsageComplete = live?.calls.length && live.calls.every(call => call.usage && call.status === "complete");
+    const allPassed = !live?.stopReason && turns.length === scenario.steps.length && turns.every((turn) => turn.assertions.every((assertion) => assertion.passed));
+    const liveUsage = liveUsageComplete ? live.calls.reduce((sum, call) => ({ input: sum.input + call.usage!.input, output: sum.output + call.usage!.output }), { input: 0, output: 0 }) : undefined;
     return {
       format: "quote-evaluation/v1",
       id: randomUUID(),
@@ -364,9 +344,16 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       model: { provider: options.modelBoundary.model.provider, id: options.modelBoundary.model.id ?? "unknown", settings: recordedModelSettings(options) },
       repetition: options.repetition ?? 1,
       elapsedMs: Date.now() - started,
-      usage: usageReports ? { input: usage.input, output: usage.output, total: usage.input + usage.output } : null,
-      cost: { estimatedUsd: null, assumptions: usageReports ? `Usage was reported by ${usageReports} of ${modelCalls} model calls; no provider price schedule is configured.` : "No model call reported token usage or a provider price schedule.", ceilingEnforceable: false },
-      modelCalls,
+      usage: live ? liveUsage ? { ...liveUsage, total: liveUsage.input + liveUsage.output } : null
+        : usageReports ? { input: usage.input, output: usage.output, total: usage.input + usage.output } : null,
+      cost: live ? {
+        estimatedUsd: liveUsage ? (liveUsage.input * live.pricing.inputNanoUsd + liveUsage.output * live.pricing.outputNanoUsd) / 1_000_000_000 : null,
+        reservedUsd: live.calls.length * (live.pricing.maxInputTokens * live.pricing.inputNanoUsd + live.pricing.maxOutputTokens * live.pricing.outputNanoUsd) / 1_000_000_000,
+        assumptions: "Each attempted generation reserves the full model input limit plus 4096 output/thinking tokens at the recorded highest published text rates. Reservations are never released, including errors and aborts. Reported usage estimates price cached input as uncached. This bounds this invocation under the recorded rates, not the provider invoice, taxes, account-wide spending or other commands.",
+        ceilingEnforceable: true,
+      } : { estimatedUsd: null, assumptions: usageReports ? `Usage was reported by ${usageReports} of ${modelCalls} model calls; no provider price schedule is configured.` : "No model call reported token usage or a provider price schedule.", ceilingEnforceable: false },
+      modelCalls: live?.calls.length ?? modelCalls,
+      ...(live ? { live } : {}),
       turns,
       automated: allPassed ? "passed" : "failed",
       human: "pending",

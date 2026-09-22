@@ -1,14 +1,20 @@
-import { describe, expect, it } from "vitest";
-import { createModels, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { googleProvider } from "@earendil-works/pi-ai/providers/google";
+import { createModels, createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 
 import { emptyQuote } from "../app/lib/quote";
 import type { QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
 import { runScenario } from "./runner";
+import { createLiveSession } from "./live";
 import { scenarios } from "./scenarios";
 import type { Assertion, Scenario } from "./types";
 
 const databaseUrl = process.env.EVAL_DATABASE_URL;
+let artifactRoot: string;
 const evidence = (fields: string[], text: string) => [{ fields, source: "current", text }];
 
 function controlled(responses: FauxResponseStep[]): QuoteAIModelBoundary {
@@ -17,6 +23,67 @@ function controlled(responses: FauxResponseStep[]): QuoteAIModelBoundary {
   const models = createModels();
   models.setProvider(provider.provider);
   return { model: provider.getModel(), timeoutMs: 1_000, streamFn: (model, context, options) => models.streamSimple(model, context, options) };
+}
+
+const liveModelId = "gemini-3.5-flash-lite";
+const liveReservationUsd = 0.58466304;
+
+function providerPayload() {
+  return { model: liveModelId, contents: [{ role: "user", parts: [{ text: "controlled input" }] }], config: { maxOutputTokens: 4096 } };
+}
+
+function controlledGoogle(responses: FauxResponseStep[], payload: unknown = providerPayload()) {
+  const faux = controlled(responses);
+  const models = createModels();
+  models.setProvider(googleProvider());
+  const model = models.getModel("google", liveModelId)!;
+  let transports = 0;
+  const boundary: QuoteAIModelBoundary = {
+    ...faux,
+    model,
+    streamFn: async (_model, context, options) => {
+      await options?.onPayload?.(payload as never, model);
+      transports += 1;
+      return faux.streamFn(faux.model, context, { ...options, onPayload: undefined });
+    },
+  };
+  return { boundary, transports: () => transports };
+}
+
+function googleMessage(content: Parameters<typeof fauxAssistantMessage>[0], stopReason: "stop" | "toolUse", usage?: AssistantMessage["usage"]): AssistantMessage {
+  return { ...fauxAssistantMessage(content, { stopReason }), api: "google-generative-ai", provider: "google", model: liveModelId, ...(usage === undefined ? { usage: undefined } : { usage }) } as unknown as AssistantMessage;
+}
+
+function scriptedGoogle(messages: Array<(model: QuoteAIModelBoundary["model"]) => ReturnType<typeof createAssistantMessageEventStream>>, payload: unknown = providerPayload()) {
+  const models = createModels();
+  models.setProvider(googleProvider());
+  const model = models.getModel("google", liveModelId)!;
+  let transports = 0;
+  const boundary: QuoteAIModelBoundary = {
+    model,
+    timeoutMs: 1_000,
+    streamFn: async (_model, _context, options) => {
+      await options?.onPayload?.(payload as never, model);
+      transports += 1;
+      const stream = messages.shift();
+      if (!stream) throw new Error("Unexpected controlled provider call.");
+      return stream(model);
+    },
+  };
+  return { boundary, transports: () => transports };
+}
+
+function done(message: AssistantMessage) {
+  return () => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => { stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message }); stream.end(); });
+    return stream;
+  };
+}
+
+function liveSession(boundary: QuoteAIModelBoundary, examples: Scenario[], limits: Partial<Pick<Parameters<typeof createLiveSession>[0], "maxCalls" | "maxElapsedMs" | "maxSpendUsd">> = {}) {
+  return createLiveSession({ modelBoundary: boundary, scenarios: examples, approvedProviderDataReview: true, artifactRoot,
+    maxCalls: 10, maxElapsedMs: 10_000, maxSpendUsd: 2, ...limits });
 }
 
 function scenario(step: Scenario["steps"][number], start = emptyQuote("Q-EVAL")): Scenario {
@@ -47,6 +114,135 @@ it("requires live opt-in before accepting a non-faux provider", async () => {
 });
 
 describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL seam", () => {
+  beforeAll(async () => { artifactRoot = await mkdtemp(join(tmpdir(), "quote-live-eval-")); });
+  beforeEach(() => { vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z")); });
+  afterEach(() => { vi.restoreAllMocks(); });
+  afterAll(async () => { await rm(artifactRoot, { recursive: true, force: true }); });
+
+  it("runs approved live-mode work through real tools with one shared, pre-reserved spending cap", async () => {
+    const text = "Set title Bounded";
+    const example = scenario({ kind: "artisan", text, assertions: [titleAssertion("Bounded")] });
+    const { boundary, transports } = controlledGoogle([
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Bounded" }, evidence: evidence(["title"], text) })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Saved."),
+    ]);
+    const live = liveSession(boundary, [example], { maxCalls: 2 });
+    try {
+      const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: boundary, live });
+      expect(run).toMatchObject({ automated: "passed", human: "pending", modelCalls: 2, cost: { ceilingEnforceable: true, reservedUsd: 1.16932608 }, live: { calls: [{ reservedUsd: liveReservationUsd }, { reservedUsd: liveReservationUsd }], sessionCalls: 2, sessionReservedUsd: 1.16932608 } });
+      expect(transports()).toBe(2);
+      expect(run.turns[0].after.title).toBe("Bounded");
+      expect(run.live?.approval).toMatchObject({ scenarioHash: run.scenarioHash, provider: "google", model: "gemini-3.5-flash-lite" });
+      expect(example.review.provider).toBe("blocked");
+    } finally { live.close(); }
+  });
+  it("stops before a follow-up call and rolls back staged tool work at the call limit", async () => {
+    const text = "Set title Staged";
+    const example = scenario({ kind: "artisan", text, assertions: [titleAssertion("Before"), { label: "limit", path: "outcome", operator: "equals", expected: "discarded" }] }, { ...emptyQuote("Q-EVAL"), title: "Before" });
+    const usage = { input: 100, output: 40, cacheRead: 20, cacheWrite: 0, totalTokens: 160, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    const controlled = scriptedGoogle([
+      done(googleMessage([fauxToolCall("edit_quote_details", { fields: { title: "Staged" }, evidence: evidence(["title"], text) })], "toolUse", usage)),
+    ]);
+    const live = liveSession(controlled.boundary, [example], { maxCalls: 1 });
+    try {
+      const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, live });
+      expect(run.turns[0]).toMatchObject({ after: { title: "Before" }, outcome: "discarded" });
+      expect(run).toMatchObject({ automated: "failed", modelCalls: 1, cost: { estimatedUsd: 0.0002448, reservedUsd: liveReservationUsd }, live: { stopReason: "call_limit", calls: [{ status: "complete", reservedUsd: liveReservationUsd, estimatedUsd: 0.0002448, usage: { input: 120, output: 40, cacheRead: 20 } }] } });
+      expect(controlled.transports()).toBe(1);
+    } finally { live.close(); }
+  });
+
+  it("admits no request when the shared spend cap is below one reservation", async () => {
+    const example = scenario({ kind: "artisan", text: "No change", assertions: [titleAssertion(""), { label: "limit", path: "outcome", operator: "equals", expected: "later_budget_exhausted" }] });
+    const controlled = controlledGoogle([fauxAssistantMessage("This must not be sent.")]);
+    const live = liveSession(controlled.boundary, [example], { maxSpendUsd: 0.58466303 });
+    try {
+      const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, live });
+      expect(run).toMatchObject({ automated: "failed", modelCalls: 0, cost: { reservedUsd: 0 }, live: { stopReason: "spend_limit", calls: [], sessionCalls: 0, sessionReservedUsd: 0 } });
+      expect(controlled.transports()).toBe(0);
+    } finally { live.close(); }
+  });
+
+  it("does not reset shared call reservations between repetitions", async () => {
+    const example = scenario({ kind: "artisan", text: "No change", assertions: [titleAssertion("")] });
+    const controlled = scriptedGoogle([
+      done(googleMessage("No change.", "stop", { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } })),
+      done(googleMessage("No change.", "stop", { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } })),
+    ]);
+    const live = liveSession(controlled.boundary, [example], { maxCalls: 2 });
+    try {
+      const first = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, repetition: 1, live });
+      const second = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, repetition: 2, live });
+      const third = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, repetition: 3, live });
+      expect(first.automated).toBe("passed");
+      expect(second.automated).toBe("passed");
+      expect(third).toMatchObject({ automated: "failed", modelCalls: 0, live: { stopReason: "call_limit", calls: [], sessionCalls: 2, sessionReservedUsd: 1.16932608 } });
+      expect(controlled.transports()).toBe(2);
+    } finally { live.close(); }
+  });
+
+  it("stops an unfinished stream at the global deadline without releasing its reservation", async () => {
+    const example = scenario({ kind: "artisan", text: "Wait", assertions: [titleAssertion(""), { label: "deadline", path: "outcome", operator: "equals", expected: "later_budget_exhausted" }] });
+    const controlled = scriptedGoogle([() => createAssistantMessageEventStream()]);
+    const live = liveSession(controlled.boundary, [example], { maxElapsedMs: 1_000 });
+    try {
+      const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, live });
+      expect(run).toMatchObject({ automated: "failed", modelCalls: 1, cost: { reservedUsd: liveReservationUsd }, live: { stopReason: "elapsed_limit", calls: [{ status: "uncertain", reservedUsd: liveReservationUsd }] } });
+      expect(controlled.transports()).toBe(1);
+    } finally { live.close(); }
+  });
+
+  it.each(["partial", "error", "missing", "zero", "malformed"] as const)("stops on %s provider completion without another call or refund", async (kind) => {
+    const example = scenario({ kind: "artisan", text: "Stop", assertions: [titleAssertion(""), { label: "terminal", path: "outcome", operator: "equals", expected: "later_budget_exhausted" }] });
+    const response = () => {
+      const stream = createAssistantMessageEventStream();
+      const valid = googleMessage("Ignored", "stop", { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
+      queueMicrotask(() => {
+        if (kind === "partial") { stream.push({ type: "start", partial: valid }); stream.end(); return; }
+        if (kind === "error") { stream.push({ type: "error", reason: "error", error: { ...valid, stopReason: "error", errorMessage: "controlled failure" } }); return; }
+        if (kind === "missing") { stream.push({ type: "done", reason: "stop", message: googleMessage("Ignored", "stop") }); stream.end(); return; }
+        const usage = kind === "zero"
+          ? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
+          : { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 1, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+        stream.push({ type: "done", reason: "stop", message: googleMessage("Ignored", "stop", usage) });
+        stream.end();
+      });
+      return stream;
+    };
+    const controlled = scriptedGoogle([response]);
+    const live = liveSession(controlled.boundary, [example]);
+    try {
+      const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, live });
+      expect(run).toMatchObject({ automated: "failed", modelCalls: 1, cost: { estimatedUsd: null, reservedUsd: liveReservationUsd }, live: { stopReason: expect.any(String), calls: [{ status: "uncertain", reservedUsd: liveReservationUsd }], sessionReservedUsd: liveReservationUsd } });
+      expect(controlled.transports()).toBe(1);
+    } finally { live.close(); }
+  });
+
+  it("rejects changed approval data or a changed model before any controlled transport", async () => {
+    const approved = scenario({ kind: "artisan", text: "No change", assertions: [titleAssertion("")] });
+    const controlled = controlledGoogle([fauxAssistantMessage("This must not be sent.")]);
+    const live = liveSession(controlled.boundary, [approved]);
+    try {
+      await expect(runScenario({ ...approved, version: 2 }, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, live })).rejects.toThrow("approval");
+      await expect(runScenario(approved, { databaseUrl: databaseUrl!, modelBoundary: { ...controlled.boundary, model: { ...controlled.boundary.model, id: "gemini-3.5-flash-lite-other" } }, live })).rejects.toThrow("provider/model changed");
+      expect(controlled.transports()).toBe(0);
+    } finally { live.close(); }
+  });
+
+  it.each([
+    { ...providerPayload(), config: { maxOutputTokens: 4096, addons: [] } },
+    { ...providerPayload(), contents: [{ role: "user", parts: [{ inlineData: { mimeType: "image/png", data: "AA==" } }] }] },
+  ])("rejects unsupported Google payload data before the controlled transport", async (payload) => {
+    const example = scenario({ kind: "artisan", text: "No change", assertions: [titleAssertion(""), { label: "payload", path: "outcome", operator: "equals", expected: "later_budget_exhausted" }] });
+    const controlled = scriptedGoogle([done(googleMessage("This must not be sent.", "stop"))], payload);
+    const live = liveSession(controlled.boundary, [example]);
+    try {
+      const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled.boundary, live });
+      expect(run).toMatchObject({ automated: "failed", modelCalls: 1, cost: { reservedUsd: liveReservationUsd }, live: { stopReason: expect.any(String), calls: [{ status: "uncertain", reservedUsd: liveReservationUsd }] } });
+      expect(controlled.transports()).toBe(0);
+    } finally { live.close(); }
+  });
+
   it("keeps manual fallback separate from the assistant conversation", async () => {
     const example = scenarios.find(item => item.id === "joinery-manual-fallback-section-delete")!;
     const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary: controlled([fauxAssistantMessage("Utilisez les commandes manuelles pour supprimer cette section.")]) });

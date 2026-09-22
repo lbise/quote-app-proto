@@ -8,7 +8,7 @@ The library has 26 scenarios, prioritizes joinery/cladding and includes landscap
 
 Inputs and expected outcomes still need human review. The product owner allowed retaining prices and technical specifications in local anonymized fixtures. That is **not provider-data approval**. Every scenario starts with provider use blocked.
 
-Live execution currently refuses to run. The registered provider's usage/pricing information does not establish an enforceable monetary ceiling. The CLI requires explicit opt-in, provider-data approval and bounded-run options, but those flags cannot bypass this limitation. Do not describe offline passes as evidence of model interpretation quality. Live execution, product fixes discovered by it, final prompt/tool acceptance and product-owner sign-off remain unfinished parts of #29. #21 still owns production provider approval; #22 owns the external Artisan session. Multi-model comparisons are out of scope.
+Live execution has a dedicated bounded Google boundary. It is not a product benchmark and an offline pass is not evidence of model interpretation quality. Do not claim live evidence until a saved run has been inspected. Product fixes discovered by evaluation, final prompt/tool acceptance and product-owner sign-off remain unfinished parts of #29. #21 still owns production provider approval; #22 owns the external Artisan session. Multi-model comparisons are out of scope.
 
 ## Browse without making calls
 
@@ -54,13 +54,40 @@ npm run eval:db -- down
 
 Stopping the database does not remove reports. Fault-injection scenarios are marked `controlled-only`. Their commercial work remains source-derived, but a controlled transport must supply failures; they are not benchmarks that require a live model to make mistakes. The runner's offline API accepts the faux provider only.
 
-Routine `npm test` makes no provider calls. Database integration tests need the explicit evaluation URL above; without it, Vitest reports those tests as skipped.
+Routine `npm test` makes no provider calls. Database integration tests need the explicit evaluation URL above; without it, Vitest reports those tests as skipped. With evaluation integration enabled, Vitest limits concurrency to two workers so database cloning does not overwhelm a shared local PostgreSQL instance.
 
-For CLI options and the current live-execution refusal:
+For CLI options:
 
 ```sh
 npm run eval:run -- --help
 ```
+
+## Run a bounded live evaluation
+
+Live mode transmits the selected adapted scenario inputs to the configured provider. It requires each of the following: `--live`, at least one explicit `--scenario`, `--approve-provider-data-review`, `--database-url`, `--max-calls`, `--max-elapsed-ms`, and `--max-spend-usd`. It rejects `controlled-only` fault-injection scenarios before provider configuration or any provider call.
+
+`--approve-provider-data-review` is runtime authorization for the exact selected adapted scenario hashes, provider and model in this one session. It does not alter the library's `pending`, `blocked`, or reviewed flags. It is not a human prose approval, a Publication of a Quote, or #21 production-provider approval.
+
+The provider environment file needs `QUOTE_AI_PROVIDER=google`, `QUOTE_AI_MODEL=gemini-3.5-flash-lite`, and your `GEMINI_API_KEY`. For the long reconstruction, consider `QUOTE_AI_TIMEOUT_MS=45000`; the application turn deadline otherwise defaults to 20 seconds and remains separate from the session deadline.
+
+Start the disposable database, then run a deliberately small bounded session. This is an example command, not evidence that it was run here:
+
+```sh
+npm run eval:db -- up
+npm run eval:run -- --live --scenario joinery-full-reconstruction --provider-env-file .env --approve-provider-data-review --max-calls 8 --max-elapsed-ms 120000 --max-spend-usd 5 --database-url "$(bash scripts/eval-db.sh url)"
+```
+
+One session is shared by every selected scenario and repetition. The CLI saves each completed run, stops all remaining loops after a stopped session, and exits nonzero for a failed run or a stopped session. Review the saved artifacts with `npm run eval:review`; if that review server is already running, use the URL it printed rather than starting another server.
+
+Only registered `google` with the exact model `gemini-3.5-flash-lite` is supported. Other provider or model selections fail closed; there is no fallback. The boundary pins a verified price snapshot that expires on **2026-09-29**. Renew the documented rates and expiry before then or live execution must fail closed.
+
+The snapshot conservatively uses the highest published text rates: 540 nanodollars per input token and 4,500 per output token. These are Priority rates, although this boundary submits ordinary Standard requests. Before every provider call, the session irrevocably reserves the full 1,048,576 input tokens plus 4,096 output tokens: **$0.58466304**. It does not release a reservation, including when actual usage is smaller. For example, eight calls reserve at most **$4.67730432**, so they fit within a `$5` cap. The full invocation is capped, not each scenario.
+
+The boundary uses no retries, permits at most 4,096 output tokens including thinking tokens, and uses minimal thinking even though ordinary app settings say thinking is off. Missing, partial, malformed, errored, or aborted usage stops the session and retains its reservation. Artifacts record estimated usage separately from reserved upper bounds. This is a bound under the recorded document rates, not a promise about a provider invoice or an account-wide spending guarantee.
+
+CLI limits are positive and bounded: `--max-calls` is at most 10,000, `--max-elapsed-ms` at most 3,600,000, and `--max-spend-usd` at most 1,000,000 with no more than nine decimal places. The live boundary validates them again.
+
+For live mode only, `--provider-env-file PATH` parses only `QUOTE_AI_PROVIDER`, `QUOTE_AI_MODEL`, `GEMINI_API_KEY`, and `QUOTE_AI_TIMEOUT_MS` using `dotenv.parse`; it does not call global dotenv configuration or mutate `process.env`. Exported process-environment values win over that file. The option is rejected in offline mode and when `--live` is absent. Never load a real `.env` for an offline smoke run. This flag deliberately differs from Node's `--env-file`, which can preload all variables before the program starts.
 
 ## Source handling
 
@@ -91,4 +118,4 @@ Removing names does not establish statistical anonymity. Technical descriptions,
 
 Choose a saved run, inspect its commercial state and conversation, then complete the Human review form. Wording, invented facts and clarification each start as pending. Save creates a new review record against the exact run ID and scenario hash; it does not rewrite an earlier review. Rerunning a scenario creates a different run and does not inherit approval. Automatic outcome, human review and scenario/provider approval stay separate.
 
-Artifacts are JSON under `.eval-artifacts/runs/` and `.eval-artifacts/reviews/`. New directories use mode `0700` and files `0600`. They intentionally contain commercial content and model conversations for these evaluation cases, not application conversations. Do not upload reports or expose the server publicly. Credential-shaped metadata and recognizable credential strings in notes are redacted, but that is not a general-purpose anonymizer for arbitrary text. A reviewer should never paste credentials into scenario content or notes.
+Artifacts are JSON under `.eval-artifacts/runs/` and `.eval-artifacts/reviews/`. Live-session approval manifests and append-only reservation ledgers are under `.eval-artifacts/live-sessions/`. Each reservation is flushed before submission; errors and interrupted commands do not release it. A new command creates a new budget, not a continuation of an old one. New directories use mode `0700` and files `0600`. They intentionally contain commercial content and model conversations for these evaluation cases, not application conversations. Do not upload reports or expose the server publicly. Credential-shaped metadata and recognizable credential strings in notes are redacted, but that is not a general-purpose anonymizer for arbitrary text. A reviewer should never paste credentials into scenario content or notes.
