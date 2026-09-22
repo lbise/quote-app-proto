@@ -46,6 +46,9 @@ const line = Type.Object(
   },
 );
 
+export const evidenceTextDescription =
+  'Copy an exact excerpt from the decoded source text, not its JSON-escaped representation. Prefer a short excerpt within one paragraph; cite other paragraphs separately. Do not copy literal backslash-n or backslash-t sequences in place of whitespace. For source "current", copy from currentMessage.text, not from the Quote title or your proposed output. One citation may cover several fields when the excerpt supports every listed field.';
+
 const evidence = Type.Object(
   {
     fields: Type.Array(
@@ -67,8 +70,7 @@ const evidence = Type.Object(
     text: Type.String({
       minLength: 1,
       maxLength: 2000,
-      description:
-        'Copy an exact excerpt from the selected source. For source "current", copy from currentMessage.text, not from the Quote title or your proposed output. If you mistakenly cited currentMessage, change the source to current and keep the exact message excerpt. One citation may cover several fields when the excerpt supports every listed field.',
+      description: evidenceTextDescription,
     }),
   },
   { additionalProperties: false },
@@ -112,7 +114,7 @@ export const editQuoteLinesDescription =
   'Use mode "quantity" for per-unit pricing. ' +
   "When evidence is needed for a new or changed mode, include its /lines/N/mode path with the fields supported by that excerpt. " +
   "Each evidence text must be one exact contiguous excerpt from its source. Do not join separate passages or insert ellipses. " +
-  'Example only: if currentMessage.text is "Inspect 3 smoke alarms. Inspection costs 19 per alarm. The travel forfait is 47.", send {"lines":[{"description":"Contrôle de détecteurs de fumée","mode":"quantity","quantity":"3","unit":"pièce","unitPrice":"19","amount":""},{"description":"Déplacement","mode":"fixed","quantity":"","unit":"","unitPrice":"","amount":"47"}],"evidence":[{"fields":["/lines/0/description","/lines/0/quantity"],"source":"current","text":"Inspect 3 smoke alarms."},{"fields":["/lines/0/mode","/lines/0/unit","/lines/0/unitPrice"],"source":"current","text":"Inspection costs 19 per alarm."},{"fields":["/lines/1/description","/lines/1/mode","/lines/1/amount"],"source":"current","text":"The travel forfait is 47."}]}. Use the supplied work and exact excerpts, not these example values. ' +
+  'Example only, currentMessage.text shown decoded:\nInspect 3 smoke alarms.\n\nInspection costs 19 per alarm.\n\nThe travel forfait is 47.\nSend separate single-paragraph citations: {"lines":[{"description":"Contrôle de détecteurs de fumée","mode":"quantity","quantity":"3","unit":"pièce","unitPrice":"19","amount":""},{"description":"Déplacement","mode":"fixed","quantity":"","unit":"","unitPrice":"","amount":"47"}],"evidence":[{"fields":["/lines/0/description","/lines/0/quantity"],"source":"current","text":"Inspect 3 smoke alarms."},{"fields":["/lines/0/mode","/lines/0/unit","/lines/0/unitPrice"],"source":"current","text":"Inspection costs 19 per alarm."},{"fields":["/lines/1/description","/lines/1/mode","/lines/1/amount"],"source":"current","text":"The travel forfait is 47."}]}. Use the supplied work and exact excerpts, not these example values. ' +
   "Do not copy, move or delete lines with this tool.";
 
 export function createEditQuoteLinesTool(

@@ -141,7 +141,7 @@ describe("pi Quote assistant model boundary", () => {
   });
 
   it("uses fixed mode for a forfait and applies the worked evidence example after an amount-mode rejection", async () => {
-    const text = "Inspect 3 smoke alarms. Inspection costs 19 per alarm. The travel forfait is 47.";
+    const text = "Inspect 3 smoke alarms.\n\nInspection costs 19 per alarm.\n\nThe travel forfait is 47.";
     const workedExample = {
       lines: [
         { description: "Contrôle de détecteurs de fumée", mode: "quantity", quantity: "3", unit: "pièce", unitPrice: "19", amount: "" },
@@ -172,6 +172,7 @@ describe("pi Quote assistant model boundary", () => {
     expect(lineTool?.description).toContain('"amount" is a field, never a mode');
     expect(lineTool?.description).toContain('Use mode "quantity" for per-unit pricing.');
     expect(lineTool?.description).toContain("exact contiguous excerpt");
+    expect(lineTool?.description).toContain(text);
     expect(lineTool?.description).toContain(JSON.stringify(workedExample));
     expect(lineTool?.parameters).toMatchObject({ properties: { lines: { items: { properties: { mode: {
       description: 'Use "fixed" for a forfait or one stated total; amount is a field, never a mode. Use "quantity" for per-unit pricing; leave an unknown quantity or unit price as an empty string.',

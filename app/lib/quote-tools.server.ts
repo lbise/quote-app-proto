@@ -7,6 +7,7 @@ import { Settings } from "typebox/system";
 import {
   editQuoteLinesDescription,
   editQuoteLinesParameters,
+  evidenceTextDescription,
 } from "../../docs/assistant-contract/edit-quote-lines";
 import { calculateQuote, type QuoteData, type QuoteLine } from "./quote";
 import { MAX_QUOTE_LINES, MAX_QUOTE_SECTIONS, quoteDraftLimit } from "./quote-limits";
@@ -34,7 +35,7 @@ export type QuoteToolsResult = {
 
 export type QuoteToolsDiagnostic = { phase: "tool"; code: string; tool?: string };
 
-type EvidenceRepair = { invalidTextField: string; source: string; excerpts: readonly string[] };
+type EvidenceRepair = { invalidTextField: string; source: string; excerpts: readonly string[]; escapedWhitespace: boolean };
 
 class ToolValidationError extends Error {
   constructor(
@@ -75,6 +76,7 @@ const MAX_EVIDENCE_FIELD = 160;
 const MAX_EVIDENCE_REPAIR_EXCERPT = 240;
 const MAX_EVIDENCE_REPAIR_PARTS = 3;
 const MAX_EVIDENCE_REPAIRS = 2;
+const ESCAPED_WHITESPACE = /(?:\\r\\n|\\[nrt])+/u;
 
 const evidenceCitationParameters = Type.Object({
   fields: Type.Array(Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_FIELD }), {
@@ -82,7 +84,7 @@ const evidenceCitationParameters = Type.Object({
     description: "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title.",
   }),
   source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_SOURCE, description: 'Use "current" for currentMessage.text, not "currentMessage" or "currentMessage.text". Use a supplied history_N ID for an earlier Artisan message. quote.FIELD refers only to that field in the supplied currentWorkingDraft; quote.title contains the existing Quote title, not the Artisan message. line:ID.FIELD and section:ID.FIELD refer to existing supplied work by stable ID. Never invent a source ID or cite an assistant message.' }),
-  text: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT, description: 'Copy an exact excerpt from the selected source. For source "current", copy from currentMessage.text, not from the Quote title or your proposed output. If you mistakenly cited currentMessage, change the source to current and keep the exact message excerpt. One citation may cover several fields when the excerpt supports every listed field.' }),
+  text: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT, description: evidenceTextDescription }),
 }, { additionalProperties: false });
 
 const editQuoteDetailsParameters = Type.Object({
@@ -586,9 +588,9 @@ function assertGroupedEvidence(value: unknown, context: EvidenceContext, require
     const sourceText = evidenceSource(context, item.source);
     if (!evidenceAppears(sourceText, item.text)) {
       invalidEvidenceTextFields.push(`/evidence/${index}/text`);
-      const excerpts = splitEvidenceRepair(sourceText, item.text);
-      if (excerpts && evidenceRepairs.length < MAX_EVIDENCE_REPAIRS) {
-        evidenceRepairs.push({ invalidTextField: `/evidence/${index}/text`, source: item.source, excerpts });
+      const repair = evidenceRepairs.length < MAX_EVIDENCE_REPAIRS ? splitEvidenceRepair(sourceText, item.text) : undefined;
+      if (repair) {
+        evidenceRepairs.push({ invalidTextField: `/evidence/${index}/text`, source: item.source, ...repair });
       }
     }
     item.fields.forEach((field) => supported.add(field));
@@ -684,15 +686,19 @@ function schemaRepairHints(parameters: TSchema, args: unknown): string {
   return ` Invalid fields: ${[...hints.values()].slice(0, 12).join("; ")}.${hints.size > 12 || errors.length >= 256 ? " Further schema errors were omitted." : ""} Resubmit the complete call, including its evidence.`;
 }
 
-function splitEvidenceRepair(sourceText: string, evidenceText: string): readonly string[] | undefined {
-  const excerpts = evidenceText.includes("...")
+function splitEvidenceRepair(sourceText: string, evidenceText: string): Pick<EvidenceRepair, "excerpts" | "escapedWhitespace"> | undefined {
+  const whitespaceParts = evidenceText.split(ESCAPED_WHITESPACE);
+  // Diagnose escaping only when that change alone produces a source-contained excerpt.
+  // This is a repair proposal, never an additional acceptance rule.
+  const escapedWhitespace = whitespaceParts.length > 1 && evidenceAppears(sourceText, whitespaceParts.join(" "));
+  const excerpts = escapedWhitespace ? whitespaceParts : evidenceText.includes("...")
     ? evidenceText.split("...")
     : evidenceText.includes("…")
       ? evidenceText.split("…")
       : evidenceText.split(/(?<=[.!?])\s+/u);
   const trimmed = excerpts.map((excerpt) => excerpt.trim());
   if (trimmed.length < 2 || trimmed.length > MAX_EVIDENCE_REPAIR_PARTS || trimmed.some((excerpt) => !excerpt || excerpt.length > MAX_EVIDENCE_REPAIR_EXCERPT)) return undefined;
-  return trimmed.every((excerpt) => evidenceAppears(sourceText, excerpt)) ? trimmed : undefined;
+  return trimmed.every((excerpt) => evidenceAppears(sourceText, excerpt)) ? { excerpts: trimmed, escapedWhitespace } : undefined;
 }
 
 function toolErrorMessage(code: string, details?: ToolValidationError): string {
@@ -722,7 +728,7 @@ function toolErrorMessage(code: string, details?: ToolValidationError): string {
     ? ` Invalid evidence text: ${invalidEvidenceTextFields.slice(0, 12).join(", ")}.${invalidEvidenceTextFields.length > 12 ? " Further invalid excerpts were omitted." : ""} Copy exact contiguous excerpts from the cited source. Use separate citations for separate passages, without inserting ellipses or other text.`
     : "";
   const suggestedRepairs = evidenceRepairs.length
-    ? ` ${evidenceRepairs.map((repair) => `Suggested exact excerpts for ${repair.invalidTextField}: ${repair.excerpts.map((excerpt) => JSON.stringify(excerpt)).join(" | ")}. Keep source ${JSON.stringify(repair.source)} and submit separate evidence entries, assigning each only the fields it supports.`).join(" ")}`
+    ? ` ${evidenceRepairs.map((repair) => `${repair.escapedWhitespace ? "The citation contains literal JSON whitespace escapes instead of source whitespace. Copy decoded source text, preferably one paragraph per citation. " : ""}Suggested exact excerpts for ${repair.invalidTextField}: ${repair.excerpts.map((excerpt) => JSON.stringify(excerpt)).join(" | ")}. Keep source ${JSON.stringify(repair.source)} and submit separate evidence entries, assigning each only the fields it supports.`).join(" ")}`
     : "";
   const completeResubmission = invalidEvidenceTextFields.length
     ? " Invalid excerpt: this call was not applied. Resubmit the COMPLETE call with unchanged valid citations and coverage for every required field."

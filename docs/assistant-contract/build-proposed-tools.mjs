@@ -1,7 +1,7 @@
 // Review artifact only. Nothing in app/ imports or registers these definitions.
 // Run from the repo root: node docs/assistant-contract/build-proposed-tools.mjs
 import { writeFileSync } from "node:fs";
-import { createEditQuoteLinesTool } from "./edit-quote-lines.ts";
+import { createEditQuoteLinesTool, evidenceTextDescription } from "./edit-quote-lines.ts";
 
 const approvedLineTool = createEditQuoteLinesTool(async () => {
   throw new Error("Review artifact only; no executor is implemented here.");
@@ -18,7 +18,7 @@ const evidence = {
   ...list(object({
     fields: { ...list({ ...text(160), minLength: 1 }, 200), uniqueItems: true, description: "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title." },
     source: { ...text(256), minLength: 1, description: 'Use "current" for currentMessage.text, not "currentMessage" or "currentMessage.text". Use a supplied history_N ID for an earlier Artisan message. quote.FIELD refers only to that field in the supplied currentWorkingDraft; quote.title contains the existing Quote title, not the Artisan message. line:ID.FIELD and section:ID.FIELD refer to existing supplied work by stable ID. Never invent a source ID or cite an assistant message.' },
-    text: { ...text(2000), minLength: 1, description: 'Copy an exact excerpt from the selected source. For source "current", copy from currentMessage.text, not from the Quote title or your proposed output. If you mistakenly cited currentMessage, change the source to current and keep the exact message excerpt. One citation may cover several fields when the excerpt supports every listed field.' },
+    text: { ...text(2000), minLength: 1, description: evidenceTextDescription },
   }), 200),
   description: "Cite sources for new nonempty commercial facts. Omit for deliberate clearing or unchanged values.",
 };

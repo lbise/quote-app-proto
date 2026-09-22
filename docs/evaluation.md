@@ -136,6 +136,8 @@ Both must pass for the automated run to pass. French wording, faithful interpret
 
 The four basic checks passed live in session `cdc11ef3-416b-4b5b-9a47-9db4136673b7`. The subsequent full reconstruction, run `7651d62f-1c54-4e8b-984e-e7738ee6bc54`, still failed because the model joined separate passages into purported exact excerpts. It repaired one batch, then repeated the mistake in the next batch and reached the third-failed-call rollback. The combined fixture targets this missing coverage. Rejected citations now get bounded split suggestions when each of two or three short fragments independently matches the same permitted source. This includes omitted passages between whole sentences and inserted ellipses. Suggestions do not authorize edits: the entire rejected call remains unapplied, and the model must resubmit complete arguments with valid citations. A clean offline replay does not prove that the live model will construct or repair the citations correctly.
 
+Run `09bec8b6-3235-4603-a89e-ccd205388d48` exposed a separate encoding error in the combined fixture: the model copied literal `\n\n` from the JSON wrapper instead of decoded paragraph breaks. Offline replay isolated that difference in all three rejected line calls. Citation descriptions now recommend decoded, single-paragraph excerpts, with a multiline worked example. Escaped-whitespace repair suggestions are offered only when replacing those separators alone produces a source-contained excerpt, and the existing fragment/count bounds still apply. No argument is automatically decoded or accepted; literal backslashes actually present in a source remain valid.
+
 Run the offline replays without provider calls:
 
 ```sh

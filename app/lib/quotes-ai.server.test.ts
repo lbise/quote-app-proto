@@ -413,8 +413,71 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     }
   });
 
+  it("advertises decoded-source and single-paragraph citation guidance at the model boundary", async () => {
+    const detail = await createDraft();
+    let tools: unknown[] = [];
+    const model = scriptedModel([context => {
+      tools = context.tools ?? [];
+      return fauxAssistantMessage("Bien reçu.");
+    }]);
+    const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Une note.\n\nUne autre note.", locale: "fr" }, undefined, model.handler);
+    expect(response.status).toBe(200);
+    for (const name of ["edit_quote_details", "edit_quote_lines", "edit_quote_sections", "copy_quote_work"]) {
+      expect(tools).toEqual(expect.arrayContaining([expect.objectContaining({ name, parameters: expect.objectContaining({ properties: expect.objectContaining({
+        evidence: expect.objectContaining({ items: expect.objectContaining({ properties: expect.objectContaining({ text: expect.objectContaining({ description: expect.stringContaining("decoded source text") }) }) }) }),
+      }) }) })]));
+    }
+    expect(tools).toEqual(expect.arrayContaining([expect.objectContaining({ name: "edit_quote_lines", description: expect.stringContaining("Inspect 3 smoke alarms.\n\nInspection costs 19 per alarm.\n\nThe travel forfait is 47.") })]));
+  });
+
+  it.each([
+    { name: "paragraph breaks", encoded: "\\n\\n", actual: "\n\n" },
+    { name: "CRLF paragraph breaks", encoded: "\\r\\n\\r\\n", actual: "\r\n\r\n" },
+    { name: "a tab", encoded: "\\t", actual: "\t" },
+  ])("repairs double-escaped $name through explicit resubmission, not automatic acceptance", async ({ encoded, actual }) => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const paragraphs = ["Cadre décoratif au forfait de 63 CHF. La pose est comprise.", "Conserve le format 24 cm par 36 cm dans le descriptif."];
+      const fields = ["/lines/0/description", "/lines/0/mode", "/lines/0/amount"];
+      const lines = [{ description: "Cadre décoratif 24 cm par 36 cm, pose comprise", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "63" }];
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: [{ fields, source: "current", text: paragraphs.join(encoded) }] })], { stopReason: "toolUse" }),
+        context => {
+          const result = context.messages.find(message => message.role === "toolResult" && message.toolName === "edit_quote_lines");
+          if (result?.role !== "toolResult") throw new Error("Expected rejected line call");
+          expect(result.isError).toBe(true);
+          const feedback = result.content.find(part => part.type === "text");
+          if (feedback?.type !== "text") throw new Error("Expected repair feedback");
+          expect(feedback.text).toContain("literal JSON whitespace escapes");
+          expect(feedback.text).toContain("Suggested exact excerpts for /evidence/0/text");
+          for (const paragraph of paragraphs) expect(feedback.text).toContain(JSON.stringify(paragraph));
+          return fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: [
+            { fields, source: "current", text: paragraphs[0] },
+            { fields: ["/lines/0/description"], source: "current", text: paragraphs[1] },
+          ] })], { stopReason: "toolUse" });
+        },
+        fauxAssistantMessage("Le cadre a été ajouté."),
+      ]);
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: paragraphs.join(actual), locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.assistantDebug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls", attempts: [
+        { outcome: "failed", errorCode: "evidence_not_found" }, { outcome: "applied" },
+      ] });
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft.lines).toEqual([expect.objectContaining(lines[0])]);
+      expect(calculateQuote(reopened.draft).subtotal).toBe(6300);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it.each([
     { name: "a fact found only in another source", input: "Réglage au forfait de 72 CHF.", excerpt: "Réglage au forfait de 72 CHF... Titre réservé au brouillon." },
+    { name: "escaped whitespace leading to another source", input: "Réglage au forfait de 72 CHF.", excerpt: "Réglage au forfait de 72 CHF.\\n\\nTitre réservé au brouillon." },
+    { name: "escaping plus omitted source text", input: "Début. Information omise. Fin.", excerpt: "Début.\\n\\nFin." },
+    { name: "unsupported Unicode escapes", input: "Début.\n\nFin.", excerpt: "Début.\\u000a\\u000aFin." },
+    { name: "four escaped paragraphs", input: "Un.\n\nDeux.\n\nTrois.\n\nQuatre.", excerpt: "Un.\\n\\nDeux.\\n\\nTrois.\\n\\nQuatre." },
+    { name: "an oversized escaped paragraph", input: `${"Longue description ".repeat(20)}\n\nForfait de 72 CHF.`, excerpt: `${"Longue description ".repeat(20)}\\n\\nForfait de 72 CHF.` },
     { name: "an invented fragment", input: "Réglage au forfait de 72 CHF.", excerpt: "Réglage au forfait de 72 CHF... FACT_WITHOUT_SOURCE" },
     { name: "more than three fragments", input: "Un. Bruit. Deux. Bruit. Trois. Bruit. Quatre.", excerpt: "Un.... Deux.... Trois.... Quatre." },
     { name: "an oversized fragment", input: `${"Longue description ".repeat(20)}\n\nAutre information.\n\nForfait de 72 CHF.`, excerpt: `${"Longue description ".repeat(20)}... Forfait de 72 CHF.` },
@@ -437,6 +500,25 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
       expect(attempt.result.content[0].text).not.toContain("FACT_WITHOUT_SOURCE");
       const reopened = await (await request(undefined, detail.id)).json();
       expect(reopened.draft).toEqual(baseline);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it("preserves literal backslash sequences when they really occur in the cited source", async () => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const text = "Plaque gravée avec le repère A\\nB au forfait de 63 CHF.";
+      const line = { description: "Plaque gravée A\\nB", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "63" };
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: [line], evidence: [{ fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], source: "current", text }] })], { stopReason: "toolUse" }),
+        fauxAssistantMessage("La plaque a été ajoutée."),
+      ]);
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text, locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.assistantDebug).toMatchObject({ failedCalls: 0, outcome: "committed" });
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft.lines).toEqual([expect.objectContaining(line)]);
     } finally { vi.unstubAllEnvs(); }
   });
 
