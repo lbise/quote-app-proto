@@ -3,7 +3,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCal
 
 import proposedTools from "../../docs/assistant-contract/proposed-tools.json";
 import { editQuoteLinesDescription } from "../../docs/assistant-contract/edit-quote-lines";
-import { emptyQuote } from "./quote";
+import { calculateQuote, emptyQuote } from "./quote";
 import { generateQuoteChange, type QuoteAIModelBoundary } from "./quote-assistant.server";
 
 function modelBoundary(responses: ReturnType<typeof fauxAssistantMessage>[]) {
@@ -137,6 +137,51 @@ describe("pi Quote assistant model boundary", () => {
     const rejection = contexts[1].messages.find((message) => message.role === "toolResult" && message.isError);
     expect(JSON.stringify(rejection)).toContain("Missing evidence fields: /lines/0/mode, /lines/0/unit");
     expect(result.quote?.lines).toEqual([expect.objectContaining({ sectionId: "painting", quantity: "36", unit: "m2", unitPrice: "12.50" })]);
+    expect(result.debug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls" });
+  });
+
+  it("uses fixed mode for a forfait and applies the worked evidence example after an amount-mode rejection", async () => {
+    const text = "Inspect 3 smoke alarms. Inspection costs 19 per alarm. The travel forfait is 47.";
+    const workedExample = {
+      lines: [
+        { description: "Contrôle de détecteurs de fumée", mode: "quantity", quantity: "3", unit: "pièce", unitPrice: "19", amount: "" },
+        { description: "Déplacement", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "47" },
+      ],
+      evidence: [
+        lineEvidence(["/lines/0/description", "/lines/0/quantity"], "Inspect 3 smoke alarms."),
+        lineEvidence(["/lines/0/mode", "/lines/0/unit", "/lines/0/unitPrice"], "Inspection costs 19 per alarm."),
+        lineEvidence(["/lines/1/description", "/lines/1/mode", "/lines/1/amount"], "The travel forfait is 47."),
+      ],
+    };
+    const { boundary, contexts } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
+        lines: [{ description: "Déplacement", mode: "amount", quantity: "", unit: "", unitPrice: "", amount: "47" }],
+        evidence: [lineEvidence(["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], "The travel forfait is 47.")],
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("edit_quote_lines", workedExample)], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("The inspection and travel were added.")]),
+    ]);
+
+    const result = await generateQuoteChange({ ...input(), text, quote: { ...emptyQuote("Q-1"), vatRegistered: false } }, boundary);
+    const lineTool = contexts[0].tools?.find((tool) => tool.name === "edit_quote_lines");
+
+    expect(lineTool?.description).toBe(editQuoteLinesDescription);
+    expect(lineTool?.description).toBe(proposedTools.find((tool) => tool.name === "edit_quote_lines")?.description);
+    expect(lineTool?.description).toContain("Write new Quote Line descriptions in French, even for an English interface.");
+    expect(lineTool?.description).toContain('Use mode "fixed" for a forfait');
+    expect(lineTool?.description).toContain('"amount" is a field, never a mode');
+    expect(lineTool?.description).toContain('Use mode "quantity" for per-unit pricing.');
+    expect(lineTool?.description).toContain("exact contiguous excerpt");
+    expect(lineTool?.description).toContain(JSON.stringify(workedExample));
+    expect(lineTool?.parameters).toMatchObject({ properties: { lines: { items: { properties: { mode: {
+      description: 'Use "fixed" for a forfait or one stated total; amount is a field, never a mode. Use "quantity" for per-unit pricing; leave an unknown quantity or unit price as an empty string.',
+    } } } } } });
+    expect(JSON.stringify(lineTool?.parameters)).toContain('"fixed"');
+    expect(result.quote?.lines).toEqual([
+      expect.objectContaining({ description: "Contrôle de détecteurs de fumée", mode: "quantity", quantity: "3", unit: "pièce", unitPrice: "19", amount: "" }),
+      expect.objectContaining({ description: "Déplacement", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "47" }),
+    ]);
+    expect(calculateQuote(result.quote)).toMatchObject({ subtotal: 10_400, total: 10_400 });
     expect(result.debug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls" });
   });
 

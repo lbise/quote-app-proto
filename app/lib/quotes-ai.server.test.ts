@@ -192,6 +192,86 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(calculateQuote(detail.draft)).toMatchObject({ subtotal: 17_500, total: 17_500, complete: true });
   });
 
+  it("explains all invalid line fields without echoing supplied values and accepts a complete repair", async () => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const lines = [
+        { description: "Installation", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "140.00" },
+        { description: "Protection", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "60.00" },
+      ];
+      const evidence = [
+        { fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], source: "current", text: "Installation au forfait de 140 CHF." },
+        { fields: ["/lines/1/description", "/lines/1/mode", "/lines/1/amount"], source: "current", text: "Protection au forfait de 60 CHF." },
+      ];
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
+          lines: [{ ...lines[0], mode: "amount" }, { description: "Protection", mode: "amount", quantity: {}, unit: "", unitPrice: "" }],
+          evidence, private_unexpected_field: "private-value-do-not-echo",
+        })], { stopReason: "toolUse" }),
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence })], { stopReason: "toolUse" }),
+        fauxAssistantMessage("Les deux postes ont été ajoutés."),
+      ]);
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Installation au forfait de 140 CHF. Protection au forfait de 60 CHF.", locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const rejection = result.assistantDebug.attempts[0].result.content[0].text;
+      expect(rejection).toContain('/lines/0/mode must be "quantity" or "fixed"');
+      expect(rejection).toContain('/lines/1/mode must be "quantity" or "fixed"');
+      expect(rejection).toContain("/lines/1/quantity must be string");
+      expect(rejection).toContain("/lines/1/amount is required");
+      expect(rejection).not.toContain("private_unexpected_field");
+      expect(rejection).not.toContain("private-value-do-not-echo");
+      expect(result.assistantDebug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls", attempts: [
+        { outcome: "failed", errorCode: "invalid_tool_arguments" }, { outcome: "applied" },
+      ] });
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft.lines).toEqual(lines.map(line => expect.objectContaining(line)));
+      expect(calculateQuote(reopened.draft).subtotal).toBe(20_000);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("reports invalid excerpts and missing mode citations together so one repair can fix both", async () => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const lines = [
+        { description: "Contrôle de détecteurs", mode: "quantity", quantity: "3", unit: "pièce", unitPrice: "19", amount: "" },
+        { description: "Déplacement", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "47" },
+      ];
+      const text = "Contrôler 3 détecteurs. Intervention le matin. Le contrôle est à 19 CHF la pièce. Déplacement au forfait de 47 CHF.";
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: [
+          { fields: ["/lines/0/description", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], source: "current", text: "Contrôler 3 détecteurs... Le contrôle est à 19 CHF la pièce." },
+          { fields: ["/lines/1/description", "/lines/1/amount"], source: "current", text: "Déplacement au forfait de 47 CHF." },
+        ] })], { stopReason: "toolUse" }),
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: [
+          { fields: ["/lines/0/description", "/lines/0/quantity"], source: "current", text: "Contrôler 3 détecteurs." },
+          { fields: ["/lines/0/mode", "/lines/0/unit", "/lines/0/unitPrice"], source: "current", text: "Le contrôle est à 19 CHF la pièce." },
+          { fields: ["/lines/1/description", "/lines/1/mode", "/lines/1/amount"], source: "current", text: "Déplacement au forfait de 47 CHF." },
+        ] })], { stopReason: "toolUse" }),
+        fauxAssistantMessage("Les deux postes ont été ajoutés."),
+      ]);
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text, locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const rejection = result.assistantDebug.attempts[0].result.content[0].text;
+      expect(rejection).toContain("/evidence/0/text");
+      expect(rejection).toContain("separate citations");
+      expect(rejection).toContain("Missing evidence fields: /lines/0/mode, /lines/1/mode");
+      expect(result.assistantDebug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls", attempts: [
+        { outcome: "failed", errorCode: "evidence_not_found" }, { outcome: "applied" },
+      ] });
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft.lines).toEqual(lines.map(line => expect.objectContaining(line)));
+      expect(calculateQuote(reopened.draft).subtotal).toBe(10_400);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("advertises small line batches and commits all supplied work as one undoable turn", async () => {
     let detail = await createDraft();
     const baseline = { ...complete(detail.draft.reference), lines: [] };

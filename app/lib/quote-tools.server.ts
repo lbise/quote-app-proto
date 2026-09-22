@@ -1,6 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
+import { Type, type TSchema } from "typebox";
+import { Errors, Pointer } from "typebox/value";
+import { Settings } from "typebox/system";
 
 import {
   editQuoteLinesDescription,
@@ -33,7 +35,7 @@ export type QuoteToolsResult = {
 export type QuoteToolsDiagnostic = { phase: "tool"; code: string; tool?: string };
 
 class ToolValidationError extends Error {
-  constructor(readonly code: string, readonly missingEvidenceFields: readonly string[] = []) { super(code); }
+  constructor(readonly code: string, readonly missingEvidenceFields: readonly string[] = [], readonly invalidEvidenceTextFields: readonly string[] = []) { super(code); }
 }
 
 export type CreateQuoteToolsInput = {
@@ -171,9 +173,9 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
   const originalLineIds = new Set(originalQuote.lines.map((line) => line.id));
   let lastErrorCode: string | undefined;
 
-  const reject = (code = "invalid_tool_input", missingEvidenceFields: readonly string[] = []): never => {
+  const reject = (code = "invalid_tool_input", details?: ToolValidationError, schemaHints = ""): never => {
     lastErrorCode = code;
-    throw new Error(toolErrorMessage(code, missingEvidenceFields));
+    throw new Error(toolErrorMessage(code, details) + schemaHints);
   };
 
   const mutate = async (signal: AbortSignal | undefined, operation: () => Mutation) => {
@@ -224,14 +226,14 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
       deletedOriginalBefore.forEach((id) => deletedOriginalLineIds.add(id));
       capturedLineIds.splice(0, capturedLineIds.length, ...capturedBefore);
       lastErrorCode = error instanceof ToolValidationError ? error.code : lastErrorCode ?? "tool_execution_failed";
-      throw new Error(toolErrorMessage(lastErrorCode, error instanceof ToolValidationError ? error.missingEvidenceFields : []));
+      throw new Error(toolErrorMessage(lastErrorCode, error instanceof ToolValidationError ? error : undefined));
     }
   };
 
-  const prepare = (validate: (args: unknown) => void) => (args: unknown) => {
+  const prepare = (parameters: TSchema, validate: (args: unknown) => void) => (args: unknown) => {
     try { validate(args); return args; } catch (error) {
       lastErrorCode = error instanceof ToolValidationError ? error.code : "invalid_tool_arguments";
-      return reject(lastErrorCode, error instanceof ToolValidationError ? error.missingEvidenceFields : []);
+      return reject(lastErrorCode, error instanceof ToolValidationError ? error : undefined, schemaRepairHints(parameters, args));
     }
   };
 
@@ -241,7 +243,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     description: "Edit the current Working Draft's reference, project title, dates, work-site address, Customer and business details, terms, VAT registration and identifier, or discount. Include only fields to change. Use an empty string to clear a text or decimal field. Do not supply calculated totals, currency or VAT rates.",
     parameters: editQuoteDetailsParameters,
     executionMode: "sequential",
-    prepareArguments: prepare((args) => { editQuoteDetailsInput(args, evidenceContext, staged, input.referenceLocked ?? false); }),
+    prepareArguments: prepare(editQuoteDetailsParameters, (args) => { editQuoteDetailsInput(args, evidenceContext, staged, input.referenceLocked ?? false); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
       const fields = editQuoteDetailsInput(params, evidenceContext, staged, input.referenceLocked ?? false);
       const changedNow: string[] = [];
@@ -263,7 +265,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     description: editQuoteLinesDescription,
     parameters: editQuoteLinesParameters,
     executionMode: "sequential",
-    prepareArguments: prepare((args) => { editQuoteLinesInput(args, evidenceContext, staged); }),
+    prepareArguments: prepare(editQuoteLinesParameters, (args) => { editQuoteLinesInput(args, evidenceContext, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
       const lines = editQuoteLinesInput(params, evidenceContext, staged);
       if (staged.lines.length + lines.filter((line) => !line.id).length > MAX_QUOTE_LINES) reject();
@@ -292,7 +294,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     name: "edit_quote_sections", label: "Edit Quote Sections",
     description: 'Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. An empty title leaves an incomplete section and never deletes it. Cite the supplied work or room description for every new or changed nonempty title; faithful French rewording is allowed. For the latest Artisan message, use source "current", which identifies currentMessage.text. "currentMessage" is not a valid source ID. One citation can cover every title supported by the same excerpt, but its fields must list each affected /sections/INDEX/title. Example only: if currentMessage.text contains "Prévois une rubrique Cuisine et une rubrique Couloir.", a valid call is {"sections":[{"title":"Cuisine"},{"title":"Couloir"}],"evidence":[{"fields":["/sections/0/title","/sections/1/title"],"source":"current","text":"Prévois une rubrique Cuisine et une rubrique Couloir."}]}. Use the actual supplied rooms and excerpt, not these example values. After a citation rejection, correct the source, excerpt or missing fields in the complete call; do not replace supporting work notes with unrelated Quote metadata. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.',
     parameters: editQuoteSectionsParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { editQuoteSectionsInput(args, evidenceContext, staged); }),
+    prepareArguments: prepare(editQuoteSectionsParameters, (args) => { editQuoteSectionsInput(args, evidenceContext, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
       const sections = editQuoteSectionsInput(params, evidenceContext, staged);
       if (staged.sections.length + sections.filter((section) => !section.id).length > MAX_QUOTE_SECTIONS) reject();
@@ -315,7 +317,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     name: "copy_quote_work", label: "Copy Quote work",
     description: "Copy up to 50 explicitly identified Quote Lines, or one complete Quote Section with a supplied title. Copies receive fresh IDs and retain values unless measurementPolicy is unknown.",
     parameters: copyQuoteWorkParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { copyQuoteWorkInput(args, evidenceContext, staged); }),
+    prepareArguments: prepare(copyQuoteWorkParameters, (args) => { copyQuoteWorkInput(args, evidenceContext, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
       const copyInput = copyQuoteWorkInput(params, evidenceContext, staged);
       const unknownMeasurements = copyInput.measurementPolicy === "unknown";
@@ -367,7 +369,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     name: "move_quote_work", label: "Move Quote work",
     description: "Move or reorder up to 50 Quote Lines or Quote Sections. Selected IDs are placed in the supplied order; an omitted anchor appends to the destination.",
     parameters: moveQuoteWorkParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { moveQuoteWorkInput(args, staged); }),
+    prepareArguments: prepare(moveQuoteWorkParameters, (args) => { moveQuoteWorkInput(args, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
       const move = moveQuoteWorkInput(params, staged);
       if (move.kind === "lines") {
@@ -394,7 +396,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
     name: "delete_quote_lines", label: "Delete Quote Lines",
     description: "Delete 1 to 50 explicitly identified Quote Lines. Deleting all work, a whole section, or the last original line is manual-only.",
     parameters: deleteQuoteLinesParameters, executionMode: "sequential",
-    prepareArguments: prepare((args) => { deleteQuoteLinesInput(args, staged); }),
+    prepareArguments: prepare(deleteQuoteLinesParameters, (args) => { deleteQuoteLinesInput(args, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {
       const lineIds = deleteQuoteLinesInput(params, staged);
       const deletedOriginals = lineIds.filter((id) => originalLineIds.has(id));
@@ -565,15 +567,18 @@ function assertGroupedEvidence(value: unknown, context: EvidenceContext, require
   }
   if (!Array.isArray(value) || !value.length || value.length > MAX_EVIDENCE) throw new ToolValidationError("invalid_evidence");
   const supported = new Set<string>();
-  for (const item of value) {
+  const invalidEvidenceTextFields: string[] = [];
+  for (const [index, item] of value.entries()) {
     if (!isExactRecord(item, ["fields", "source", "text"]) || !Array.isArray(item.fields) || !item.fields.length || item.fields.length > MAX_EVIDENCE_FIELDS
       || new Set(item.fields).size !== item.fields.length || item.fields.some((field) => typeof field !== "string" || !field || field.length > MAX_EVIDENCE_FIELD || !fieldAllowed(field))
       || typeof item.source !== "string" || !item.source || item.source.length > MAX_EVIDENCE_SOURCE || typeof item.text !== "string" || !item.text || item.text.length > MAX_EVIDENCE_TEXT) throw new ToolValidationError("invalid_evidence");
-    if (!evidenceAppears(evidenceSource(context, item.source), item.text)) throw new ToolValidationError("evidence_not_found");
+    if (!evidenceAppears(evidenceSource(context, item.source), item.text)) invalidEvidenceTextFields.push(`/evidence/${index}/text`);
     item.fields.forEach((field) => supported.add(field));
   }
   const missingFields = requiredFields.filter((field) => !supported.has(field));
-  if (missingFields.length) throw new ToolValidationError("missing_evidence", missingFields);
+  if (invalidEvidenceTextFields.length || missingFields.length) {
+    throw new ToolValidationError(invalidEvidenceTextFields.length ? "evidence_not_found" : "missing_evidence", missingFields, invalidEvidenceTextFields);
+  }
 }
 
 function evidenceSource(context: EvidenceContext, source: string): string {
@@ -610,7 +615,60 @@ function isZeroDecimal(value: string): boolean {
 function lineIdSyntax(value: string): boolean { return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) && value.length <= 128; }
 function withoutUndefined<T extends object>(value: T): T { return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T; }
 
-function toolErrorMessage(code: string, missingEvidenceFields: readonly string[] = []): string {
+/** Explain schema failures using declared constraints, never submitted values or raw validator messages. */
+function schemaRepairHints(parameters: TSchema, args: unknown): string {
+  // TypeBox defaults to eight errors, which can stop halfway through an enum.
+  // This collection is synchronous; restore the shared setting before returning.
+  const previousLimit = Settings.Get().maxErrors;
+  let errors: ReturnType<typeof Errors>;
+  try {
+    Settings.Set({ maxErrors: 256 });
+    errors = Errors(parameters, args);
+  } finally {
+    Settings.Set({ maxErrors: previousLimit });
+  }
+  const choices = new Map<string, string[]>();
+  for (const error of errors) {
+    if (error.keyword === "const") {
+      const schema = Pointer.Get(parameters, error.schemaPath.replace(/^#/, "").replace(/\/anyOf\/\d+$/, ""));
+      const variants = isRecord(schema) && Array.isArray(schema.anyOf) ? schema.anyOf : [];
+      // Read complete choices from the schema, not a potentially capped error list.
+      const values = variants.length && variants.every(value => isRecord(value) && Object.hasOwn(value, "const"))
+        ? variants.map(value => JSON.stringify(value.const)) : [JSON.stringify(error.params.allowedValue)];
+      choices.set(error.instancePath, values);
+    }
+    if (error.keyword === "enum") choices.set(error.instancePath, error.params.allowedValues.map(value => JSON.stringify(value)));
+  }
+  // Object alternatives must not report every branch's required fields as mandatory.
+  const alternatives = errors.filter(error => error.keyword === "anyOf" && !choices.has(error.instancePath)).map(error => error.instancePath);
+  const hints = new Map<string, string>();
+  for (const error of errors) {
+    // A false additionalProperties schema reports the submitted key in a child error.
+    // Only use its parent error, so unknown field names are never echoed.
+    if (error.keyword === "boolean" || alternatives.some(path => error.instancePath.startsWith(`${path}/`))) continue;
+    const path = error.instancePath || "/";
+    let reason: string;
+    const allowed = choices.get(error.instancePath);
+    if (allowed) reason = `must be ${[...new Set(allowed)].join(" or ")}`;
+    else if (alternatives.includes(error.instancePath)) reason = "must match one of the tool's permitted argument forms";
+    else if (error.keyword === "required") {
+      for (const field of error.params.requiredProperties) {
+        const requiredPath = `${error.instancePath}/${field}`;
+        hints.set(requiredPath, `${requiredPath} is required`);
+      }
+      continue;
+    } else if (error.keyword === "type") reason = `must be ${error.params.type}`;
+    else if (error.keyword === "additionalProperties") reason = "contains unsupported fields; use only the fields declared by this tool";
+    else reason = `must satisfy the declared ${error.keyword} constraint`;
+    hints.set(path, `${path} ${reason}`);
+  }
+  if (!hints.size) return "";
+  return ` Invalid fields: ${[...hints.values()].slice(0, 12).join("; ")}.${hints.size > 12 || errors.length >= 256 ? " Further schema errors were omitted." : ""} Resubmit the complete call, including its evidence.`;
+}
+
+function toolErrorMessage(code: string, details?: ToolValidationError): string {
+  const missingEvidenceFields = details?.missingEvidenceFields ?? [];
+  const invalidEvidenceTextFields = details?.invalidEvidenceTextFields ?? [];
   const messages: Record<string, string> = {
     invalid_tool_arguments: "The tool arguments are invalid. Resubmit the complete call with the required fields.",
     missing_evidence: "Each changed nonempty commercial fact needs a citation from an application-supplied source.",
@@ -630,7 +688,10 @@ function toolErrorMessage(code: string, missingEvidenceFields: readonly string[]
   const repair = missingEvidenceFields.length
     ? ` Missing evidence fields: ${missingEvidenceFields.join(", ")}. Resubmit the complete call with evidence entries containing fields, source and text. Add these fields to citations with supporting exact excerpts; one citation may cover several fields.`
     : "";
-  return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}${repair}`;
+  const excerpts = invalidEvidenceTextFields.length
+    ? ` Invalid evidence text: ${invalidEvidenceTextFields.slice(0, 12).join(", ")}.${invalidEvidenceTextFields.length > 12 ? " Further invalid excerpts were omitted." : ""} Copy exact contiguous excerpts from the cited source. Use separate citations for separate passages, without inserting ellipses or other text.`
+    : "";
+  return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}${excerpts}${repair}`;
 }
 
 function restoreQuote(target: QuoteData, source: QuoteData) { Object.assign(target, source, { sections: source.sections.map((section) => ({ ...section })), lines: source.lines.map((line) => ({ ...line })) }); }

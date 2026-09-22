@@ -30,7 +30,10 @@ const line = Type.Object(
     mode: Type.Union([
       Type.Literal("quantity"),
       Type.Literal("fixed"),
-    ]),
+    ], {
+      description:
+        'Use "fixed" for a forfait or one stated total; amount is a field, never a mode. Use "quantity" for per-unit pricing; leave an unknown quantity or unit price as an empty string.',
+    }),
     quantity: decimalOrEmpty,
     unit: Type.String({ maxLength: 100 }),
     unitPrice: decimalOrEmpty,
@@ -104,6 +107,12 @@ export const editQuoteLinesDescription =
   "Preserve unchanged values from the current draft. " +
   "Use empty strings for unknown values, deliberately cleared values " +
   "and fields unused by the selected pricing mode. " +
+  "Write new Quote Line descriptions in French, even for an English interface. " +
+  'Use mode "fixed" for a forfait or one stated total; "amount" is a field, never a mode. ' +
+  'Use mode "quantity" for per-unit pricing. ' +
+  "When evidence is needed for a new or changed mode, include its /lines/N/mode path with the fields supported by that excerpt. " +
+  "Each evidence text must be one exact contiguous excerpt from its source. Do not join separate passages or insert ellipses. " +
+  'Example only: if currentMessage.text is "Inspect 3 smoke alarms. Inspection costs 19 per alarm. The travel forfait is 47.", send {"lines":[{"description":"Contrôle de détecteurs de fumée","mode":"quantity","quantity":"3","unit":"pièce","unitPrice":"19","amount":""},{"description":"Déplacement","mode":"fixed","quantity":"","unit":"","unitPrice":"","amount":"47"}],"evidence":[{"fields":["/lines/0/description","/lines/0/quantity"],"source":"current","text":"Inspect 3 smoke alarms."},{"fields":["/lines/0/mode","/lines/0/unit","/lines/0/unitPrice"],"source":"current","text":"Inspection costs 19 per alarm."},{"fields":["/lines/1/description","/lines/1/mode","/lines/1/amount"],"source":"current","text":"The travel forfait is 47."}]}. Use the supplied work and exact excerpts, not these example values. ' +
   "Do not copy, move or delete lines with this tool.";
 
 export function createEditQuoteLinesTool(
