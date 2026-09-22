@@ -32,6 +32,21 @@ describe("evaluation scenario library", () => {
     }
   });
 
+  it("starts the first joinery scenario with administrative details but leaves all work to the Artisan's notes", () => {
+    const scenario = scenarios[0];
+    expect(scenario.id).toBe("joinery-full-reconstruction");
+    expect(scenario.version).toBe(2);
+    expect(scenario.startingQuote).toEqual({ ...scenario.expectedQuote!, sections: [], lines: [] });
+    const step = scenario.steps[0];
+    if (step.kind !== "artisan") throw new Error("Expected Artisan job notes");
+    expect(step.text).not.toMatch(/ficti[fv]|adaptation|attestées|Remplis le brouillon|\[Zone de travail/);
+    expect(step.text.length).toBeLessThan(8000);
+    // Equivalent professional headings are acceptable; group order and line allocation still matter.
+    const reworded = structuredClone(scenario.expectedQuote!);
+    reworded.sections.forEach((section, index) => { section.title = `Zone ${String.fromCharCode(65 + index)}`; });
+    expect(evaluateAssertions(step.assertions, scenario.startingQuote, reworded, "committed", 0).filter(result => !result.passed)).toEqual([]);
+  });
+
   it("retains the three source-derived reconstructions and independently supplied totals", () => {
     const joinery = scenarios.find((scenario) => scenario.id === "joinery-full-reconstruction");
     const landscape = scenarios.find((scenario) => scenario.id === "landscape-full-reconstruction");

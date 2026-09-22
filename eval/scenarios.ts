@@ -1,5 +1,6 @@
 import type { QuoteData, QuoteLine } from "../app/lib/quote";
 import expectedCalculations from "./expected-calculations.json";
+import { joineryJobNotes } from "./inputs/joinery-job-notes";
 import type { Assertion, ExpectedCalculation, Scenario, ScenarioStep } from "./types";
 
 type LineFact = Omit<QuoteLine, "id" | "sectionId"> & { section: number };
@@ -348,7 +349,26 @@ function controlledJoineryEdit(...args: Parameters<typeof synthetic>): Scenario 
 }
 
 const scenarioLibrary: Scenario[] = [
-  sourceScenario({ id: "joinery-full-reconstruction", profession: "joinery", locale: "fr", alias: "joinery-cladding-reference", notes: ["30 positive priced lines across seven source-adapted sections.", "pce, ml and m2 are uncertain-unit adaptations stated explicitly in the Artisan message; they are not source claims."], quote: joineryQuote, sourceFacts: joineryFacts, expectedLineCents: joineryLineCents, subtotal: 2_685_430, vat: 217_520, total: 2_902_950 }),
+  {
+    id: "joinery-full-reconstruction", version: 2, title: "Bardage et menuiserie. Notes de chantier", profession: "joinery", locale: "fr",
+    provenance: { kind: "source-derived", alias: "joinery-cladding-reference", notes: [
+      "Authored French job notes based on the same 30 priced lines in seven zones. This is a proposed conversational adaptation, not a recording or quotation of an Artisan.",
+      "Setup: the Artisan has already selected the Customer and filled the Quote header. Fictional business/Customer details, dates, VAT and title are present in the starting Working Draft. No work lines or sections are prefilled.",
+      "Piece, linear-metre and square-metre units remain documented source adaptations. The Artisan notes supply them explicitly, using everyday wording and shorthand. Privacy and provenance explanations are not part of the message.",
+      "Version 2 rewrites the input as job notes, prefills administrative context and allows equivalent French section headings instead of exact title matches. Source work, quantities, prices and independently checked final amounts are unchanged. Zone order and line allocation remain checked.",
+    ] },
+    review: pendingReview,
+    startingQuote: { ...joineryQuote, sections: [], lines: [] },
+    history: [],
+    steps: [artisan(joineryJobNotes, sourceAssertions(joineryQuote, joineryLineCents, 2_685_430, 217_520, 2_902_950)
+      .filter(assertion => assertion.path !== "quote.sections"))],
+    expectedQuote: joineryQuote, requiredClarification: [], forbiddenMutations: ["quote.reference"],
+    humanReview: [
+      "Vérifier que les notes ressemblent à ce qu'un menuisier pourrait écrire. Cette formulation reste à faire relire par un Artisan.",
+      "Vérifier la fidélité des descriptions françaises, des dimensions et des prestations incluses, sans exiger les phrases exactes du devis de référence.",
+      "Les titres peuvent être reformulés, mais les repères A à G doivent rester clairs. Aucun engagement ni détail technique non fourni ne doit être ajouté.",
+    ],
+  },
   sourceScenario({ id: "landscape-full-reconstruction", profession: "landscape", locale: "fr", alias: "landscape-reference", notes: ["14 priced lines across two sections; adapted units are explicitly supplied.", "Fixture VAT is a synthetic 8.1% calculation treatment."], quote: landscapeQuote, sourceFacts: landscapeFacts, expectedLineCents: landscapeLineCents, subtotal: 1_503_200, vat: 121_759, total: 1_624_959 }),
   sourceScenario({ id: "civil-full-reconstruction", profession: "civil-works", locale: "en", alias: "civil-works-reference", notes: ["17 priced lines across three sections; the unpriced source position is deliberately excluded.", "Source-inspired terms are anonymized paraphrases; fictional administrative fields are in the Artisan message."], quote: civilQuote, sourceFacts: civilFacts, expectedLineCents: civilLineCents, subtotal: 931_150, vat: 75_423, total: 1_006_573 }),
 
