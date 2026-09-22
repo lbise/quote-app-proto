@@ -23,6 +23,8 @@ export type ScenarioStep = {
 export type Scenario = {
   id: string;
   version: number;
+  /** Fault-injection scenarios are not live interpretation benchmarks. */
+  execution?: "controlled-only";
   title: string;
   profession: "joinery" | "landscape" | "civil-works";
   provenance: { kind: "source-derived" | "synthetic-edge"; alias: string; notes: string[] };

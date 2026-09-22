@@ -41,3 +41,11 @@ it("excludes credential-shaped metadata from persisted artifacts", async () => {
   expect(text).not.toContain("secret-value"); expect(text).not.toContain("Bearer private");
   expect(text).toContain("4096");
 });
+it("redacts credential-looking text in human review notes", async () => {
+  const dir = await root(); const run = sampleRun(); await saveRun(dir, run);
+  await saveReview(dir, run.id, { scenarioHash: run.scenarioHash, reviewer: "Maintainer", wording: "pending", inventedFacts: "pending", clarification: "pending", notes: "Observed wording. GEMINI_API_KEY=private-test-key Authorization: Bearer private-token" });
+  const [review] = await readReviews(dir, run.id);
+  expect(review.notes).toContain("Observed wording.");
+  expect(review.notes).not.toContain("private-test-key");
+  expect(review.notes).not.toContain("private-token");
+});

@@ -20,6 +20,8 @@ it("serves a local-only report and rejects cross-origin review writes and hostil
   const response = await fetch(url);
   expect(response.status).toBe(200);
   expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
+  // no-referrer makes Chromium send Origin: null for native POST forms.
+  expect(response.headers.get("referrer-policy")).toBe("same-origin");
   expect(await response.text()).toContain("No scenarios available");
   const hostileHostStatus = await new Promise<number | undefined>((resolve, reject) => {
     get(url, { headers: { host: "attacker.example" } }, response => { response.resume(); resolve(response.statusCode); }).on("error", reject);

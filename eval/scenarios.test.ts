@@ -15,6 +15,7 @@ describe("evaluation scenario library", () => {
       expect(scenario.review.provider).toBe("blocked");
       expect(scenario.history).toEqual([]); // The runner can seed only real Quote state, not invented prior conversation.
       expect(scenario.steps.every((step) => step.assertions.length > 0)).toBe(true);
+      if (scenario.id !== "joinery-half-up-rounding") expect(scenario.expectedQuote).toBeDefined();
       for (const forbiddenPath of scenario.forbiddenMutations) {
         expect(scenario.steps.some((step) => step.assertions.some((assertion) => assertion.operator === "unchanged" && assertion.path === forbiddenPath))).toBe(true);
       }
@@ -32,7 +33,12 @@ describe("evaluation scenario library", () => {
       expect.objectContaining({ path: "calculation.subtotal", expected: 2_685_430 }),
       expect.objectContaining({ path: "calculation.vat", expected: 217_520 }),
       expect.objectContaining({ path: "calculation.total", expected: 2_902_950 }),
+      expect.objectContaining({ path: "calculation.complete", expected: true }),
+      expect.objectContaining({ path: "calculation.missing", expected: [] }),
+      expect.objectContaining({ path: "calculation.errors", expected: [] }),
     ]));
+    expect(joinery?.steps[0].assertions.some((assertion) => assertion.path.includes("description") && assertion.operator === "equals")).toBe(false);
+    expect(joinery?.humanReview.some((item) => item.includes("descriptions"))).toBe(true);
     expect(landscape?.expectedQuote?.lines).toHaveLength(14);
     expect(landscape?.steps[0].assertions).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: "calculation.total", expected: 1_624_959 }),
@@ -53,6 +59,8 @@ describe("evaluation scenario library", () => {
     expect(evaluateAssertions(reconstruction.steps[0].assertions, reconstruction.startingQuote, reconstruction.expectedQuote!, "committed", 0).every((result) => result.passed)).toBe(true);
 
     const copy = byId("joinery-copy-section");
+    expect(copy.expectedQuote?.sections.map((section) => section.title)).toEqual(["Zone A", "Zone A annexe", "Zone B"]);
+    expect(copy.expectedQuote?.lines.map((line) => line.sectionId)).toEqual(["a", "copy", "b"]);
     const copyAfter = structuredClone(copy.startingQuote);
     copyAfter.sections.splice(1, 0, { id: "copy", title: "Zone A annexe" });
     copyAfter.lines = [copyAfter.lines[0], { ...copyAfter.lines[0], id: "copied", sectionId: "copy" }, copyAfter.lines[1]];
@@ -62,6 +70,10 @@ describe("evaluation scenario library", () => {
     const incompleteAfter = structuredClone(incomplete.startingQuote);
     incompleteAfter.lines = [{ id: "line", sectionId: "", description: "Ossature bois", mode: "quantity", quantity: "12.500", unit: "", unitPrice: "40.00", amount: "" }];
     expect(evaluateAssertions(incomplete.steps[0].assertions, incomplete.startingQuote, incompleteAfter, "committed", 0).every((result) => result.passed)).toBe(true);
+
+    expect(incomplete.expectedQuote?.lines[0]).toMatchObject({ quantity: "12.500", unit: "ml", unitPrice: "40.00" });
+    const manualFallback = byId("joinery-manual-fallback-all-work");
+    expect(manualFallback.expectedQuote).toMatchObject({ sections: [], lines: [] });
 
     const stale = byId("joinery-stale-turn-rollback");
     const staleStep = stale.steps[0];

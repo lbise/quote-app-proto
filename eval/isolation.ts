@@ -28,7 +28,8 @@ export function assertEvaluationControlUrl(value: string): URL {
     throw new Error("EVAL_DATABASE_URL must be a PostgreSQL URL for the dedicated evaluation database.");
   }
   if ((url.protocol !== "postgresql:" && url.protocol !== "postgres:")
-    || !["localhost", "127.0.0.1", "::1"].includes(url.hostname)
+    || Boolean(url.search || url.hash)
+    || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
     || decodeURIComponent(url.pathname.slice(1)) !== evaluationDatabase
     || decodeURIComponent(url.username) !== evaluationUser) {
     throw new Error("EVAL_DATABASE_URL must use the local quote_evaluation database and quote_evaluation user created by scripts/eval-db.sh.");

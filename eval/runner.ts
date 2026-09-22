@@ -215,7 +215,11 @@ async function seed(handler: Handler, startingQuote: QuoteData): Promise<QuoteDe
  * commit path are all production code.
  */
 export async function runScenario(scenario: Scenario, options: RunScenarioOptions): Promise<EvaluationRun> {
+  if (!options.live && options.modelBoundary.model.provider !== "faux") {
+    throw new Error("A non-faux provider requires explicit live opt-in and provider-data approval.");
+  }
   if (options.live) {
+    if (scenario.execution === "controlled-only") throw new Error("Fault-injection scenarios require a controlled model transport, not live interpretation.");
     if (!options.live.approvedProviderDataReview || scenario.review.provider !== "approved") {
       throw new Error("Live evaluation is blocked: this scenario has no approved provider-data review.");
     }
@@ -246,22 +250,21 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
     let modelCalls = 0;
     const usage: CapturedUsage = { input: 0, output: 0 };
     let usageReports = 0;
-    const observedResults: Promise<void>[] = [];
     const observedBoundary: QuoteAIModelBoundary = {
       ...options.modelBoundary,
       streamFn: async (model, context, streamOptions) => {
         modelCalls += 1;
         const stream = await options.modelBoundary.streamFn(model, context, streamOptions);
-        observedResults.push(stream.result().then((message) => {
+        void stream.result().then((message) => {
           const reported = usageFrom(message);
           if (!reported) return;
           usage.input += reported.input;
           usage.output += reported.output;
           usageReports += 1;
         }).catch(() => {
-          // The handler records its terminal provider diagnostic. Do not turn a
-          // failed observer into a second transport failure.
-        }));
+          // The handler records provider failures. Usage observation must not
+          // extend its timeout or turn into a second transport failure.
+        });
         return stream;
       },
     };
@@ -350,7 +353,6 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       });
     }
 
-    await Promise.allSettled(observedResults);
     const allPassed = turns.every((turn) => turn.assertions.every((assertion) => assertion.passed));
     return {
       format: "quote-evaluation/v1",

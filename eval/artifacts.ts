@@ -19,7 +19,13 @@ async function names(path: string): Promise<string[]> {
 }
 /** Defense in depth for provider metadata. Commercial text is intentionally retained locally. */
 function withoutCredentials(key: string, value: unknown): unknown {
-  return /^(api[-_]?key|authorization|cookie|set-cookie|password|secret|access[-_]?token|refresh[-_]?token|credential[s]?)$/i.test(key) ? "[redacted]" : value;
+  if (/^(api[-_]?key|authorization|cookie|set-cookie|password|secret|access[-_]?token|refresh[-_]?token|credential[s]?)$/i.test(key)) return "[redacted]";
+  if (typeof value !== "string") return value;
+  return value
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted private key]")
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:[A-Z_]*API[_-]?KEY|password|secret|access[_-]?token|refresh[_-]?token)\s*[:=]\s*["']?[^\s"',;]+/gi, "[redacted credential]")
+    .replace(/\bAIza[\w-]{35}\b|\bsk-[\w-]{20,}\b|\bAKIA[A-Z0-9]{16}\b/g, "[redacted credential]");
 }
 export async function saveRun(root: string, run: EvaluationRun): Promise<void> {
   const path = join(await directory(root, "runs"), `${identifier(run.id)}.json`);
@@ -49,6 +55,6 @@ export async function saveReview(root: string, runId: string, input: ReviewInput
     scenarioHash: run.scenarioHash, createdAt: new Date().toISOString(), reviewer: input.reviewer.trim(),
     wording: input.wording, inventedFacts: input.inventedFacts, clarification: input.clarification, notes: input.notes };
   const path = join(await directory(root, `reviews/${identifier(runId)}`), `${review.id}.json`);
-  await writeFile(path, JSON.stringify(review, null, 2) + "\n", { flag: "wx", mode: 0o600 });
-  return review;
+  await writeFile(path, JSON.stringify(review, withoutCredentials, 2) + "\n", { flag: "wx", mode: 0o600 });
+  return JSON.parse(JSON.stringify(review, withoutCredentials)) as HumanReview;
 }

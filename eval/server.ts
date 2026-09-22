@@ -19,7 +19,7 @@ export function createReviewServer({ root, scenarios }: { root: string; scenario
   return createServer(async (request, response) => {
     response.setHeader("cache-control", "no-store");
     response.setHeader("x-content-type-options", "nosniff");
-    response.setHeader("referrer-policy", "no-referrer");
+    response.setHeader("referrer-policy", "same-origin");
     response.setHeader("content-security-policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     const host = request.headers.host ?? "";
     const address = request.socket.localPort;

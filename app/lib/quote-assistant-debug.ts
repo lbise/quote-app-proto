@@ -11,6 +11,8 @@ export type QuoteAssistantLlmRequest = {
 export type QuoteAssistantToolCall = { name: string; arguments: unknown };
 export type QuoteAssistantAttemptOutcome = "applied" | "failed";
 export type QuoteAssistantToolAttempt = QuoteAssistantToolCall & {
+  /** Transient tool return value for explicit local diagnostics and evaluation. */
+  result?: unknown;
   outcome: QuoteAssistantAttemptOutcome;
   validation: { outcome: "accepted" | "rejected"; code?: string };
   stateSequence: number;

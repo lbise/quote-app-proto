@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createModels } from "@earendil-works/pi-ai";
+import { createModels, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 
 import { emptyQuote } from "../app/lib/quote";
@@ -38,7 +38,22 @@ function scenario(step: Scenario["steps"][number], start = emptyQuote("Q-EVAL"))
 
 const titleAssertion = (title: string): Assertion => ({ label: "title", path: "quote.title", operator: "equals", expected: title });
 
+it("requires live opt-in before accepting a non-faux provider", async () => {
+  const boundary = controlled([]);
+  await expect(runScenario(scenario({ kind: "artisan", text: "Set title Changed", assertions: [titleAssertion("Changed")] }), {
+    databaseUrl: "not-a-database", modelBoundary: { ...boundary, model: { ...boundary.model, provider: "google" } },
+  })).rejects.toThrow("live opt-in");
+});
+
 describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL seam", () => {
+  it("returns a timed-out run even when the model never supplies final usage", async () => {
+    const modelBoundary = controlled([]);
+    const run = await runScenario(scenario({ kind: "artisan", text: "Set title Waiting", assertions: [{ label: "timeout", path: "outcome", operator: "equals", expected: "later_budget_exhausted" }] }), {
+      databaseUrl: databaseUrl!, modelBoundary: { ...modelBoundary, timeoutMs: 100, streamFn: () => createAssistantMessageEventStream() },
+    });
+    expect(run).toMatchObject({ modelCalls: 1, usage: null });
+    expect(run.turns[0].outcome).toBe("later_budget_exhausted");
+  });
   it("marks a false success as failed when it commits no claimed change", async () => {
     const run = await runScenario(scenario({ kind: "artisan", text: "Set title Changed", assertions: [titleAssertion("Changed")] }), {
       databaseUrl: databaseUrl!, modelBoundary: controlled([fauxAssistantMessage([fauxText("Changed.")])]),
@@ -111,7 +126,7 @@ describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL
       ]),
     });
     expect(run).toMatchObject({ modelCalls: 2 });
-    expect(run.turns[0]).toMatchObject({ step: 0, outcome: "stale", after: { title: "Manual" }, debug: { outcome: "stale", attempts: [{ name: "edit_quote_details", outcome: "applied" }] } });
+    expect(run.turns[0]).toMatchObject({ step: 0, outcome: "stale", after: { title: "Manual" }, debug: { outcome: "stale", attempts: [{ name: "edit_quote_details", outcome: "applied", result: { content: expect.any(Array) } }] } });
   });
 
   it("marks absent assertion values invalid and requires explicit terminal outcomes", async () => {

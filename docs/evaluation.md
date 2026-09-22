@@ -4,7 +4,7 @@ Issue [#29](https://github.com/lbise/quote-app-proto/issues/29). This is local r
 
 ## Current status
 
-The library prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately.
+The library has 26 scenarios, prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately.
 
 Inputs and expected outcomes still need human review. The product owner allowed retaining prices and technical specifications in local anonymized fixtures. That is **not provider-data approval**. Every scenario starts with provider use blocked.
 
@@ -48,7 +48,9 @@ This uses a no-op faux model. The reconstruction **must fail** because the model
 npm run eval:db -- down
 ```
 
-Stopping the database does not remove reports. Routine `npm test` makes no provider calls. Database integration tests need the explicit evaluation URL above; without it, Vitest reports those tests as skipped.
+Stopping the database does not remove reports. Fault-injection scenarios are marked `controlled-only`. Their commercial work remains source-derived, but a controlled transport must supply failures; they are not benchmarks that require a live model to make mistakes. The runner's offline API accepts the faux provider only.
+
+Routine `npm test` makes no provider calls. Database integration tests need the explicit evaluation URL above; without it, Vitest reports those tests as skipped.
 
 For CLI options and the current live-execution refusal:
 
@@ -85,4 +87,4 @@ Removing names does not establish statistical anonymity. Technical descriptions,
 
 Choose a saved run, inspect its commercial state and conversation, then complete the Human review form. Wording, invented facts and clarification each start as pending. Save creates a new review record against the exact run ID and scenario hash; it does not rewrite an earlier review. Rerunning a scenario creates a different run and does not inherit approval. Automatic outcome, human review and scenario/provider approval stay separate.
 
-Artifacts are JSON under `.eval-artifacts/runs/` and `.eval-artifacts/reviews/`. New directories use mode `0700` and files `0600`. They intentionally contain commercial content and model conversations for these evaluation cases, not application conversations. Do not upload reports or expose the server publicly. Credential-shaped metadata is redacted, but that is not a general-purpose anonymizer for arbitrary text. A reviewer should never paste credentials into scenario content or notes.
+Artifacts are JSON under `.eval-artifacts/runs/` and `.eval-artifacts/reviews/`. New directories use mode `0700` and files `0600`. They intentionally contain commercial content and model conversations for these evaluation cases, not application conversations. Do not upload reports or expose the server publicly. Credential-shaped metadata and recognizable credential strings in notes are redacted, but that is not a general-purpose anonymizer for arbitrary text. A reviewer should never paste credentials into scenario content or notes.

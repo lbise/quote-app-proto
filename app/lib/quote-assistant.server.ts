@@ -276,7 +276,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
       if (!event.isError && toolCall) successfulToolCalls.push(toolCall);
       if (event.isError) failedCalls += 1;
       stateSequence += 1;
-      if (toolCall) attempts.push({ ...toolCall, outcome, validation: event.isError
+      if (toolCall) attempts.push({ ...toolCall, result: event.result, outcome, validation: event.isError
         ? { outcome: "rejected", code: staged.diagnostic()?.code ?? "tool_rejected" }
         : { outcome: "accepted" }, stateSequence, failedCalls, failureLimit, ...(event.isError ? { errorCode: staged.diagnostic()?.code ?? "tool_rejected" } : {}) });
       if (event.isError) {
