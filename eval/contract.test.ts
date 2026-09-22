@@ -53,20 +53,50 @@ function lineCall(scenario: Scenario, overrides: Partial<Pick<QuoteLine, "quanti
 }
 
 /** The line call consumes the ID reported by the specific section tool result; it never predicts an ID. */
-function sectionIdFromResult(context: Context): string {
+function sectionIdsFromResult(context: Context): string[] {
   const result = [...context.messages].reverse().find((message): message is ToolResultMessage => message.role === "toolResult" && message.toolName === "edit_quote_sections" && !message.isError);
   const text = result?.content.find((block): block is { type: "text"; text: string } => block.type === "text")?.text;
   if (!text) throw new Error("The section tool result did not contain its public JSON result.");
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new Error("The section tool result was not valid JSON."); }
   if (!value || typeof value !== "object" || !("changedFields" in value) || !Array.isArray(value.changedFields)) throw new Error("The section tool result did not report changed fields.");
-  const field = value.changedFields.find((item): item is string => typeof item === "string" && item.startsWith("section:"));
-  const id = field?.slice("section:".length);
-  if (!id) throw new Error("The section tool result did not report its generated ID.");
-  return id;
+  const ids = value.changedFields.filter((item): item is string => typeof item === "string" && item.startsWith("section:")).map(field => field.slice("section:".length));
+  if (!ids.length || ids.some(id => !id)) throw new Error("The section tool result did not report its generated IDs.");
+  return ids;
+}
+
+function mixedBatch(scenario: Scenario, context: Context, start: number, end: number, spliceEvidence = false) {
+  const step = scenario.steps[0];
+  if (step.kind !== "artisan") throw new Error("Expected Artisan notes");
+  const paragraphs = step.text.split("\n\n");
+  const ids = sectionIdsFromResult(context);
+  const lines = scenario.expectedQuote!.lines.slice(start, end).map(({ id: _id, sectionId: _section, ...item }, index) => ({ ...item, sectionId: ids[start + index < 4 ? 0 : 1] }));
+  const citations = lines.flatMap((item, index) => {
+    const prefix = `/lines/${index}`;
+    const passage = paragraphs[start + index < 4 ? 2 : 4];
+    const fields = [`${prefix}/description`, `${prefix}/mode`, ...(item.mode === "fixed" ? [`${prefix}/amount`] : [`${prefix}/quantity`, `${prefix}/unit`, `${prefix}/unitPrice`])];
+    if (item.mode === "fixed") return evidence(fields, passage);
+    if (spliceEvidence) return evidence(fields, `${paragraphs[1]}... ${passage}`);
+    return [
+      ...evidence([`${prefix}/description`, `${prefix}/mode`, `${prefix}/unit`, `${prefix}/unitPrice`], paragraphs[1]),
+      ...evidence([`${prefix}/quantity`], passage),
+    ];
+  });
+  if (start === 0) citations.push(...evidence(["/lines/0/description"], paragraphs[3]));
+  return fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: citations })], { stopReason: "toolUse" });
 }
 
 function acceptedResponses(scenario: Scenario): FauxResponseStep[] {
+  if (scenario.id === "contract-mixed-batches") {
+    const step = scenario.steps[0];
+    if (step.kind !== "artisan") throw new Error("Expected Artisan notes");
+    return [
+      fauxAssistantMessage([fauxToolCall("edit_quote_sections", { sections: [{ title: "Atelier" }, { title: "Réserve" }], evidence: evidence(["/sections/0/title", "/sections/1/title"], step.text.split("\n\n")[0]) })], { stopReason: "toolUse" }),
+      context => mixedBatch(scenario, context, 0, 5),
+      context => mixedBatch(scenario, context, 5, 8),
+      fauxAssistantMessage("Les huit postes ont été ajoutés dans les deux rubriques."),
+    ];
+  }
   if (scenario.id !== "contract-section-assignment") return [lineCall(scenario), fauxAssistantMessage("Modification enregistrée.")];
   const text = (scenario.steps[0] as { text: string }).text;
   const expected = scenario.expectedQuote!.lines[0]!;
@@ -77,7 +107,7 @@ function acceptedResponses(scenario: Scenario): FauxResponseStep[] {
     })], { stopReason: "toolUse" }),
     (context) => fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
       lines: [{
-        sectionId: sectionIdFromResult(context),
+        sectionId: sectionIdsFromResult(context)[0],
         description: expected.description,
         mode: expected.mode,
         quantity: expected.quantity,
@@ -93,7 +123,7 @@ function acceptedResponses(scenario: Scenario): FauxResponseStep[] {
 
 describe("synthetic contract scenarios", () => {
   it("contains only fictional French inputs and keeps prose review outside automated contract checks", () => {
-    expect(contractScenarios).toHaveLength(4);
+    expect(contractScenarios).toHaveLength(5);
     expect(publishedContractScenarios.map((scenario) => scenario.id)).toEqual(contractScenarios.map((scenario) => scenario.id));
     for (const scenario of contractScenarios) {
       expect(scenario.suite).toBe("contract");
@@ -109,6 +139,53 @@ describe("synthetic contract scenarios", () => {
 });
 
 describe.runIf(Boolean(databaseUrl))("contract checks through real HTTP, tools and isolated PostgreSQL", () => {
+  it("covers mixed pricing, distant shared rates and continuation across batches", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-mixed-batches");
+    expect(scenario).toBeDefined();
+    const run = await runScenario(scenario!, { databaseUrl: databaseUrl!, modelBoundary: controlled(acceptedResponses(scenario!)) });
+    expect(run.checks).toEqual({ contract: "passed", commercial: "passed" });
+    expect(run.modelCalls).toBe(4);
+    expect(run.turns[0].after.sections).toHaveLength(2);
+    expect(run.turns[0].after.lines).toHaveLength(8);
+    expect(run.turns[0].assertions.filter(item => !item.passed)).toEqual([]);
+  });
+
+  it("rejects spliced evidence in a later batch and rolls back earlier accepted work at the third failure", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-mixed-batches")!;
+    const accepted = acceptedResponses(scenario);
+    const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled([
+      accepted[0], accepted[1],
+      ...Array.from({ length: 3 }, (): FauxResponseStep => context => mixedBatch(scenario, context, 5, 8, true)),
+    ]) });
+    expect(run.checks).toEqual({ contract: "failed", commercial: "failed" });
+    expect(run.turns[0]).toMatchObject({ outcome: "failed_call_limit_reached", failedCalls: 3 });
+    expect(run.turns[0].after).toEqual(scenario.startingQuote);
+    expect(run.turns[0].diagnostic?.attempts?.map(attempt => attempt.outcome)).toEqual(["applied", "applied", "failed", "failed", "failed"]);
+  });
+
+  it("rejects unrelated section names even when every amount and assignment is correct", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-mixed-batches")!;
+    const accepted = acceptedResponses(scenario);
+    const step = scenario.steps[0];
+    if (step.kind !== "artisan") throw new Error("Expected Artisan notes");
+    accepted[0] = fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
+      sections: [{ title: "Grenier" }, { title: "Cave" }], evidence: evidence(["/sections/0/title", "/sections/1/title"], step.text),
+    })], { stopReason: "toolUse" });
+    const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled(accepted) });
+    expect(run.checks).toEqual({ contract: "passed", commercial: "failed" });
+  });
+
+  it("does not mistake successful first-batch execution for complete commercial work", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-mixed-batches")!;
+    const accepted = acceptedResponses(scenario);
+    const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled([
+      accepted[0], accepted[1], fauxAssistantMessage("Terminé."),
+    ]) });
+    expect(run.checks).toEqual({ contract: "passed", commercial: "failed" });
+    expect(run.automated).toBe("failed");
+    expect(run.turns[0].after.lines).toHaveLength(5);
+  });
+
   it.each(publishedContractScenarios)("accepts $id with the real tool executor", async (scenario) => {
     const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled(acceptedResponses(scenario)) });
     expect(run.automated).toBe("passed");

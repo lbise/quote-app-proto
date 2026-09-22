@@ -113,6 +113,31 @@ const sectionLine = line("expected-section-line", expectedSectionId, "Protection
 const splitStart = header("CT-PREUVE-001");
 const splitLine = line("expected-split", "", "Pose de ruban d’étanchéité", "quantity", "12.75", "m", "6.80", "");
 
+const mixedStart = header("CT-LOTS-001");
+const mixedSections = [{ id: "expected-atelier", title: "Atelier" }, { id: "expected-reserve", title: "Réserve" }];
+const mixedLines = [
+  line("expected-mixed-1", "expected-atelier", "Housse sur mesure, repère 2,40 m par 1,80 m", "fixed", "", "", "", "214.60"),
+  line("expected-mixed-2", "expected-atelier", "Remplacement de crémones", "quantity", "3", "pièce", "27.30", ""),
+  line("expected-mixed-3", "expected-atelier", "Pose de joint souple", "quantity", "8.25", "m", "9.60", ""),
+  line("expected-mixed-4", "expected-atelier", "Pose de butées", "quantity", "4", "pièce", "11.70", ""),
+  line("expected-mixed-5", "expected-reserve", "Remplacement de crémones", "quantity", "2", "pièce", "27.30", ""),
+  line("expected-mixed-6", "expected-reserve", "Pose de joint souple", "quantity", "5.5", "m", "9.60", ""),
+  line("expected-mixed-7", "expected-reserve", "Protection du rayonnage, démontage compris", "fixed", "", "", "", "184.20"),
+  line("expected-mixed-8", "expected-reserve", "Pose de butées", "quantity", "6", "pièce", "11.70", ""),
+];
+const mixedAssertions: Assertion[] = [
+  equals("two sections", "quote.sections.length", 2),
+  oneOf("Atelier first", "quote.sections[0].title", ["Atelier", "atelier", "Local Atelier", "Local atelier"]),
+  oneOf("Réserve second", "quote.sections[1].title", ["Réserve", "réserve", "Local Réserve", "Local réserve"]),
+  equals("all eight lines, without duplicates", "quote.lines.length", 8),
+  ...mixedLines.flatMap((item, index) => [
+    ...(["mode", "quantity", "unitPrice", "amount"] as const).map(field => equals(`line ${index + 1} ${field}`, `quote.lines[${index}].${field}`, item[field])),
+    oneOf(`line ${index + 1} unit`, `quote.lines[${index}].unit`, item.unit === "pièce" ? ["pièce", "pièces", "pce", "unité", "unités"] : item.unit === "m" ? ["m", "mètre", "mètres"] : [""]),
+    equals(`line ${index + 1} section`, `quote.lines[${index}].sectionId`, index < 4 ? 0 : 1),
+  ]),
+  ...protectedHeaders.map(unchanged),
+];
+
 export const contractScenarios: Scenario[] = [
   contractScenario(
     "contract-fixed-line",
@@ -152,5 +177,14 @@ export const contractScenarios: Scenario[] = [
     "Pour l’orangerie fictive, note une ligne de pose de ruban d’étanchéité. La longueur mesurée est de 12,75 m.\n\nLe tarif convenu pour cette pose est de 6,80 CHF par mètre. Ne modifie rien d’autre.",
     commercialLineAssertions(splitLine, -1, ["m", "mètre", "mètres"]),
     ["Vérifier que la prose française relie fidèlement la pose, la longueur et le tarif pourtant fournis dans des paragraphes distincts."],
+  ),
+  contractScenario(
+    "contract-mixed-batches",
+    "Deux rubriques, tarifs communs et forfaits composites",
+    mixedStart,
+    quote(mixedStart.reference, mixedSections, mixedLines),
+    "Prépare le détail pour l’Atelier puis la Réserve, avec une rubrique pour chacun.\n\nTarifs communs aux deux locaux : remplacement des crémones à 27,30 CHF pièce, pose de joint souple à 9,60 CHF par mètre et pose de butées à 11,70 CHF pièce.\n\nDans l’Atelier, commence par une housse sur mesure à 214,60 CHF au forfait. Ensuite, dans cet ordre : 3 crémones, 8,25 m de joint souple et 4 butées.\n\nPour la housse de l’Atelier, conserve les cotes 2,40 m par 1,80 m dans le descriptif. Ce sont des repères techniques du forfait, pas des quantités à multiplier.\n\nDans la Réserve, prévois dans cet ordre : 2 crémones, 5,5 m de joint souple, une protection du rayonnage à 184,20 CHF au forfait, puis 6 butées. Le démontage de la protection est compris dans ce forfait. Ne change rien aux en-têtes du devis.",
+    mixedAssertions,
+    ["Vérifier les huit descriptions françaises fidèles, les deux rubriques et leur ordre, les cotes conservées dans le forfait de la housse et le démontage inclus sans prestation ajoutée."],
   ),
 ];

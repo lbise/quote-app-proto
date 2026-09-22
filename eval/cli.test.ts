@@ -39,6 +39,7 @@ it("previews only selected contract checks without provider access", async () =>
   expect(result.stdout).toContain("contract-quantity-line [contract]");
   expect(result.stdout).toContain("contract-section-assignment [contract]");
   expect(result.stdout).toContain("contract-split-evidence [contract]");
+  expect(result.stdout).toContain("contract-mixed-batches [contract]");
   expect(result.stdout).toContain("No provider call was made");
 });
 

@@ -983,5 +983,51 @@
     "complete": true,
     "missing": [],
     "errors": []
+  },
+  "contract-mixed-batches": {
+    "lines": [
+      {
+        "amount": 21460
+      },
+      {
+        "amount": 8190
+      },
+      {
+        "amount": 7920
+      },
+      {
+        "amount": 4680
+      },
+      {
+        "amount": 5460
+      },
+      {
+        "amount": 5280
+      },
+      {
+        "amount": 18420
+      },
+      {
+        "amount": 7020
+      }
+    ],
+    "sections": [
+      {
+        "subtotal": 42250,
+        "incomplete": false
+      },
+      {
+        "subtotal": 36180,
+        "incomplete": false
+      }
+    ],
+    "subtotal": 78430,
+    "discount": 0,
+    "net": 78430,
+    "vat": null,
+    "total": 78430,
+    "complete": true,
+    "missing": [],
+    "errors": []
   }
 }

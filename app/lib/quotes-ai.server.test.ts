@@ -272,6 +272,197 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     }
   });
 
+  it("gives source-grounded split repairs before the third discontiguous citation rolls back the turn", async () => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const text = [
+        "Zones A et B, dans cet ordre.",
+        "Tarifs : les fenêtres fournies et posées à 240 pièce. Les panneaux avec réglages sont à 79 le m².",
+        "Préparation du chantier à 1200 au forfait. Pose préparatoire à 4800 au forfait.",
+        "Pour A : 5 fenêtres et 42,2 m² de panneaux. Bardage bois à 1899 au forfait.",
+        "Le bardage reste au forfait.",
+        "Cette phrase sépare les passages de bardage.",
+        "Pour A, les ajustages et les finitions sont compris.",
+        "Pour B : une fenêtre et 8 m² de panneaux.",
+      ].join("\n\n");
+      let zoneA = "";
+      const firstLines = () => [
+        { sectionId: zoneA, description: "Préparation du chantier", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "1200" },
+        { sectionId: zoneA, description: "Pose préparatoire", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "4800" },
+        { sectionId: zoneA, description: "Fenêtres fournies et posées", mode: "quantity", quantity: "5", unit: "pièce", unitPrice: "240", amount: "" },
+        { sectionId: zoneA, description: "Panneaux avec réglages", mode: "quantity", quantity: "42.2", unit: "m²", unitPrice: "79", amount: "" },
+        { sectionId: zoneA, description: "Bardage bois", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "1899" },
+      ];
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
+          sections: [{ title: "Zone A" }, { title: "Zone B" }],
+          evidence: [{ fields: ["/sections/0/title", "/sections/1/title"], source: "current", text: "Zones A et B, dans cet ordre." }],
+        })], { stopReason: "toolUse" }),
+        context => {
+          const sectionResult = context.messages.find(message => message.role === "toolResult" && message.toolName === "edit_quote_sections");
+          if (sectionResult?.role !== "toolResult") throw new Error("Section tool result missing.");
+          const content = sectionResult.content.find(part => part.type === "text");
+          zoneA = JSON.parse(content?.type === "text" ? content.text : "{}").calculation.sections[0].id;
+          return fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: firstLines(), evidence: [
+            { fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], source: "current", text: "Préparation du chantier à 1200 au forfait." },
+            { fields: ["/lines/1/description", "/lines/1/mode", "/lines/1/amount"], source: "current", text: "Pose préparatoire à 4800 au forfait." },
+            { fields: ["/lines/2/description", "/lines/2/mode", "/lines/2/unit", "/lines/2/unitPrice"], source: "current", text: "les fenêtres fournies et posées à 240 pièce" },
+            { fields: ["/lines/2/quantity"], source: "current", text: "Pour A : 5 fenêtres" },
+            { fields: ["/lines/3/description", "/lines/3/mode", "/lines/3/unit", "/lines/3/unitPrice"], source: "current", text: "Les panneaux avec réglages sont à 79 le m²." },
+            { fields: ["/lines/3/quantity"], source: "current", text: "42,2 m² de panneaux" },
+            { fields: ["/lines/4/description", "/lines/4/mode", "/lines/4/amount"], source: "current", text: "Bardage bois à 1899 au forfait. Le bardage reste au forfait. Pour A, les ajustages et les finitions sont compris." },
+          ] })], { stopReason: "toolUse" });
+        },
+        () => fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: firstLines(), evidence: [
+          { fields: ["/lines/0/description", "/lines/0/amount", "/lines/1/description", "/lines/1/amount"], source: "current", text: "Préparation du chantier à 1200 au forfait. Pose préparatoire à 4800 au forfait." },
+          { fields: ["/lines/2/description", "/lines/2/quantity", "/lines/2/unitPrice"], source: "current", text: "les fenêtres fournies et posées à 240 pièce… Pour A : 5 fenêtres" },
+          { fields: ["/lines/3/description", "/lines/3/quantity", "/lines/3/unitPrice"], source: "current", text: "Les panneaux avec réglages sont à 79 le m²... 42,2 m² de panneaux" },
+          { fields: ["/lines/4/description", "/lines/4/amount"], source: "current", text: "Bardage bois à 1899 au forfait." },
+        ] })], { stopReason: "toolUse" }),
+        () => fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: firstLines(), evidence: [
+          { fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], source: "current", text: "Préparation du chantier à 1200 au forfait." },
+          { fields: ["/lines/1/description", "/lines/1/mode", "/lines/1/amount"], source: "current", text: "Pose préparatoire à 4800 au forfait." },
+          { fields: ["/lines/2/description", "/lines/2/mode", "/lines/2/unit", "/lines/2/unitPrice"], source: "current", text: "les fenêtres fournies et posées à 240 pièce" },
+          { fields: ["/lines/2/quantity"], source: "current", text: "Pour A : 5 fenêtres" },
+          { fields: ["/lines/3/description", "/lines/3/mode", "/lines/3/unit", "/lines/3/unitPrice"], source: "current", text: "Les panneaux avec réglages sont à 79 le m²." },
+          { fields: ["/lines/3/quantity"], source: "current", text: "42,2 m² de panneaux" },
+          { fields: ["/lines/4/description", "/lines/4/mode", "/lines/4/amount"], source: "current", text: "Bardage bois à 1899 au forfait." },
+        ] })], { stopReason: "toolUse" }),
+        () => fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: [
+          { sectionId: zoneA, description: "Fenêtre B", mode: "quantity", quantity: "1", unit: "pièce", unitPrice: "240", amount: "" },
+          { sectionId: zoneA, description: "Panneaux B", mode: "quantity", quantity: "8", unit: "m²", unitPrice: "79", amount: "" },
+        ], evidence: [
+          { fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], source: "current", text: "les fenêtres fournies et posées à 240 pièce... Pour B : une fenêtre" },
+          { fields: ["/lines/1/description", "/lines/1/mode", "/lines/1/quantity", "/lines/1/unit", "/lines/1/unitPrice"], source: "current", text: "Les panneaux avec réglages sont à 79 le m²... 8 m² de panneaux" },
+        ] })], { stopReason: "toolUse" }),
+      ]);
+
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text, locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(502);
+      const failure = await response.json();
+      const attempts = failure.details.diagnostic.attempts;
+      expect(attempts).toMatchObject([
+        { outcome: "applied", failedCalls: 0 },
+        { outcome: "failed", errorCode: "evidence_not_found", failedCalls: 1 },
+        { outcome: "failed", errorCode: "evidence_not_found", failedCalls: 2 },
+        { outcome: "applied", failedCalls: 2 },
+        { outcome: "failed", errorCode: "evidence_not_found", failedCalls: 3 },
+      ]);
+      const firstFeedback = attempts[1].result.content[0].text;
+      expect(firstFeedback).toContain("Suggested exact excerpts for /evidence/6/text");
+      expect(firstFeedback).toContain('"Bardage bois à 1899 au forfait." | "Le bardage reste au forfait." | "Pour A, les ajustages et les finitions sont compris."');
+      expect(firstFeedback).toContain("Invalid excerpt: this call was not applied. Resubmit the COMPLETE call with unchanged valid citations and coverage for every required field.");
+      expect(firstFeedback).not.toContain("Cette phrase sépare");
+      const retryFeedback = attempts[2].result.content[0].text;
+      expect(retryFeedback).toContain("Suggested exact excerpts for /evidence/1/text");
+      expect(retryFeedback).toContain('"les fenêtres fournies et posées à 240 pièce"');
+      expect(retryFeedback).toContain('"Pour A : 5 fenêtres"');
+      expect(retryFeedback).toContain("Missing evidence fields: /lines/0/mode, /lines/1/mode, /lines/2/mode, /lines/2/unit, /lines/3/mode, /lines/3/unit, /lines/4/mode");
+      expect(retryFeedback).not.toContain("Cette phrase sépare");
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened).toMatchObject({ draft: detail.draft, pending: false, canUndo: false });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("commits a complete resubmission using three sentence-backed excerpt repairs", async () => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const text = [
+        "Fenêtres fournies et posées à 240 pièce.",
+        "Cette phrase ne fait pas partie de la citation.",
+        "Pour A : 5 fenêtres.",
+        "Cette autre phrase ne fait pas partie de la citation.",
+        "Les réglages sont compris.",
+      ].join("\n\n");
+      const lines = [{ description: "Fenêtres fournies et posées, réglages compris", mode: "quantity", quantity: "5", unit: "pièce", unitPrice: "240", amount: "" }];
+      const repairedEvidence = [
+        { fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/unit", "/lines/0/unitPrice"], source: "current", text: "Fenêtres fournies et posées à 240 pièce." },
+        { fields: ["/lines/0/quantity"], source: "current", text: "Pour A : 5 fenêtres." },
+        { fields: ["/lines/0/description"], source: "current", text: "Les réglages sont compris." },
+      ];
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: [{
+          fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice"], source: "current",
+          text: "Fenêtres fournies et posées à 240 pièce. Pour A : 5 fenêtres. Les réglages sont compris.",
+        }] })], { stopReason: "toolUse" }),
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines, evidence: repairedEvidence })], { stopReason: "toolUse" }),
+        fauxAssistantMessage("Les fenêtres ont été ajoutées."),
+      ]);
+
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text, locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const rejection = result.assistantDebug.attempts[0].result.content[0].text;
+      expect(rejection).toContain("Suggested exact excerpts for /evidence/0/text");
+      expect(rejection).toContain('"Fenêtres fournies et posées à 240 pièce." | "Pour A : 5 fenêtres." | "Les réglages sont compris."');
+      expect(rejection).toContain("Invalid excerpt: this call was not applied. Resubmit the COMPLETE call with unchanged valid citations and coverage for every required field.");
+      expect(rejection).not.toContain("Cette phrase ne fait pas partie");
+      expect(result.assistantDebug.attempts[1].arguments.evidence).toEqual(repairedEvidence);
+      expect(result.assistantDebug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls", attempts: [
+        { outcome: "failed", errorCode: "evidence_not_found" }, { outcome: "applied" },
+      ] });
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft.lines).toEqual([expect.objectContaining(lines[0])]);
+      expect(calculateQuote(reopened.draft)).toMatchObject({ subtotal: 120_000 });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([
+    { name: "a fact found only in another source", input: "Réglage au forfait de 72 CHF.", excerpt: "Réglage au forfait de 72 CHF... Titre réservé au brouillon." },
+    { name: "an invented fragment", input: "Réglage au forfait de 72 CHF.", excerpt: "Réglage au forfait de 72 CHF... FACT_WITHOUT_SOURCE" },
+    { name: "more than three fragments", input: "Un. Bruit. Deux. Bruit. Trois. Bruit. Quatre.", excerpt: "Un.... Deux.... Trois.... Quatre." },
+    { name: "an oversized fragment", input: `${"Longue description ".repeat(20)}\n\nAutre information.\n\nForfait de 72 CHF.`, excerpt: `${"Longue description ".repeat(20)}... Forfait de 72 CHF.` },
+  ])("withholds evidence suggestions for $name", async ({ input, excerpt }) => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      let detail = await createDraft();
+      const baseline = { ...complete(detail.draft.reference), title: "Titre réservé au brouillon.", lines: [] };
+      detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: baseline })).json();
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: [{ description: "Réglage", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "72" }], evidence: [{ fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], source: "current", text: excerpt }] })], { stopReason: "toolUse" }),
+        fauxAssistantMessage("Aucun changement appliqué."),
+      ]);
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: input, locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const attempt = result.assistantDebug.attempts[0];
+      expect(attempt).toMatchObject({ outcome: "failed", errorCode: "evidence_not_found", failedCalls: 1 });
+      expect(attempt.result.content[0].text).not.toContain("Suggested exact excerpts");
+      expect(attempt.result.content[0].text).not.toContain("FACT_WITHOUT_SOURCE");
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft).toEqual(baseline);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it("limits evidence repair suggestions while retaining every invalid citation path", async () => {
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const detail = await createDraft();
+      const model = scriptedModel([
+        fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
+          lines: [{ description: "Réglage", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "72" }],
+          evidence: Array.from({ length: 3 }, () => ({ fields: ["/lines/0/description", "/lines/0/mode", "/lines/0/amount"], source: "current", text: "Réglage au forfait... Prix de 72 CHF." })),
+        })], { stopReason: "toolUse" }),
+        fauxAssistantMessage("Aucun changement appliqué."),
+      ]);
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Réglage au forfait. Une précision intermédiaire. Prix de 72 CHF.", locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const feedback = result.assistantDebug.attempts[0].result.content[0].text;
+      expect(feedback.match(/Suggested exact excerpts/g)).toHaveLength(2);
+      expect(feedback).toContain("Invalid evidence text: /evidence/0/text, /evidence/1/text, /evidence/2/text");
+      expect(result.assistantDebug.failedCalls).toBe(1);
+      const reopened = await (await request(undefined, detail.id)).json();
+      expect(reopened.draft).toEqual(detail.draft);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it("advertises small line batches and commits all supplied work as one undoable turn", async () => {
     let detail = await createDraft();
     const baseline = { ...complete(detail.draft.reference), lines: [] };

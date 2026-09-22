@@ -103,6 +103,7 @@ Use these to check whether the configured model can construct valid calls from t
 | `contract-quantity-line` | Capture one line with quantity, unit and unit price. |
 | `contract-section-assignment` | Create a section, then use its returned ID to place a line. |
 | `contract-split-evidence` | Capture a line whose quantity and price are supplied in separate passages. |
+| `contract-mixed-batches` | Capture eight lines in two sections, mixing fixed and quantity pricing, distant shared rates, composite descriptions and continuation beyond a five-line batch. |
 
 Preview the selection without loading provider credentials or making calls:
 
@@ -116,11 +117,13 @@ After reviewing the inputs and explicitly approving their transmission, run:
 npm run eval:run -- --live --suite contract \
   --provider-env-file .env \
   --approve-provider-data-review \
-  --max-calls 12 --max-elapsed-ms 120000 --max-spend-usd 8 \
+  --max-calls 16 --max-elapsed-ms 120000 --max-spend-usd 10 \
   --database-url "$(bash scripts/eval-db.sh url)"
 ```
 
-The 12-call limit is shared across all four checks, not granted to each one. At the recorded rates, 12 calls reserve at most USD 7.01595648, not an actual charge. Repetitions share that same invocation budget. No full scenario runs automatically after these checks.
+The 16-call limit is shared across all five checks, not granted to each one. At the recorded rates, 16 calls reserve at most USD 9.35460864, not an actual charge. Repetitions share that same invocation budget. No full scenario runs automatically after these checks.
+
+If the four basics have already passed, select only the new combined check with `--scenario contract-mixed-batches`. A separately approved invocation can use `--max-calls 6 --max-elapsed-ms 120000 --max-spend-usd 4`; six calls reserve at most USD 3.50797824. The scripted clean replay takes four responses, but live-model call counts can differ.
 
 Use `--suite contract --scenario contract-fixed-line` for one check. A scenario ID outside the selected suite is an error. `--suite scenario` previews the original 26 cases; select explicit IDs for live execution because selections containing `controlled-only` fault-injection cases are rejected.
 
@@ -129,7 +132,9 @@ Contract runs report two outcomes separately:
 - **Contract:** normal committed completion with zero failed tool calls and passing contract assertions. A repaired rejection still fails this check.
 - **Commercial:** expected line values, section assignment, independently worked calculations and preservation of unrelated fields. Correct amounts do not hide contract failures.
 
-Both must pass for the automated run to pass. French wording, faithful interpretation and invented commitments still require human review. These four checks cover basic call construction, not every tool or every infrastructure failure. Forced failures, transport errors, rollback and concurrency stay in controlled offline tests. Passing small live checks does not establish full-scenario quality.
+Both must pass for the automated run to pass. French wording, faithful interpretation and invented commitments still require human review. The first four checks cover individual operations. The fifth combines them under a longer input and multiple batches. It does not force a particular batch partition or prove reliable interpretation of a 30-line Quote. Forced failures, transport errors, rollback and concurrency stay in controlled offline tests. Passing small live checks does not establish full-scenario quality.
+
+The four basic checks passed live in session `cdc11ef3-416b-4b5b-9a47-9db4136673b7`. The subsequent full reconstruction, run `7651d62f-1c54-4e8b-984e-e7738ee6bc54`, still failed because the model joined separate passages into purported exact excerpts. It repaired one batch, then repeated the mistake in the next batch and reached the third-failed-call rollback. The combined fixture targets this missing coverage. Rejected citations now get bounded split suggestions when each of two or three short fragments independently matches the same permitted source. This includes omitted passages between whole sentences and inserted ellipses. Suggestions do not authorize edits: the entire rejected call remains unapplied, and the model must resubmit complete arguments with valid citations. A clean offline replay does not prove that the live model will construct or repair the citations correctly.
 
 Run the offline replays without provider calls:
 

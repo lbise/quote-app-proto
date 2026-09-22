@@ -4,15 +4,15 @@ import { evaluateAssertions } from "./assertions";
 import { scenarios } from "./scenarios";
 
 describe("evaluation scenario library", () => {
-  it("keeps the 26-scenario library range separate from four contract fixtures", () => {
+  it("keeps the 26-scenario library range separate from five contract fixtures", () => {
     const libraryScenarios = scenarios.filter((scenario) => scenario.suite !== "contract");
     const contracts = scenarios.filter((scenario) => scenario.suite === "contract");
     expect(libraryScenarios.length).toBeGreaterThanOrEqual(24);
     expect(libraryScenarios.length).toBeLessThanOrEqual(28);
     expect(contracts.map((scenario) => scenario.id)).toEqual([
-      "contract-fixed-line", "contract-quantity-line", "contract-section-assignment", "contract-split-evidence",
+      "contract-fixed-line", "contract-quantity-line", "contract-section-assignment", "contract-split-evidence", "contract-mixed-batches",
     ]);
-    expect(scenarios).toHaveLength(30);
+    expect(scenarios).toHaveLength(31);
     expect(new Set(scenarios.map((scenario) => scenario.id)).size).toBe(scenarios.length);
     for (const scenario of scenarios) {
       expect(scenario.version).toBeGreaterThan(0);

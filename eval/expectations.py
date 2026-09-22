@@ -169,7 +169,7 @@ def check_synthetic_and_adapted_arithmetic() -> None:
     assert synthetic_line == Decimal("10.03")
     assert synthetic_line + money(synthetic_line * Decimal("0.081")) == Decimal("10.84")
     assert money(Decimal("4.25") * Decimal("2.80") * Decimal("79.00")) == Decimal("940.10")
-    # Four fictional contract fixtures, calculated here rather than by app code.
+    # Fictional contract quantities, calculated here rather than by app code.
     assert money(Decimal("7") * Decimal("18.40")) == Decimal("128.80")
     assert money(Decimal("12.75") * Decimal("6.80")) == Decimal("86.70")
 
@@ -183,9 +183,11 @@ def main() -> None:
         "contract-quantity-line": 12880,
         "contract-section-assignment": 9200,
         "contract-split-evidence": 8670,
+        "contract-mixed-batches": 78430,
     }.items():
         result = calculated[scenario_id]
         assert (result["net"], result["vat"], result["total"]) == (cents, None, cents)
+    assert [section["subtotal"] for section in calculated["contract-mixed-batches"]["sections"]] == [42250, 36180]
     # Hand-worked check: CHF 3573.80 less 10% = CHF 3216.42, plus CHF 260.53 VAT.
     percent = calculated["joinery-percent-discount"]
     assert (percent["discount"], percent["net"], percent["vat"], percent["total"]) == (35738, 321642, 26053, 347695)

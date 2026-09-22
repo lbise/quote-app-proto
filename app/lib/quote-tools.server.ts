@@ -34,8 +34,15 @@ export type QuoteToolsResult = {
 
 export type QuoteToolsDiagnostic = { phase: "tool"; code: string; tool?: string };
 
+type EvidenceRepair = { invalidTextField: string; source: string; excerpts: readonly string[] };
+
 class ToolValidationError extends Error {
-  constructor(readonly code: string, readonly missingEvidenceFields: readonly string[] = [], readonly invalidEvidenceTextFields: readonly string[] = []) { super(code); }
+  constructor(
+    readonly code: string,
+    readonly missingEvidenceFields: readonly string[] = [],
+    readonly invalidEvidenceTextFields: readonly string[] = [],
+    readonly evidenceRepairs: readonly EvidenceRepair[] = [],
+  ) { super(code); }
 }
 
 export type CreateQuoteToolsInput = {
@@ -65,6 +72,9 @@ const MAX_EVIDENCE_FIELDS = 200;
 const MAX_EVIDENCE_TEXT = 2_000;
 const MAX_EVIDENCE_SOURCE = 256;
 const MAX_EVIDENCE_FIELD = 160;
+const MAX_EVIDENCE_REPAIR_EXCERPT = 240;
+const MAX_EVIDENCE_REPAIR_PARTS = 3;
+const MAX_EVIDENCE_REPAIRS = 2;
 
 const evidenceCitationParameters = Type.Object({
   fields: Type.Array(Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_FIELD }), {
@@ -568,16 +578,24 @@ function assertGroupedEvidence(value: unknown, context: EvidenceContext, require
   if (!Array.isArray(value) || !value.length || value.length > MAX_EVIDENCE) throw new ToolValidationError("invalid_evidence");
   const supported = new Set<string>();
   const invalidEvidenceTextFields: string[] = [];
+  const evidenceRepairs: EvidenceRepair[] = [];
   for (const [index, item] of value.entries()) {
     if (!isExactRecord(item, ["fields", "source", "text"]) || !Array.isArray(item.fields) || !item.fields.length || item.fields.length > MAX_EVIDENCE_FIELDS
       || new Set(item.fields).size !== item.fields.length || item.fields.some((field) => typeof field !== "string" || !field || field.length > MAX_EVIDENCE_FIELD || !fieldAllowed(field))
       || typeof item.source !== "string" || !item.source || item.source.length > MAX_EVIDENCE_SOURCE || typeof item.text !== "string" || !item.text || item.text.length > MAX_EVIDENCE_TEXT) throw new ToolValidationError("invalid_evidence");
-    if (!evidenceAppears(evidenceSource(context, item.source), item.text)) invalidEvidenceTextFields.push(`/evidence/${index}/text`);
+    const sourceText = evidenceSource(context, item.source);
+    if (!evidenceAppears(sourceText, item.text)) {
+      invalidEvidenceTextFields.push(`/evidence/${index}/text`);
+      const excerpts = splitEvidenceRepair(sourceText, item.text);
+      if (excerpts && evidenceRepairs.length < MAX_EVIDENCE_REPAIRS) {
+        evidenceRepairs.push({ invalidTextField: `/evidence/${index}/text`, source: item.source, excerpts });
+      }
+    }
     item.fields.forEach((field) => supported.add(field));
   }
   const missingFields = requiredFields.filter((field) => !supported.has(field));
   if (invalidEvidenceTextFields.length || missingFields.length) {
-    throw new ToolValidationError(invalidEvidenceTextFields.length ? "evidence_not_found" : "missing_evidence", missingFields, invalidEvidenceTextFields);
+    throw new ToolValidationError(invalidEvidenceTextFields.length ? "evidence_not_found" : "missing_evidence", missingFields, invalidEvidenceTextFields, evidenceRepairs);
   }
 }
 
@@ -666,9 +684,21 @@ function schemaRepairHints(parameters: TSchema, args: unknown): string {
   return ` Invalid fields: ${[...hints.values()].slice(0, 12).join("; ")}.${hints.size > 12 || errors.length >= 256 ? " Further schema errors were omitted." : ""} Resubmit the complete call, including its evidence.`;
 }
 
+function splitEvidenceRepair(sourceText: string, evidenceText: string): readonly string[] | undefined {
+  const excerpts = evidenceText.includes("...")
+    ? evidenceText.split("...")
+    : evidenceText.includes("…")
+      ? evidenceText.split("…")
+      : evidenceText.split(/(?<=[.!?])\s+/u);
+  const trimmed = excerpts.map((excerpt) => excerpt.trim());
+  if (trimmed.length < 2 || trimmed.length > MAX_EVIDENCE_REPAIR_PARTS || trimmed.some((excerpt) => !excerpt || excerpt.length > MAX_EVIDENCE_REPAIR_EXCERPT)) return undefined;
+  return trimmed.every((excerpt) => evidenceAppears(sourceText, excerpt)) ? trimmed : undefined;
+}
+
 function toolErrorMessage(code: string, details?: ToolValidationError): string {
   const missingEvidenceFields = details?.missingEvidenceFields ?? [];
   const invalidEvidenceTextFields = details?.invalidEvidenceTextFields ?? [];
+  const evidenceRepairs = details?.evidenceRepairs ?? [];
   const messages: Record<string, string> = {
     invalid_tool_arguments: "The tool arguments are invalid. Resubmit the complete call with the required fields.",
     missing_evidence: "Each changed nonempty commercial fact needs a citation from an application-supplied source.",
@@ -691,7 +721,13 @@ function toolErrorMessage(code: string, details?: ToolValidationError): string {
   const excerpts = invalidEvidenceTextFields.length
     ? ` Invalid evidence text: ${invalidEvidenceTextFields.slice(0, 12).join(", ")}.${invalidEvidenceTextFields.length > 12 ? " Further invalid excerpts were omitted." : ""} Copy exact contiguous excerpts from the cited source. Use separate citations for separate passages, without inserting ellipses or other text.`
     : "";
-  return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}${excerpts}${repair}`;
+  const suggestedRepairs = evidenceRepairs.length
+    ? ` ${evidenceRepairs.map((repair) => `Suggested exact excerpts for ${repair.invalidTextField}: ${repair.excerpts.map((excerpt) => JSON.stringify(excerpt)).join(" | ")}. Keep source ${JSON.stringify(repair.source)} and submit separate evidence entries, assigning each only the fields it supports.`).join(" ")}`
+    : "";
+  const completeResubmission = invalidEvidenceTextFields.length
+    ? " Invalid excerpt: this call was not applied. Resubmit the COMPLETE call with unchanged valid citations and coverage for every required field."
+    : "";
+  return `Tool input rejected. Reason: ${code}. ${messages[code] ?? "Check its target and values, then resubmit the complete call."}${excerpts}${suggestedRepairs}${repair}${completeResubmission}`;
 }
 
 function restoreQuote(target: QuoteData, source: QuoteData) { Object.assign(target, source, { sections: source.sections.map((section) => ({ ...section })), lines: source.lines.map((line) => ({ ...line })) }); }
