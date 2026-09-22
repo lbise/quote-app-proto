@@ -420,7 +420,7 @@ function editQuoteLinesInput(value: unknown, quote: QuoteData): EditableLine[] {
   const lines = value.lines.map((item, index) => {
     if (!isRecord(item) || !isExactKeys(item, ["id", "sectionId", "description", "mode", "quantity", "unit", "unitPrice", "amount"])
       || !Object.hasOwn(item, "description") || !Object.hasOwn(item, "mode") || !Object.hasOwn(item, "quantity") || !Object.hasOwn(item, "unit") || !Object.hasOwn(item, "unitPrice") || !Object.hasOwn(item, "amount")) throw new ToolValidationError("invalid_tool_arguments");
-    const id = item.id;
+    const id = item.id === "" ? undefined : item.id;
     if (id !== undefined && (typeof id !== "string" || !lineIdSyntax(id) || ids.has(id) || !quote.lines.some((line) => line.id === id))) throw new ToolValidationError("invalid_line_id");
     if (id !== undefined) ids.add(id);
     if (item.sectionId !== undefined && (id !== undefined || typeof item.sectionId !== "string" || item.sectionId.length > 128 || (item.sectionId !== "" && !quote.sections.some((section) => section.id === item.sectionId)))) throw new ToolValidationError("invalid_section_id");

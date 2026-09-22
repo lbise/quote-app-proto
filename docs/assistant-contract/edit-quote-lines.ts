@@ -4,9 +4,9 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 
 const lineId = Type.String({
-  minLength: 1,
   maxLength: 128,
-  pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+  pattern: "^(?:[A-Za-z0-9][A-Za-z0-9_-]*)?$",
+  description: "Omit to create a line. For compatibility, an empty string is also treated as omitted. Non-empty values must be an existing stable line ID.",
 });
 
 const decimalOrEmpty = Type.String({

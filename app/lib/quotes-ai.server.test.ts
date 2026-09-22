@@ -88,6 +88,22 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     return created.json();
   }
 
+  it("treats an empty optional line ID as a new line without rejecting the call", async () => {
+    const detail = await createDraft();
+    const model = scriptedModel([
+      fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
+        lines: [{ id: "", sectionId: "", description: "Réglage de volets", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "486.50" }],
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Le forfait a été ajouté."),
+    ]);
+    const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Ajoute un forfait de 486,50 CHF pour le réglage de volets.", locale: "fr" }, undefined, model.handler);
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.assistantDebug).toMatchObject({ failedCalls: 0, outcome: "committed", attempts: [{ outcome: "applied" }] });
+    const reopened = await (await request(undefined, detail.id)).json();
+    expect(reopened.draft.lines).toEqual([expect.objectContaining({ description: "Réglage de volets", mode: "fixed", amount: "486.50" })]);
+  });
+
   it("edits details and a manual line, saves the result, and undoes the whole turn", async () => {
     let detail = await createDraft();
     detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: complete(detail.draft.reference) })).json();
