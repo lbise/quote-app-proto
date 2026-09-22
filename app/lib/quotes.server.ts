@@ -610,7 +610,9 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     await failAssistant(database, businessId, id, requestId, now);
     throw error;
   }
-  if (stale) throw new RequestFailure(409, "assistant_stale");
+  if (stale) throw new RequestFailure(409, "assistant_stale", assistantSuccessDebug(
+    result.debug ? { ...result.debug, outcome: "stale" } : undefined, requestId,
+  ));
   if (!detail) throw new RequestFailure(500, "request_failed");
   return {
     ...detail,

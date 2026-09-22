@@ -1,0 +1,78 @@
+import { calculateQuote, money, type QuoteData } from "../app/lib/quote";
+import type { EvaluationRun, HumanReview, Scenario, TurnResult } from "./types";
+
+export function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+}
+const h = escapeHtml;
+const json = (value: unknown) => {
+  const text = value === undefined ? "[missing]" : JSON.stringify(value, null, 2);
+  return `<pre${text.length > 1000 ? ' tabindex="0"' : ""}>${h(text)}</pre>`;
+};
+const list = (values: string[]) => values.length ? `<ul>${values.map(value => `<li>${h(value)}</li>`).join("")}</ul>` : "<p>None specified.</p>";
+function quoteView(quote: QuoteData, expected = false, totals: Record<string, unknown> = {}): string {
+  const calculation = expected ? null : calculateQuote(quote);
+  const groups = [{ id: "", title: "Unsectioned work" }, ...quote.sections];
+  return `<article class="quote" lang="fr"><header><p>${h(quote.reference)}</p><h3>${h(quote.title || "Devis sans titre")}</h3>
+    <div class="comparison"><p>${h(quote.businessName)}<br>${h(quote.businessAddress)}<br>${h(quote.businessContact)}</p><p>${h(quote.customerName)}<br>${h(quote.customerAddress)}<br>${h(quote.customerContact)}</p></div>
+    <p>Date : ${h(quote.issueDate || "manquante")} · Validité : ${h(quote.validUntil || "non précisée")}</p><p>${h(quote.siteAddress)}</p></header>
+    ${groups.filter(group => group.id || quote.lines.some(line => !line.sectionId)).map(group => `<section><h4>${h(group.title)}</h4>
+    <ol>${quote.lines.filter(line => line.sectionId === group.id).map(line => {
+      const amount = calculation?.lines.find(item => item.id === line.id)?.amount;
+      return `<li><p>${h(line.description || "Description manquante")}</p><p class="figures">${line.mode === "fixed" ? `Forfait CHF ${h(line.amount || "?")}` : `${h(line.quantity || "?")} ${h(line.unit || "?")} × CHF ${h(line.unitPrice || "?")}`}${calculation ? ` = ${amount == null ? "incomplet" : money(amount)}` : ""}</p></li>`;
+    }).join("")}</ol></section>`).join("")}
+    ${!quote.lines.length ? "<p>Aucune ligne.</p>" : ""}
+    <dl class="totals">${["subtotal", "discount", "net", "vat", "total"].map(key => {
+      const value = calculation ? calculation[key as "subtotal"] : totals[`calculation.${key}`];
+      return `<div><dt>${h(key)}</dt><dd>${typeof value === "number" ? `CHF ${money(value)}` : "Not specified"}</dd></div>`;
+    }).join("")}</dl><p>Remise : ${h(quote.discountMode)} ${h(quote.discount)}</p><p>TVA : ${quote.vatRegistered === null ? "à préciser" : quote.vatRegistered ? "8,1 %" : "non assujetti"} ${h(quote.vatId)}</p><p class="multiline">${h(quote.terms)}</p>
+    ${calculation?.missing.length ? `<details><summary>Missing information (${calculation.missing.length})</summary>${list(calculation.missing.map(item => `${item.path}: ${item.code}`))}</details>` : ""}
+    ${calculation?.errors.length ? `<p class="failure">Invalid commercial state</p>${json(calculation.errors)}` : ""}</article>`;
+}
+function assertions(turn: TurnResult): string {
+  const failed = turn.assertions.filter(assertion => !assertion.passed).length;
+  return `<details><summary>Assertions: ${turn.assertions.length - failed} passed, ${failed} failed</summary><ul class="assertions">${turn.assertions.map(assertion => `<li class="${assertion.passed ? "pass" : "failure"}"><strong>${assertion.passed ? "PASS" : "FAIL"}</strong> ${h(assertion.label)} <code>${h(assertion.path)}</code>${!assertion.passed ? `<div class="comparison"><div>Expected${json(assertion.expected)}</div><div>Actual${json(assertion.actual)}</div></div>` : ""}</li>`).join("")}</ul></details>`;
+}
+function changedFields(before: QuoteData, after: QuoteData): string {
+  const changes = Object.keys(before).filter(key => JSON.stringify(before[key as keyof QuoteData]) !== JSON.stringify(after[key as keyof QuoteData]));
+  return changes.length ? changes.map(key => `<details><summary>${h(key)}</summary><div class="comparison"><div>Before${json(before[key as keyof QuoteData])}</div><div>After${json(after[key as keyof QuoteData])}</div></div></details>`).join("") : "<p>No commercial fields changed.</p>";
+}
+function turnView(turn: TurnResult): string {
+  const trace = turn.debug ?? turn.diagnostic;
+  return `<section class="turn" id="turn-${turn.step}"><h3>Step ${turn.step + 1} · ${h(turn.kind === "manual" ? "Manual UI save" : "Artisan message")}</h3><p class="multiline">${h(turn.input)}</p>
+    <p><strong>${h(turn.outcome)}</strong> · ${turn.failedCalls} failed calls · ${turn.elapsedMs} ms</p>
+    ${turn.error ? `<p class="failure">${h(turn.error)}</p>` : ""}<p class="multiline">${h(turn.message)}</p>${assertions(turn)}
+    <details><summary>Changed fields</summary>${changedFields(turn.before, turn.after)}</details>
+    <details><summary>Working Draft after this step</summary>${quoteView(turn.after)}</details>
+    <details><summary>Tool attempts (${trace?.attempts?.length ?? 0})</summary>${trace?.attempts?.map(attempt => `<section><h4>${h(attempt.name)} · ${h(attempt.outcome)}</h4><p>Failure count ${attempt.failedCalls}/${attempt.failureLimit} · ${h(attempt.errorCode ?? "accepted")}</p>${json(attempt.arguments)}</section>`).join("") || "<p>No tool attempts recorded.</p>"}</details>
+    <details><summary>Model requests, tool results and diagnostics</summary>${json(trace ?? { note: "No model trace for this step." })}</details></section>`;
+}
+function reviewForm(run: EvaluationRun, reviews: HumanReview[]): string {
+  const last = reviews.at(-1);
+  const choices = (name: string, label: string) => `<label>${label}<select name="${name}">${["pending", "pass", "fail"].map(value => `<option${last?.[name as "wording"] === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>`;
+  return `<section id="human-review"><h2>Human review</h2><p>Automated checks do not establish faithful wording or useful clarification. Reviews apply only to this run and scenario hash.</p>
+    <form method="post" action="/reviews"><input type="hidden" name="runId" value="${h(run.id)}"><input type="hidden" name="scenarioHash" value="${h(run.scenarioHash)}">
+    <label>Reviewer<input name="reviewer" maxlength="200" required value="${h(last?.reviewer ?? "")}"></label>
+    <div class="review-fields">${choices("wording", "Faithful French wording and reply language")}${choices("inventedFacts", "No invented facts or commitments")}${choices("clarification", "Useful clarification")}</div>
+    <label>Review notes<textarea name="notes" maxlength="10000" rows="5">${h(last?.notes ?? "")}</textarea></label><button type="submit">Save a new review</button></form>
+    <h3>Saved review history</h3>${reviews.length ? reviews.map(review => `<details><summary>${h(review.createdAt)} · ${h(review.reviewer)}</summary><p>Wording: ${h(review.wording)} · Facts: ${h(review.inventedFacts)} · Clarification: ${h(review.clarification)}</p><p class="multiline">${h(review.notes)}</p></details>`).join("") : "<p>Pending human review. No approval recorded.</p>"}</section>`;
+}
+export function renderReport(input: { scenarios: Scenario[]; runs: EvaluationRun[]; scenarioId?: string; runId?: string; reviews: HumanReview[] }): string {
+  const run = input.runs.find(item => item.id === input.runId);
+  const scenario = run?.scenario ?? input.scenarios.find(item => item.id === input.scenarioId) ?? input.scenarios[0];
+  const lastReview = input.reviews.at(-1);
+  const human = !lastReview || [lastReview.wording, lastReview.inventedFacts, lastReview.clarification].includes("pending") ? "pending" : [lastReview.wording, lastReview.inventedFacts, lastReview.clarification].includes("fail") ? "changes requested" : "approved";
+  const totals = Object.fromEntries(scenario?.steps.flatMap(step => step.assertions.filter(item => item.operator === "equals" && item.path.startsWith("calculation.")).map(item => [item.path, item.expected])) ?? []);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Quote evaluation review</title><link rel="stylesheet" href="/report.css"></head><body>
+    <header class="masthead"><a href="/">Easy Quote / evaluation</a><p>Private local report. Retained commercial prices and technical details. No provider calls from this browser.</p></header>
+    <div class="workbench"><aside><h2>Scenario library</h2><nav aria-label="Scenarios">${input.scenarios.map(item => `<a ${item.id === scenario?.id ? 'aria-current="page"' : ""} href="/?scenario=${encodeURIComponent(item.id)}"><small>${h(item.profession)} · v${item.version}</small>${h(item.title)}</a>`).join("")}</nav><h2>Saved runs</h2><nav aria-label="Runs">${input.runs.length ? input.runs.map(item => `<a href="/?run=${encodeURIComponent(item.id)}"><small>${h(item.startedAt)} · repetition ${item.repetition}</small>${h(item.scenario.title)}<small>Automated: ${h(item.automated)}</small></a>`).join("") : "<p>No runs yet.</p>"}</nav></aside>
+    <main>${scenario ? `<header><p>${h(scenario.provenance.kind)} · ${h(scenario.profession)} · v${scenario.version} · ${h(scenario.locale)}</p><h1>${h(scenario.title)}</h1><p>Provider use: ${h(scenario.review.provider)} · Inputs: ${h(scenario.review.inputs)} · Expectations: ${h(scenario.review.expectations)}</p><p>${h(scenario.review.note)}</p></header>
+    ${run ? `<section class="run-status"><h2>Run results</h2><nav aria-label="Report navigation"><a href="#comparison">Quote comparison</a> · <a href="#script">Scenario script</a> · <a href="#execution">Execution</a> · <a href="#human-review">Human review</a></nav><p>Automated: <strong>${h(run.automated)}</strong> · Human review: <strong>${human}</strong></p><p>${h(run.model.provider)} / ${h(run.model.id)} · ${run.modelCalls} model calls · ${run.elapsedMs} ms</p><details><summary>Run identity, revisions, usage and cost assumptions</summary>${json({ id: run.id, scenarioHash: run.scenarioHash, revision: run.revision, model: run.model, repetition: run.repetition, usage: run.usage, cost: run.cost })}</details></section>` : "<p class=notice>Browse and review inputs before making any provider calls.</p>"}
+    <section><h2>Source and adaptations</h2><p>${h(scenario.provenance.alias)}</p>${list(scenario.provenance.notes)}</section>
+    ${run ? `<details><summary>Starting Working Draft</summary>${quoteView(scenario.startingQuote)}</details>` : `<div class="comparison"><section><h2>Starting Working Draft</h2>${quoteView(scenario.startingQuote)}</section><section><h2>Expected commercial state</h2>${scenario.expectedQuote ? quoteView(scenario.expectedQuote, true, totals) : "<p>Defined by the step assertions below, not a complete expected Quote.</p>"}</section></div>`}
+    <p>Expected totals are independent literals from scenario assertions. No expected amount is generated by the application calculator.</p>
+    ${run?.turns.length ? `<section id="comparison"><h2>Expected / actual final Quote</h2><div class="comparison"><section><h3>Expected</h3>${scenario.expectedQuote ? quoteView(scenario.expectedQuote, true, totals) : json(scenario.steps.at(-1)?.assertions)}</section><section><h3>Actual</h3>${quoteView(run.turns.at(-1)!.after)}</section></div></section>` : ""}
+    <section id="script"><h2>Script and assertion definitions</h2>${scenario.history.length ? `<details><summary>Permitted conversation history</summary>${json(scenario.history)}</details>` : "<p>Starts without prior conversation. The runner supplies the current Working Draft, calculation and real assistant prompt/tools.</p>"}${scenario.steps.map((step, index) => `<details open><summary>Step ${index + 1} · ${h(step.kind)}</summary><p class="multiline">${h(step.kind === "artisan" ? step.text : step.note)}</p>${step.kind === "manual" ? quoteView(step.quote) : step.concurrentManualQuote ? `<h3>Concurrent manual save</h3>${quoteView(step.concurrentManualQuote)}` : ""}${json(step.assertions)}</details>`).join("")}</section>
+    <section><h2>Required clarification</h2>${list(scenario.requiredClarification)}<h2>Forbidden mutations</h2>${list(scenario.forbiddenMutations)}<h2>Human checks</h2>${list(scenario.humanReview)}</section>
+    ${run ? `<section id="execution"><h2>Conversation and execution</h2><nav aria-label="Turn navigation">${run.turns.map(turn => `<a href="#turn-${turn.step}">Step ${turn.step + 1}</a>`).join(" · ")}</nav>${run.turns.map(turnView).join("")}</section>${reviewForm(run, input.reviews)}` : ""}` : "<h1>No scenarios available</h1>"}</main></div><footer>Evaluation artifacts stay on this computer. Human approval does not authorize provider use or Publication.</footer></body></html>`;
+}

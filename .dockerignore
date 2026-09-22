@@ -11,3 +11,9 @@ npm-debug.log*
 *.log
 tests
 docs
+eval
+.eval-artifacts
+scripts/eval-*
+scripts/evaluate.ts
+data_devis
+data_devis.tar.gz

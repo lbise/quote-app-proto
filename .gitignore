@@ -8,3 +8,7 @@ coverage/
 playwright-report/
 test-results/
 .vitest/
+.eval-artifacts/
+# Original commercial documents never belong in the repository.
+/data_devis/
+/data_devis.tar.gz

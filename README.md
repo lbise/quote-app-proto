@@ -66,6 +66,10 @@ npm run check
 npm run build
 ```
 
+## Assistant evaluation
+
+Run `npm run eval:review` to browse source-derived scenarios and saved results locally, without provider calls. See [evaluation.md](docs/evaluation.md) for isolated offline runs, source handling and human review. Live evaluation remains blocked pending provider-data approval and enforceable spending controls.
+
 ## Releases
 
 Pull requests and pushes to `main` run checks. They do not deploy. A release is created by pushing a new immutable `vX.Y.Z` tag from `main`:

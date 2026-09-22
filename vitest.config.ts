@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     environment: "node",
     setupFiles: ["./tests/vitest.setup.ts"],
-    include: ["app/**/*.test.ts"],
+    include: ["app/**/*.test.ts", "eval/**/*.test.ts"],
   },
 });

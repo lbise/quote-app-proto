@@ -276,6 +276,8 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
 
     const stale = await assistant;
     expect(stale.status).toBe(409);
+    const stalePayload = await stale.json();
+    if (process.env.QUOTE_AI_DEBUG !== "true") expect(stalePayload).toEqual({ error: "assistant_stale" });
     const reopened = await (await request(undefined, detail.id)).json();
     expect(reopened).toMatchObject({ draft: { title: "Manual title" }, pending: false });
     expect(reopened.messages.at(-1)).toMatchObject({ role: "note", en: "Response was stale; the Working Draft changed." });

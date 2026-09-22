@@ -18,7 +18,10 @@
     "typecheck": "react-router typegen && tsc",
     "test": "vitest run",
     "test:browser": "./scripts/browser-test.sh",
-    "check": "npm run typecheck && npm run test"
+    "check": "npm run typecheck && npm run test",
+    "eval:review": "tsx scripts/eval-review.ts",
+    "eval:run": "tsx scripts/evaluate.ts",
+    "eval:db": "bash scripts/eval-db.sh"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
