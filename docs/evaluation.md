@@ -16,7 +16,11 @@ Live execution currently refuses to run. The registered provider's usage/pricing
 npm run eval:review
 ```
 
-Open `http://127.0.0.1:4319`. The report runs separately from the production app. It binds only to loopback, does not load application credentials, and cannot trigger provider calls. Use `-- --port 4320` for another port or `-- --root /path/to/local/artifacts` to review another artifact directory.
+The command prints localhost and this machine's private IPv4 URLs on port 4319, including LAN and Tailscale addresses. Open one of the private URLs from another device on your trusted network. The report runs separately from the production app, does not load application credentials, and cannot trigger provider calls.
+
+By default it binds to `0.0.0.0`, accepts only loopback or private-network peers, and allows only exact local interface addresses in the Host header. RFC 1918 networks and Tailscale's `100.64.0.0/10` range are supported. Review submissions still require the same origin. There is no login: anyone who can reach it from an allowed network can read commercial data and save reviews. Restrict port 4319 to trusted devices with your firewall; do not add a public reverse proxy or port forward.
+
+Use `-- --host 127.0.0.1` for localhost-only access, `-- --host <local-private-ip>` for a single interface, `-- --port 4320` for another port, or `-- --root /path/to/local/artifacts` to review another artifact directory.
 
 The report shows source notes, the starting Working Draft, scripted Artisan messages and manual actions, independent expectations, forbidden changes and required human checks. Runs add expected/actual comparisons, changed fields, assertions, conversation, tool attempts and diagnostics. Long technical descriptions remain readable instead of being replaced by exact-reply snapshots.
 

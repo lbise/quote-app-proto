@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { readFile } from "node:fs/promises";
+import { BlockList } from "node:net";
+import { networkInterfaces } from "node:os";
 import { listRuns, readReviews, saveReview, type ReviewInput } from "./artifacts";
 import { renderReport } from "./report";
 import type { Scenario } from "./types";
@@ -15,7 +17,21 @@ async function formBody(request: IncomingMessage): Promise<URLSearchParams> {
   }
   return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 }
-export function createReviewServer({ root, scenarios }: { root: string; scenarios: Scenario[] }) {
+const privateNetworks = new BlockList();
+for (const [network, prefix] of [["10.0.0.0", 8], ["172.16.0.0", 12], ["192.168.0.0", 16], ["100.64.0.0", 10]] as const) {
+  privateNetworks.addSubnet(network, prefix);
+}
+function privateAddress(address: string): boolean {
+  return privateNetworks.check(address.replace(/^::ffff:/, ""));
+}
+export function privateReviewAddresses(): string[] {
+  return [...new Set(Object.values(networkInterfaces()).flatMap(entries => (entries ?? [])
+    .filter(entry => entry.family === "IPv4" && !entry.internal && privateAddress(entry.address))
+    .map(entry => entry.address)))];
+}
+export function createReviewServer({ root, scenarios, networkAccess = false }: { root: string; scenarios: Scenario[]; networkAccess?: boolean }) {
+  // Exact local interface addresses prevent accepting arbitrary DNS Host names.
+  const allowedAddresses = ["127.0.0.1", "localhost", "[::1]", ...(networkAccess ? privateReviewAddresses() : [])];
   return createServer(async (request, response) => {
     response.setHeader("cache-control", "no-store");
     response.setHeader("x-content-type-options", "nosniff");
@@ -23,8 +39,10 @@ export function createReviewServer({ root, scenarios }: { root: string; scenario
     response.setHeader("content-security-policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     const host = request.headers.host ?? "";
     const address = request.socket.localPort;
-    if (![ `127.0.0.1:${address}`, `localhost:${address}` ].includes(host)) {
-      response.writeHead(403).end("Local host required."); return;
+    const peer = request.socket.remoteAddress?.replace(/^::ffff:/, "") ?? "";
+    const trustedPeer = peer === "127.0.0.1" || peer === "::1" || (networkAccess && privateAddress(peer));
+    if (!trustedPeer || !allowedAddresses.some(allowed => host === `${allowed}:${address}`)) {
+      response.writeHead(403).end("Trusted local or private-network address required."); return;
     }
     try {
       const url = new URL(request.url ?? "/", `http://${host}`);

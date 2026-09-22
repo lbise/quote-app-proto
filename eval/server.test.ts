@@ -2,9 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
-import { get } from "node:http";
+import { get, request as httpRequest } from "node:http";
 import { afterEach, expect, it } from "vitest";
-import { createReviewServer } from "./server";
+import { createReviewServer, privateReviewAddresses } from "./server";
 import { saveRun, readReviews } from "./artifacts";
 import { emptyQuote } from "../app/lib/quote";
 import type { EvaluationRun } from "./types";
@@ -28,6 +28,29 @@ it("serves a local-only report and rejects cross-origin review writes and hostil
   });
   expect(hostileHostStatus).toBe(403);
   expect((await fetch(`${url}/reviews`, { method: "POST", headers: { origin: "https://attacker.example", "content-type": "application/x-www-form-urlencoded" }, body: "runId=test" })).status).toBe(403);
+});
+const privateAddress = privateReviewAddresses()[0];
+it.runIf(Boolean(privateAddress))("serves the report on a private interface without accepting arbitrary Host headers or cross-origin writes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "eval-network-"));
+  cleanup.push(() => rm(root, { recursive: true, force: true }));
+  const server = createReviewServer({ root, scenarios: [], networkAccess: true });
+  await new Promise<void>(resolve => server.listen(0, "0.0.0.0", resolve));
+  cleanup.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  const port = (server.address() as AddressInfo).port;
+  const url = `http://${privateAddress}:${port}`;
+  expect((await fetch(url)).status).toBe(200);
+  expect((await fetch(`${url}/report.css`)).status).toBe(200);
+  const post = (origin: string) => new Promise<number | undefined>((resolve, reject) => {
+    const request = httpRequest(`${url}/reviews`, { method: "POST", headers: { origin, "content-type": "application/x-www-form-urlencoded" } }, response => { response.resume(); resolve(response.statusCode); });
+    request.on("error", reject); request.end("runId=missing");
+  });
+  expect(await post("http://attacker.example")).toBe(403);
+  // A same-origin submission reaches form validation rather than the origin guard.
+  expect(await post(url)).toBe(400);
+  const invalidHost = await new Promise<number | undefined>((resolve, reject) => {
+    get(url, { headers: { host: `203.0.113.9:${port}` } }, response => { response.resume(); resolve(response.statusCode); }).on("error", reject);
+  });
+  expect(invalidHost).toBe(403);
 });
 it("saves form judgments against one run and reads them after reopening the report", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-review-form-"));
