@@ -113,11 +113,54 @@ it("requires live opt-in before accepting a non-faux provider", async () => {
   })).rejects.toThrow("live opt-in");
 });
 
+it.each(["contract", "commercial"] as const)("rejects a contract check missing %s expectations before database or provider access", async (missing) => {
+  const example = scenario({ kind: "artisan", text: "Set title Changed", assertions: missing === "contract"
+    ? [titleAssertion("Changed")]
+    : [{ label: "no failed calls", path: "failedCalls", operator: "equals", expected: 0, category: "contract" }],
+  });
+  example.suite = "contract";
+  const run = await runScenario(example, { databaseUrl: "not-a-database", modelBoundary: controlled([]) });
+  expect(run).toMatchObject({ automated: "invalid", modelCalls: 0, checks: { contract: "invalid", commercial: "invalid" } });
+  expect(run.turns[0].assertions[0].label).toContain(`${missing} expectations`);
+});
+
+it.each([{ expected: [] }, { expected: "m" }])("rejects malformed alternatives before execution: %j", async ({ expected }) => {
+  const example = scenario({ kind: "artisan", text: "Set title Changed", assertions: [
+    { label: "unit alternatives", path: "quote.lines[0].unit", operator: "oneOf", expected },
+  ] });
+  const run = await runScenario(example, { databaseUrl: "not-a-database", modelBoundary: controlled([]) });
+  expect(run.automated).toBe("invalid");
+  expect(run.modelCalls).toBe(0);
+});
+
 describe.runIf(Boolean(databaseUrl))("evaluation runner real HTTP and PostgreSQL seam", () => {
   beforeAll(async () => { artifactRoot = await mkdtemp(join(tmpdir(), "quote-live-eval-")); });
   beforeEach(() => { vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z")); });
   afterEach(() => { vi.restoreAllMocks(); });
   afterAll(async () => { await rm(artifactRoot, { recursive: true, force: true }); });
+
+  it.each([
+    { repair: false, title: "Changed", contract: "passed", commercial: "passed" },
+    { repair: true, title: "Changed", contract: "failed", commercial: "passed" },
+    { repair: false, title: "Other", contract: "passed", commercial: "failed" },
+  ])("separates contract behavior from commercial correctness: %j", async ({ repair, title, contract, commercial }) => {
+    const example = scenario({ kind: "artisan", text: "Set title Changed. Reference note: Other.", assertions: [
+      { label: "normal mutation completion", path: "outcome", operator: "equals", expected: "committed", category: "contract" },
+      { label: "no rejected calls", path: "failedCalls", operator: "equals", expected: 0, category: "contract" },
+      titleAssertion("Changed"),
+    ] });
+    example.suite = "contract";
+    const modelBoundary = controlled([
+      ...(repair ? [fauxAssistantMessage([fauxToolCall("unknown_tool", {})], { stopReason: "toolUse" })] : []),
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title }, evidence: evidence(["title"], title) })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Done."),
+    ]);
+    const run = await runScenario(example, { databaseUrl: databaseUrl!, modelBoundary });
+    expect(run.checks).toEqual({ contract, commercial });
+    expect(run.automated).toBe(contract === "passed" && commercial === "passed" ? "passed" : "failed");
+    expect(run.turns[0].after.title).toBe(title);
+    expect(run.turns[0].assertions.filter(assertion => assertion.category === "contract")).toHaveLength(2);
+  });
 
   it("runs approved live-mode work through real tools with one shared, pre-reserved spending cap", async () => {
     const text = "Set title Bounded";

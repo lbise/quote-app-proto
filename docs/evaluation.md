@@ -4,7 +4,7 @@ Issue [#29](https://github.com/lbise/quote-app-proto/issues/29). This is local r
 
 ## Current status
 
-The library has 26 scenarios, prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately.
+The library has two suites: four fictional contract checks and 26 scenario cases. The scenario suite prioritizes joinery/cladding and includes landscaping and civil works. Its commercial examples come from the reviewed adaptations in [`examples/first-quotes/`](examples/first-quotes/). Synthetic arithmetic and recovery cases are labelled separately. Adding contract checks does not change the existing scenarios or their approval hashes.
 
 Inputs and expected outcomes still need human review. The product owner allowed retaining prices and technical specifications in local anonymized fixtures. That is **not provider-data approval**. Every scenario starts with provider use blocked.
 
@@ -64,13 +64,13 @@ npm run eval:run -- --help
 
 ## Run a bounded live evaluation
 
-Live mode transmits the selected adapted scenario inputs to the configured provider. It requires each of the following: `--live`, at least one explicit `--scenario`, `--approve-provider-data-review`, `--database-url`, `--max-calls`, `--max-elapsed-ms`, and `--max-spend-usd`. It rejects `controlled-only` fault-injection scenarios before provider configuration or any provider call.
+Live mode transmits the selected case inputs to the configured provider. It requires each of the following: `--live`, an explicit `--suite` or at least one `--scenario`, `--approve-provider-data-review`, `--database-url`, `--max-calls`, `--max-elapsed-ms`, and `--max-spend-usd`. It rejects `controlled-only` fault-injection scenarios before provider configuration or any provider call.
 
 `--approve-provider-data-review` is runtime authorization for the exact selected adapted scenario hashes, provider and model in this one session. It does not alter the library's `pending`, `blocked`, or reviewed flags. It is not a human prose approval, a Publication of a Quote, or #21 production-provider approval.
 
 The provider environment file needs `QUOTE_AI_PROVIDER=google`, `QUOTE_AI_MODEL=gemini-3.5-flash-lite`, and your `GEMINI_API_KEY`. For the long reconstruction, consider `QUOTE_AI_TIMEOUT_MS=45000`; the application turn deadline otherwise defaults to 20 seconds and remains separate from the session deadline.
 
-Start the disposable database, then run a deliberately small bounded session. This is an example command, not evidence that it was run here:
+Start the disposable database if it is not already running. Run the focused contract checks below before returning to a full reconstruction. The following full-scenario command is an example, not evidence that it was run here:
 
 ```sh
 npm run eval:db -- up
@@ -93,6 +93,52 @@ CLI limits are positive and bounded: `--max-calls` is at most 10,000, `--max-ela
 
 For live mode only, `--provider-env-file PATH` parses only `QUOTE_AI_PROVIDER`, `QUOTE_AI_MODEL`, `GEMINI_API_KEY`, and `QUOTE_AI_TIMEOUT_MS` using `dotenv.parse`; it does not call global dotenv configuration or mutate `process.env`. Exported process-environment values win over that file. The option is rejected in offline mode and when `--live` is absent. Never load a real `.env` for an offline smoke run. This flag deliberately differs from Node's `--env-file`, which can preload all variables before the program starts.
 
+## Focused live contract checks
+
+Use these to check whether the configured model can construct valid calls from the production prompt and tool definitions before diagnosing a full Quote. They use the same Quote HTTP handler, registered tools, isolated PostgreSQL state and live-session limits. Their inputs are entirely fictional and do not copy the tool description's worked example.
+
+| Case ID | What it checks |
+| --- | --- |
+| `contract-fixed-line` | Capture one fixed-price line with its pricing-mode evidence. |
+| `contract-quantity-line` | Capture one line with quantity, unit and unit price. |
+| `contract-section-assignment` | Create a section, then use its returned ID to place a line. |
+| `contract-split-evidence` | Capture a line whose quantity and price are supplied in separate passages. |
+
+Preview the selection without loading provider credentials or making calls:
+
+```sh
+npm run eval:run -- --suite contract
+```
+
+After reviewing the inputs and explicitly approving their transmission, run:
+
+```sh
+npm run eval:run -- --live --suite contract \
+  --provider-env-file .env \
+  --approve-provider-data-review \
+  --max-calls 12 --max-elapsed-ms 120000 --max-spend-usd 8 \
+  --database-url "$(bash scripts/eval-db.sh url)"
+```
+
+The 12-call limit is shared across all four checks, not granted to each one. At the recorded rates, 12 calls reserve at most USD 7.01595648, not an actual charge. Repetitions share that same invocation budget. No full scenario runs automatically after these checks.
+
+Use `--suite contract --scenario contract-fixed-line` for one check. A scenario ID outside the selected suite is an error. `--suite scenario` previews the original 26 cases; select explicit IDs for live execution because selections containing `controlled-only` fault-injection cases are rejected.
+
+Contract runs report two outcomes separately:
+
+- **Contract:** normal committed completion with zero failed tool calls and passing contract assertions. A repaired rejection still fails this check.
+- **Commercial:** expected line values, section assignment, independently worked calculations and preservation of unrelated fields. Correct amounts do not hide contract failures.
+
+Both must pass for the automated run to pass. French wording, faithful interpretation and invented commitments still require human review. These four checks cover basic call construction, not every tool or every infrastructure failure. Forced failures, transport errors, rollback and concurrency stay in controlled offline tests. Passing small live checks does not establish full-scenario quality.
+
+Run the offline replays without provider calls:
+
+```sh
+EVAL_DATABASE_URL="$(bash scripts/eval-db.sh url)" npx vitest run eval/contract.test.ts
+```
+
+The report groups both suites and retains the separate outcomes. Older artifacts without suite metadata remain scenario runs; missing check outcomes are not retroactively inferred. New contract definitions live in `eval/contract-scenarios.ts`; their amounts are checked by the same independent Decimal script as the scenario suite.
+
 ## Source handling
 
 Never add original PDFs, archives, extracted text, identifying filenames, party details, bank/VAT identifiers or document references. Use non-identifying aliases. Invent unrelated administrative details with `.test` contact domains. Original archives and `.eval-artifacts/` are ignored by Git; evaluation files and originals are excluded from the production Docker build context.
@@ -111,10 +157,10 @@ Removing names does not establish statistical anonymity. Technical descriptions,
 ## Add or revise a scenario
 
 1. Inspect the original locally. Start from a reviewed adaptation where available. Record only a source alias and adaptation notes, not a path to the original.
-2. Add a versioned `Scenario` in `eval/scenarios.ts`. Record interface language, starting Working Draft, scripted Artisan messages, manual saves, clarification requirements and prohibited changes. Supply adapted units explicitly. Never let another model invent follow-up facts or consent.
+2. Add a versioned `Scenario` in `eval/scenarios.ts`, or a fictional contract check in `eval/contract-scenarios.ts`. Contract checks tag protocol assertions with `category: "contract"`; untagged assertions check commercial state. Record interface language, starting Working Draft, scripted Artisan messages, manual saves, clarification requirements and prohibited changes. Supply adapted units explicitly. Never let another model invent follow-up facts or consent.
 3. Put model-visible facts only in the starting draft, permitted conversation or Artisan messages. The runner does not send provenance, expected Quotes, assertions or review notes to the provider. Current HTTP-based execution rejects seeded history; use explicit Artisan steps for multi-turn scenarios.
 4. Work expected numbers independently using Python `Decimal` with `ROUND_HALF_UP`. `python3 eval/expectations.py` checks the reference totals, arithmetic examples and every final expected calculation without importing the application calculator. `eval/expected-calculations.json` contains the independently established final line/section amounts, totals and missing-field expectations. After changing an authored expected Quote, use `python3 eval/expectations.py --write`, inspect the diff and independently review it before approval. The application calculator supplies **actual** amounts only.
-5. Add assertions for changed commercial values and unchanged unrelated work, not just a total or a reply saying it succeeded. Quote projection ignores generated IDs but retains line and section order. Unknown numeric values are empty, not zero. Use `contains` for a required missing-information entry and explicit outcomes for expected discarded turns. An empty assertion list is not a passing case.
+5. Add assertions for changed commercial values and unchanged unrelated work, not just a total or a reply saying it succeeded. Quote projection ignores generated IDs but retains line and section order. Unknown numeric values are empty, not zero. Use `contains` for a required missing-information entry and explicit outcomes for expected discarded turns. Use `oneOf` with an explicit list for equivalent unit spellings, not different physical units. An empty assertion list is not a passing case.
 6. Increment the scenario version whenever inputs, adaptation, assertions or review status change. Review inputs and expectations locally. Record who approved them and why in the review note. Keep provider approval blocked until explicitly granted for that version and provider.
 7. Run focused offline tests and inspect the browser report. A deterministic pass cannot prove faithful French wording, useful clarification or absence of invented commitments.
 

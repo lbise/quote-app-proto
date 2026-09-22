@@ -29,6 +29,7 @@ it("keeps automatic success separate from human approval and displays failed ass
   };
   const html = renderReport({ scenarios: [scenario], runs: [run], runId: run.id, reviews: [] });
   expect(html).toContain("Human review: <strong>pending</strong>");
+  expect(html).not.toContain("Contract checks: <strong>");
   expect(html).toContain("FAIL</strong> One work line");
   expect(html).toContain("Assertions: 0 passed, 1 failed");
   expect(html).toContain('href="#human-review"');
@@ -59,6 +60,27 @@ it("keeps automatic success separate from human approval and displays failed ass
   const review: HumanReview = { format: "quote-evaluation-review/v1", id: "review-1", runId: run.id, scenarioHash: run.scenarioHash, createdAt: run.startedAt, reviewer: "Maintainer", wording: "pass", inventedFacts: "pass", clarification: "pending", notes: "Still checking" };
   expect(renderReport({ scenarios: [scenario], runs: [run], runId: run.id, reviews: [review] })).toContain("Human review: <strong>pending</strong>");
 });
+it("separates fictional contract outcomes from commercial outcomes without changing legacy runs", () => {
+  const contractScenario: Scenario = { ...scenario, id: "contract-fixed-line", title: "Fixed <contract>", suite: "contract" };
+  const contractRun: EvaluationRun = {
+    format: "quote-evaluation/v1", id: "contract-run", scenarioHash: "c".repeat(64), scenario: contractScenario, startedAt: "2026-09-01T00:00:00Z",
+    revision: { application: "test", promptTools: "test", dirty: false }, model: { provider: "faux", id: "controlled", settings: {} },
+    repetition: 1, elapsedMs: 1, usage: null, cost: { estimatedUsd: null, assumptions: "Offline", ceilingEnforceable: false }, modelCalls: 1,
+    automated: "failed", human: "pending", checks: { contract: "failed", commercial: "passed" },
+    turns: [{ step: 0, kind: "artisan", input: "Add fixed line", before: contractScenario.startingQuote, after: contractScenario.startingQuote, message: "", outcome: "unchanged", failedCalls: 0, elapsedMs: 1, assertions: [{ label: "fixed line", path: "quote.lines.length", expected: 1, actual: 0, passed: false, category: "contract" }] }],
+  };
+
+  const html = renderReport({ scenarios: [contractScenario, scenario], runs: [contractRun], runId: contractRun.id, reviews: [] });
+  expect(html).toContain("Contract checks");
+  expect(html).toContain('nav aria-label="Contract checks"');
+  expect(html).toContain('nav aria-label="Scenario cases"');
+  expect(html).toContain("Fictional contract check");
+  expect(html).toContain("Contract checks: <strong>failed</strong> · Commercial checks: <strong>passed</strong>");
+  expect(html).toContain("contract check");
+  expect(html).toContain("Contract check</small>");
+  expect(html).not.toContain("Fixed <contract>");
+});
+
 it("renders independent expected amounts and missing information without replacing them with calculator output", () => {
   const example: Scenario = { ...scenario,
     expectedQuote: { ...scenario.startingQuote, lines: [{ id: "panel", sectionId: "", description: "Panneau", mode: "quantity", quantity: "1", unit: "pce", unitPrice: "123.00", amount: "" }] },

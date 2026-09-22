@@ -128,6 +128,7 @@ function invalidRun(scenario: Scenario, options: RunScenarioOptions, reason: str
     modelCalls: 0,
     turns: [{ step: 0, kind: "manual", input: "", before: cloneQuote(scenario.startingQuote), after: cloneQuote(scenario.startingQuote), message: "", outcome: "invalid", failedCalls: 0, elapsedMs: 0, assertions: [{ label: reason, path: "", passed: false, expected: "scenario expectations", actual: "missing" }] }],
     automated: "invalid",
+    ...(scenario.suite === "contract" ? { checks: { contract: "invalid" as const, commercial: "invalid" as const } } : {}),
     human: "pending",
   };
 }
@@ -135,6 +136,13 @@ function invalidRun(scenario: Scenario, options: RunScenarioOptions, reason: str
 function missingExpectations(scenario: Scenario): string | undefined {
   for (const [index, step] of scenario.steps.entries()) {
     if (!step.assertions.length) return `Scenario step ${index + 1} has no deterministic expectations`;
+    if (scenario.suite === "contract") {
+      if (!step.assertions.some(assertion => assertion.category === "contract")) return `Contract check step ${index + 1} has no contract expectations`;
+      if (!step.assertions.some(assertion => assertion.category !== "contract")) return `Contract check step ${index + 1} has no commercial expectations`;
+    }
+    if (step.assertions.some(assertion => assertion.operator === "oneOf" && (!Array.isArray(assertion.expected) || !assertion.expected.length))) {
+      return `Scenario step ${index + 1} has a oneOf assertion without a nonempty alternatives array`;
+    }
     if (step.assertions.some((assertion) => assertion.operator !== "unchanged" && assertion.expected === undefined)) {
       return `Scenario step ${index + 1} has an assertion without an expected value`;
     }
@@ -144,6 +152,19 @@ function missingExpectations(scenario: Scenario): string | undefined {
 
 function assertionsFor(step: ScenarioStep, before: QuoteData, after: QuoteData, outcome: string, failedCalls: number): AssertionResult[] {
   return evaluateAssertions(step.assertions, before, after, outcome, failedCalls);
+}
+
+function contractChecks(scenario: Scenario, turns: TurnResult[], sessionStopped: boolean): EvaluationRun["checks"] {
+  if (scenario.suite !== "contract") return undefined;
+  const complete = turns.length === scenario.steps.length;
+  const assertions = turns.flatMap(turn => turn.assertions);
+  const contract = assertions.filter(assertion => assertion.category === "contract");
+  const commercial = assertions.filter(assertion => assertion.category !== "contract");
+  return {
+    contract: complete && !sessionStopped && contract.length > 0 && contract.every(assertion => assertion.passed)
+      && turns.every(turn => !turn.error && turn.outcome === "committed" && turn.failedCalls === 0) ? "passed" : "failed",
+    commercial: complete && commercial.length > 0 && commercial.every(assertion => assertion.passed) ? "passed" : "failed",
+  };
 }
 
 function expectsTerminalOutcome(step: ScenarioStep, outcome: string): boolean {
@@ -310,7 +331,7 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
         : "";
       const assertions = assertionsFor(step, before, after, outcome, failedCalls);
       if (!response.ok && !expectsTerminalOutcome(step, outcome)) {
-        assertions.push({ label: "Terminal HTTP outcome is explicitly expected", path: "outcome", passed: false, expected: "an equals assertion for the terminal outcome", actual: outcome });
+        assertions.push({ ...(scenario.suite === "contract" ? { category: "contract" as const } : {}), label: "Terminal HTTP outcome is explicitly expected", path: "outcome", passed: false, expected: "an equals assertion for the terminal outcome", actual: outcome });
       }
       if (concurrentSaveError) assertions.push({ label: "Concurrent manual save completed", path: "", passed: false, expected: "saved", actual: concurrentSaveError });
       turns.push({
@@ -332,7 +353,9 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
 
     const live = liveRun?.evidence();
     const liveUsageComplete = live?.calls.length && live.calls.every(call => call.usage && call.status === "complete");
-    const allPassed = !live?.stopReason && turns.length === scenario.steps.length && turns.every((turn) => turn.assertions.every((assertion) => assertion.passed));
+    const checks = contractChecks(scenario, turns, Boolean(live?.stopReason));
+    const allPassed = !live?.stopReason && turns.length === scenario.steps.length && turns.every((turn) => turn.assertions.every((assertion) => assertion.passed))
+      && (!checks || checks.contract === "passed" && checks.commercial === "passed");
     const liveUsage = liveUsageComplete ? live.calls.reduce((sum, call) => ({ input: sum.input + call.usage!.input, output: sum.output + call.usage!.output }), { input: 0, output: 0 }) : undefined;
     return {
       format: "quote-evaluation/v1",
@@ -356,6 +379,7 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       ...(live ? { live } : {}),
       turns,
       automated: allPassed ? "passed" : "failed",
+      ...(checks ? { checks } : {}),
       human: "pending",
     };
   } finally {

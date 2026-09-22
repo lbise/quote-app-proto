@@ -41,12 +41,14 @@ export function evaluateAssertions(
     const expected = assertion.operator === "unchanged" ? prior.value : assertion.expected;
     const passed = actual.found && (assertion.operator === "unchanged"
       ? prior.found && equal(actual.value, prior.value)
-      : hasExpected && evaluate(assertion.operator, actual.value, normalizeExpected(assertion.path, assertion.expected)));
-    return { label: assertion.label, path: assertion.path, passed, expected, actual: actual.found ? actual.value : undefined };
+      : hasExpected && (assertion.operator === "oneOf"
+        ? Array.isArray(assertion.expected) && assertion.expected.some(value => equal(actual.value, normalizeExpected(assertion.path, value)))
+        : evaluate(assertion.operator, actual.value, normalizeExpected(assertion.path, assertion.expected))));
+    return { ...(assertion.category ? { category: assertion.category } : {}), label: assertion.label, path: assertion.path, passed, expected, actual: actual.found ? actual.value : undefined };
   });
 }
 
-function evaluate(operator: Exclude<Assertion["operator"], "unchanged">, actual: unknown, expected: unknown): boolean {
+function evaluate(operator: "equals" | "contains", actual: unknown, expected: unknown): boolean {
   return operator === "equals" ? equal(actual, expected) : contains(actual, expected);
 }
 

@@ -2,10 +2,12 @@ import type { QuoteData, QuoteProblem } from "../app/lib/quote";
 import type { QuoteAssistantDiagnostic, QuoteAssistantSuccessDebug } from "../app/lib/quote-assistant-debug";
 
 export type Assertion = {
+  /** Untagged assertions check commercial state, preserving existing scenario hashes. */
+  category?: "contract" | "commercial";
   label: string;
   /** Dot path into {quote, calculation, outcome, failedCalls}. IDs are excluded from quote; sectionId becomes section index. */
   path: string;
-  operator: "equals" | "contains" | "unchanged";
+  operator: "equals" | "contains" | "oneOf" | "unchanged";
   expected?: unknown;
 };
 export type ScenarioStep = {
@@ -33,13 +35,15 @@ export type ExpectedCalculation = {
   errors: QuoteProblem[];
 };
 export type Scenario = {
+  /** Existing artifacts without a suite belong to the scenario suite. */
+  suite?: "contract" | "scenario";
   id: string;
   version: number;
   /** Fault-injection scenarios are not live interpretation benchmarks. */
   execution?: "controlled-only";
   title: string;
   profession: "joinery" | "landscape" | "civil-works";
-  provenance: { kind: "source-derived" | "synthetic-edge"; alias: string; notes: string[] };
+  provenance: { kind: "source-derived" | "synthetic-edge" | "synthetic-contract"; alias: string; notes: string[] };
   review: { inputs: "pending" | "approved"; expectations: "pending" | "approved"; provider: "blocked" | "approved"; note: string };
   locale: "fr" | "en";
   startingQuote: QuoteData;
@@ -53,7 +57,7 @@ export type Scenario = {
   forbiddenMutations: string[];
   humanReview: string[];
 };
-export type AssertionResult = { label: string; path: string; passed: boolean; expected: unknown; actual: unknown };
+export type AssertionResult = { category?: Assertion["category"]; label: string; path: string; passed: boolean; expected: unknown; actual: unknown };
 export type TurnResult = {
   step: number;
   kind: "artisan" | "manual";
@@ -107,6 +111,8 @@ export type EvaluationRun = {
   modelCalls: number;
   turns: TurnResult[];
   automated: "passed" | "failed" | "invalid";
+  /** Separate signals for contract checks; absent on older and scenario-suite runs. */
+  checks?: { contract: "passed" | "failed" | "invalid"; commercial: "passed" | "failed" | "invalid" };
   human: "pending";
 };
 export type HumanReview = {

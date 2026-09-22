@@ -1,6 +1,23 @@
 import { calculateQuote, money, type QuoteData } from "../app/lib/quote";
 import type { EvaluationRun, ExpectedCalculation, HumanReview, Scenario, TurnResult } from "./types";
 
+function scenarioSuite(scenario: Scenario): NonNullable<Scenario["suite"]> {
+  return scenario.suite === "contract" ? "contract" : "scenario";
+}
+
+function checksFor(run: EvaluationRun): EvaluationRun["checks"] {
+  const value = run.checks;
+  if (!value || typeof value !== "object" || !("contract" in value) || !("commercial" in value)) return undefined;
+  const { contract, commercial } = value;
+  return [contract, commercial].every(status => status === "passed" || status === "failed" || status === "invalid")
+    ? value
+    : undefined;
+}
+
+function suiteLabel(scenario: Scenario): string {
+  return scenarioSuite(scenario) === "contract" ? "Contract check" : "Scenario case";
+}
+
 export function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 }
@@ -31,7 +48,11 @@ function quoteView(quote: QuoteData, expected = false, expectations?: ExpectedCa
 }
 function assertions(turn: TurnResult): string {
   const failed = turn.assertions.filter(assertion => !assertion.passed).length;
-  return `<details><summary>Assertions: ${turn.assertions.length - failed} passed, ${failed} failed</summary><ul class="assertions">${turn.assertions.map(assertion => `<li class="${assertion.passed ? "pass" : "failure"}"><strong>${assertion.passed ? "PASS" : "FAIL"}</strong> ${h(assertion.label)} <code>${h(assertion.path)}</code>${!assertion.passed ? `<div class="comparison"><div>Expected${json(assertion.expected)}</div><div>Actual${json(assertion.actual)}</div></div>` : ""}</li>`).join("")}</ul></details>`;
+  return `<details><summary>Assertions: ${turn.assertions.length - failed} passed, ${failed} failed</summary><ul class="assertions">${turn.assertions.map(assertion => {
+    const category = assertion.category;
+    const categoryLabel = category === "contract" || category === "commercial" ? ` <small>${h(category)} check</small>` : "";
+    return `<li class="${assertion.passed ? "pass" : "failure"}"><strong>${assertion.passed ? "PASS" : "FAIL"}</strong> ${h(assertion.label)} <code>${h(assertion.path)}</code>${categoryLabel}${!assertion.passed ? `<div class="comparison"><div>Expected${json(assertion.expected)}</div><div>Actual${json(assertion.actual)}</div></div>` : ""}</li>`;
+  }).join("")}</ul></details>`;
 }
 function changedFields(before: QuoteData, after: QuoteData): string {
   const changes = Object.keys(before).filter(key => JSON.stringify(before[key as keyof QuoteData]) !== JSON.stringify(after[key as keyof QuoteData]));
@@ -72,11 +93,15 @@ export function renderReport(input: { scenarios: Scenario[]; runs: EvaluationRun
   const scenario = run?.scenario ?? input.scenarios.find(item => item.id === input.scenarioId) ?? input.scenarios[0];
   const lastReview = input.reviews.at(-1);
   const human = !lastReview || [lastReview.wording, lastReview.inventedFacts, lastReview.clarification].includes("pending") ? "pending" : [lastReview.wording, lastReview.inventedFacts, lastReview.clarification].includes("fail") ? "changes requested" : "approved";
+  const contractCases = input.scenarios.filter(item => scenarioSuite(item) === "contract");
+  const scenarioCases = input.scenarios.filter(item => scenarioSuite(item) === "scenario");
+  const scenarioLinks = (items: Scenario[], label: string) => items.length ? `<nav aria-label="${h(label)}">${items.map(item => `<a ${item.id === scenario?.id ? 'aria-current="page"' : ""} href="/?scenario=${encodeURIComponent(item.id)}"><small>${h(item.profession)} · v${item.version}</small>${h(item.title)}</a>`).join("")}</nav>` : "<p>None available.</p>";
+  const checks = run ? checksFor(run) : undefined;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Quote evaluation review</title><link rel="stylesheet" href="/report.css"></head><body>
     <header class="masthead"><a href="/">Easy Quote / evaluation</a><p>Private local report. Retained commercial prices and technical details. No provider calls from this browser.</p></header>
-    <div class="workbench"><aside><h2>Scenario library</h2><nav aria-label="Scenarios">${input.scenarios.map(item => `<a ${item.id === scenario?.id ? 'aria-current="page"' : ""} href="/?scenario=${encodeURIComponent(item.id)}"><small>${h(item.profession)} · v${item.version}</small>${h(item.title)}</a>`).join("")}</nav><h2>Saved runs</h2><nav aria-label="Runs">${input.runs.length ? input.runs.map(item => `<a href="/?run=${encodeURIComponent(item.id)}"><small>${h(item.startedAt)} · repetition ${item.repetition}</small>${h(item.scenario.title)}<small>Automated: ${h(item.automated)}</small></a>`).join("") : "<p>No runs yet.</p>"}</nav></aside>
-    <main>${scenario ? `<header><p>${h(scenario.provenance.kind)} · ${h(scenario.profession)} · v${scenario.version} · ${h(scenario.locale)}${scenario.execution === "controlled-only" ? " · Controlled fault injection only" : ""}</p><h1>${h(scenario.title)}</h1><p>${run?.live ? "Library defaults. " : ""}Provider use: ${h(scenario.review.provider)} · Inputs: ${h(scenario.review.inputs)} · Expectations: ${h(scenario.review.expectations)}</p><p>${h(scenario.review.note)}</p></header>
-    ${run ? `<section class="run-status"><h2>Run results</h2><nav aria-label="Report navigation"><a href="#comparison">Quote comparison</a> · <a href="#script">Scenario script</a> · <a href="#execution">Execution</a> · <a href="#human-review">Human review</a></nav><p>Automated: <strong>${h(run.automated)}</strong> · Human review: <strong>${human}</strong></p><p>${h(run.model.provider)} / ${h(run.model.id)} · ${run.modelCalls} model calls · ${run.elapsedMs} ms</p>${liveStatus(run)}<details><summary>Run identity, revisions, usage and cost assumptions</summary>${json({ id: run.id, scenarioHash: run.scenarioHash, revision: run.revision, model: run.model, repetition: run.repetition, usage: run.usage, cost: run.cost, live: run.live })}</details></section>` : "<p class=notice>The expected Quote is an authored reference, not a model-generated result. Browse and review inputs before making any provider calls.</p>"}
+    <div class="workbench"><aside><h2>Contract checks</h2><p>Fictional fixtures that check the edit contract; they are not Artisan work.</p>${scenarioLinks(contractCases, "Contract checks")}<h2>Scenario cases</h2>${scenarioLinks(scenarioCases, "Scenario cases")}<h2>Saved runs</h2><nav aria-label="Runs">${input.runs.length ? input.runs.map(item => `<a href="/?run=${encodeURIComponent(item.id)}"><small>${h(item.startedAt)} · repetition ${item.repetition} · ${h(suiteLabel(item.scenario))}</small>${h(item.scenario.title)}<small>Automated: ${h(item.automated)}</small></a>`).join("") : "<p>No runs yet.</p>"}</nav></aside>
+    <main>${scenario ? `<header><p>${h(scenario.provenance.kind)} · ${h(scenario.profession)} · v${scenario.version} · ${h(scenario.locale)}${scenario.execution === "controlled-only" ? " · Controlled fault injection only" : ""}</p><h1>${h(scenario.title)}</h1>${scenarioSuite(scenario) === "contract" ? "<p class=notice>Fictional contract check for edit behavior; it is not a commercial or Artisan-work example.</p>" : ""}<p>${run?.live ? "Library defaults. " : ""}Provider use: ${h(scenario.review.provider)} · Inputs: ${h(scenario.review.inputs)} · Expectations: ${h(scenario.review.expectations)}</p><p>${h(scenario.review.note)}</p></header>
+    ${run ? `<section class="run-status"><h2>Run results</h2><nav aria-label="Report navigation"><a href="#comparison">Quote comparison</a> · <a href="#script">Scenario script</a> · <a href="#execution">Execution</a> · <a href="#human-review">Human review</a></nav>${checks ? `<p>Contract checks: <strong>${h(checks.contract)}</strong> · Commercial checks: <strong>${h(checks.commercial)}</strong> · Human review: <strong>${human}</strong></p>` : `<p>Automated: <strong>${h(run.automated)}</strong> · Human review: <strong>${human}</strong></p>`}<p>${h(run.model.provider)} / ${h(run.model.id)} · ${run.modelCalls} model calls · ${run.elapsedMs} ms</p>${liveStatus(run)}<details><summary>Run identity, revisions, usage and cost assumptions</summary>${json({ id: run.id, scenarioHash: run.scenarioHash, revision: run.revision, model: run.model, repetition: run.repetition, usage: run.usage, cost: run.cost, live: run.live })}</details></section>` : "<p class=notice>The expected Quote is an authored reference, not a model-generated result. Browse and review inputs before making any provider calls.</p>"}
     <section><h2>Source and adaptations</h2><p>${h(scenario.provenance.alias)}</p>${list(scenario.provenance.notes)}</section>
     ${run ? `<details><summary>Starting Working Draft</summary>${quoteView(scenario.startingQuote)}</details>` : `<div class="comparison"><section><h2>Starting Working Draft</h2>${quoteView(scenario.startingQuote)}</section><section><h2>Expected commercial state</h2>${scenario.expectedQuote ? quoteView(scenario.expectedQuote, true, scenario.expectedCalculation) : "<p>Defined by the step assertions below, not a complete expected Quote.</p>"}</section></div>`}
     <p>Expected amounts and missing fields are independently established scenario data. No expected amount is generated by the application calculator.</p>

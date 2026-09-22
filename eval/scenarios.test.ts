@@ -4,9 +4,15 @@ import { evaluateAssertions } from "./assertions";
 import { scenarios } from "./scenarios";
 
 describe("evaluation scenario library", () => {
-  it("has 24-28 reviewed-pending, provider-blocked, versioned scenarios with executable assertions", () => {
-    expect(scenarios.length).toBeGreaterThanOrEqual(24);
-    expect(scenarios.length).toBeLessThanOrEqual(28);
+  it("keeps the 26-scenario library range separate from four contract fixtures", () => {
+    const libraryScenarios = scenarios.filter((scenario) => scenario.suite !== "contract");
+    const contracts = scenarios.filter((scenario) => scenario.suite === "contract");
+    expect(libraryScenarios.length).toBeGreaterThanOrEqual(24);
+    expect(libraryScenarios.length).toBeLessThanOrEqual(28);
+    expect(contracts.map((scenario) => scenario.id)).toEqual([
+      "contract-fixed-line", "contract-quantity-line", "contract-section-assignment", "contract-split-evidence",
+    ]);
+    expect(scenarios).toHaveLength(30);
     expect(new Set(scenarios.map((scenario) => scenario.id)).size).toBe(scenarios.length);
     for (const scenario of scenarios) {
       expect(scenario.version).toBeGreaterThan(0);
@@ -15,6 +21,13 @@ describe("evaluation scenario library", () => {
       expect(scenario.review.provider).toBe("blocked");
       expect(scenario.history).toEqual([]); // The runner can seed only real Quote state, not invented prior conversation.
       expect(scenario.steps.every((step) => step.assertions.length > 0)).toBe(true);
+      if (scenario.suite === "contract") {
+        expect(scenario.provenance.kind).toBe("synthetic-contract");
+        expect(scenario.steps[0].assertions).toEqual(expect.arrayContaining([
+          expect.objectContaining({ path: "outcome", category: "contract", expected: "committed" }),
+          expect.objectContaining({ path: "failedCalls", category: "contract", expected: 0 }),
+        ]));
+      }
       expect(scenario.expectedQuote).toBeDefined();
       expect(scenario.expectedCalculation).toBeDefined();
       const finalAssertions = scenario.steps.at(-1)!.assertions;

@@ -54,6 +54,17 @@ describe("evaluateAssertions", () => {
     ]);
   });
 
+  it("accepts declared equivalent unit spellings without accepting a different physical unit", () => {
+    const assertions = [{ label: "square metres", path: "quote.lines[0].unit", operator: "oneOf" as const, expected: ["m2", "m²"] }];
+    const before = quote();
+    for (const [unit, passed] of [["m2", true], ["m²", true], ["m", false], ["", false]] as const) {
+      const after = { ...before, lines: before.lines.map((line, index) => index ? line : { ...line, unit }) };
+      expect(evaluateAssertions(assertions, before, after, "committed", 0)[0].passed).toBe(passed);
+    }
+    expect(evaluateAssertions([{ ...assertions[0], expected: "m2" }], before, before, "committed", 0)[0].passed).toBe(false);
+    expect(evaluateAssertions([{ ...assertions[0], expected: [] }], before, before, "committed", 0)[0].passed).toBe(false);
+  });
+
   it("reports the normalized before value for unchanged assertions", () => {
     const results = evaluateAssertions([
       { label: "prior amount", path: "quote.lines[1].amount", operator: "unchanged" },
