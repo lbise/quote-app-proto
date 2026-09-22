@@ -48,6 +48,13 @@ describe("createQuoteTools", () => {
     await tool(executor, "edit_quote_details").execute("clear", { fields: { title: "", discount: "" } });
     expect(executor.result().quote).toMatchObject({ title: "", discount: "" });
 
+    const unchangedDiscount = createQuoteTools({ quote: { ...emptyQuote("Q-discount-unchanged"), title: "Ancien titre" }, capturedLineIds: [], artisanText: "Corrige uniquement le titre." });
+    await tool(unchangedDiscount, "edit_quote_details").execute("title-only", {
+      fields: { title: "Nouveau titre" }, evidence: [citation(["title"], "Corrige uniquement le titre.")],
+    });
+    expect(unchangedDiscount.result().quote).toMatchObject({ title: "Nouveau titre", discountMode: "none", discount: "0" });
+    expect(unchangedDiscount.result().changedFields).toEqual(["title"]);
+
     const switched = createQuoteTools({ quote: { ...emptyQuote("Q-discount"), discountMode: "percent", discount: "5" }, capturedLineIds: [], artisanText: "Supprime la remise." });
     await tool(switched, "edit_quote_details").execute("none", { fields: { discountMode: "none", discount: "0,00" }, evidence: [citation(["discountMode", "discount"], "Supprime la remise.")] });
     expect(switched.result().quote).toMatchObject({ discountMode: "none", discount: "0" });
@@ -137,6 +144,51 @@ describe("createQuoteTools", () => {
       evidence: [citation(["/sections/0/title", "/sections/1/title"], "Changed Again")],
     })).rejects.toThrow("invalid_section_id");
     expect(executor.result().quote?.sections[0].title).toBe("Salon");
+  });
+
+  it("identifies missing evidence in the bedroom painting calls so a retry can repair it", async () => {
+    const text = "Je veux repeindre la chambre d'eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond. Prix au m2 12.50chf";
+    const executor = createQuoteTools({
+      quote: emptyQuote("Q-bedroom"), capturedLineIds: [], artisanText: "Oui, les murs.",
+      artisanHistorySources: [{ source: "history_1", text }],
+    });
+    const sections = tool(executor, "edit_quote_sections");
+    const sectionArgs = { sections: [{ title: "Travaux de peinture" }] };
+    expect(() => sections.prepareArguments!(sectionArgs)).toThrow("Missing evidence fields: /sections/0/title");
+    await expect(sections.execute("missing-title", sectionArgs)).rejects.toThrow("Missing evidence fields: /sections/0/title");
+    await sections.execute("section", {
+      ...sectionArgs, evidence: [citation(["/sections/0/title"], "Je veux repeindre", "history_1")],
+    });
+    const sectionId = executor.result().quote!.sections[0].id;
+    const lines = tool(executor, "edit_quote_lines");
+    const args = {
+      lines: [{ sectionId, quantity: "36", amount: "", unitPrice: "12.50", description: "Peinture vert pomme de la chambre d'Eugénie (2 x 4 m, hauteur 3 m)", unit: "m2", mode: "quantity" }],
+      evidence: [
+        citation(["/lines/0/quantity", "/lines/0/unitPrice"], "Chambre de 2x4m sur 3m de plafond. Prix au m2 12.50chf", "history_1"),
+        citation(["/lines/0/description"], "Je veux repeindre la chambre d'eugènie en vert pomme.", "history_1"),
+      ],
+    };
+    // The provider validates in prepareArguments; direct execution must report the same repair.
+    expect(() => lines.prepareArguments!(args)).toThrow("Missing evidence fields: /lines/0/mode, /lines/0/unit");
+    await expect(lines.execute("missing-mode-unit", args)).rejects.toThrow("Missing evidence fields: /lines/0/mode, /lines/0/unit");
+    expect(executor.result().quote!.lines).toEqual([]);
+    await lines.execute("repaired", {
+      ...args,
+      evidence: [...args.evidence, citation(["/lines/0/mode", "/lines/0/unit"], "Prix au m2 12.50chf", "history_1")],
+    });
+    expect(executor.result().quote!.lines).toEqual([expect.objectContaining({ sectionId, quantity: "36", unitPrice: "12.50" })]);
+  });
+
+  it.each([
+    ["history_2", "Peinture", "unknown_evidence_source"],
+    ["current", "Invented work", "evidence_not_found"],
+  ])("still rejects unsupported evidence from %s", async (source, text, code) => {
+    const executor = createQuoteTools({ quote: emptyQuote("Q-evidence"), capturedLineIds: [], artisanText: "Peinture" });
+    await expect(tool(executor, "edit_quote_sections").execute("unsupported", {
+      sections: [{ title: "Travaux de peinture" }], evidence: [citation(["/sections/0/title"], text, source)],
+    })).rejects.toThrow(code);
+    expect(executor.diagnostic()?.code).toBe(code);
+    expect(executor.result().quote!.sections).toEqual([]);
   });
 
   it("copies lines and sections with fresh IDs and unknown measurements", async () => {

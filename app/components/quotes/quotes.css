@@ -170,6 +170,11 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 .qp-layout-b .qp-project-heading { justify-content: start; }
 .qp-narrow-tabs { display: none; }
 .qp-modal { font-family: var(--font-body); width: min(680px, calc(100% - 32px)); max-width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; padding: var(--space-lg); gap: var(--space-lg); font-size: var(--text-base); background: var(--color-paper); color: var(--color-ink); }
+.qp-assistant-debug-modal { width: min(1100px, calc(100% - 32px)); max-width: min(1100px, calc(100% - 32px)); }
+.qp-assistant-debug-modal .qp-assistant-debug { margin: 0; padding: 0; border: 0; font-size: var(--text-sm); }
+.qp-assistant-debug-modal .qp-assistant-debug > div { margin-top: var(--space-md); }
+.qp-assistant-debug-modal .qp-assistant-debug > p { margin-top: var(--space-sm); }
+.qp-assistant-debug-modal .qp-assistant-debug pre { max-width: none; max-height: 32dvh; padding: var(--space-sm); border: 1px solid var(--color-rule); border-radius: var(--radius-control); background: var(--color-canvas); overflow: auto; }
 .qp-modal [data-slot='dialog-title'] { font-size: var(--text-lg); font-weight: 600; line-height: 1.25; }
 .qp-modal [data-slot='dialog-description'] { line-height: 1.6; color: var(--color-muted); }
 .qp-modal-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: var(--space-xs); }

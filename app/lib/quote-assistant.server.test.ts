@@ -32,6 +32,75 @@ describe("pi Quote assistant model boundary", () => {
     ]);
   });
 
+  it("gives the fake provider bedroom evidence instructions and matching section and line schemas", async () => {
+    const text = "Create a Bedroom section. Bedroom: paint 12 m² at CHF 35 per m².";
+    const { boundary, contexts } = modelBoundary([
+      fauxAssistantMessage([
+        fauxToolCall("edit_quote_sections", {
+          sections: [{ title: "Chambre" }],
+          evidence: [lineEvidence(["/sections/0/title"], "Bedroom")],
+        }),
+        fauxToolCall("edit_quote_lines", {
+          lines: [{ description: "Peinture de la chambre", mode: "quantity", quantity: "12", unit: "m²", unitPrice: "35", amount: "" }],
+          evidence: [lineEvidence([
+            "/lines/0/mode", "/lines/0/description", "/lines/0/quantity", "/lines/0/unit", "/lines/0/unitPrice",
+          ], "Bedroom: paint 12 m² at CHF 35 per m².")],
+        }),
+      ], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("The bedroom work was added.")]),
+    ]);
+
+    const result = await generateQuoteChange({ ...input(), text }, boundary);
+
+    expect(result.quote).toMatchObject({
+      sections: [{ title: "Chambre" }],
+      lines: [{ description: "Peinture de la chambre", mode: "quantity", quantity: "12", unit: "m²", unitPrice: "35", amount: "" }],
+    });
+    expect(contexts[0].systemPrompt).toContain("The application validates numeric evidence and performs calculations.");
+    expect(contexts[0].systemPrompt).not.toContain("Evidence is a grouped array");
+    const lineTool = contexts[0].tools?.find((tool) => tool.name === "edit_quote_lines");
+    const sectionTool = contexts[0].tools?.find((tool) => tool.name === "edit_quote_sections");
+    const copyTool = contexts[0].tools?.find((tool) => tool.name === "copy_quote_work");
+    expect(JSON.stringify(lineTool?.parameters)).toContain("Cite /lines/N/mode for every new line or changed mode.");
+    expect(lineTool?.parameters).toMatchObject({
+      properties: {
+        lines: { items: { properties: { description: { type: "string" }, mode: {}, quantity: {}, unit: {}, unitPrice: {}, amount: {} } } },
+        evidence: { items: { properties: { fields: {}, source: {}, text: {} } } },
+      },
+    });
+    expect(sectionTool?.parameters).toMatchObject({
+      properties: {
+        sections: { items: { properties: { title: { type: "string" } } } },
+        evidence: { items: { properties: { fields: {}, source: {}, text: {} } } },
+      },
+    });
+    expect(JSON.stringify(copyTool?.parameters)).toContain("Cite the supplied section title with /source/title when copying a section.");
+  });
+
+  it("returns missing mode and unit paths to the model and accepts the repaired painting call", async () => {
+    const text = "Je veux repeindre la chambre d'eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond. Prix au m2 12.50chf";
+    const args = {
+      lines: [{ sectionId: "painting", description: "Peinture vert pomme de la chambre d'Eugénie", mode: "quantity", quantity: "36", unit: "m2", unitPrice: "12.50", amount: "" }],
+      evidence: [lineEvidence(["/lines/0/description", "/lines/0/quantity", "/lines/0/unitPrice"], text)],
+    };
+    const { boundary, contexts } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("edit_quote_lines", args)], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("edit_quote_lines", {
+        ...args,
+        evidence: [...args.evidence, lineEvidence(["/lines/0/mode", "/lines/0/unit"], "Prix au m2 12.50chf")],
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Les travaux de peinture ont été ajoutés.")]),
+    ]);
+    const result = await generateQuoteChange({
+      ...input(), text, locale: "fr",
+      quote: { ...emptyQuote("Q-bedroom"), sections: [{ id: "painting", title: "Travaux de peinture" }] },
+    }, boundary);
+    const rejection = contexts[1].messages.find((message) => message.role === "toolResult" && message.isError);
+    expect(JSON.stringify(rejection)).toContain("Missing evidence fields: /lines/0/mode, /lines/0/unit");
+    expect(result.quote?.lines).toEqual([expect.objectContaining({ sectionId: "painting", quantity: "36", unit: "m2", unitPrice: "12.50" })]);
+    expect(result.debug).toMatchObject({ failedCalls: 1, outcome: "committed_with_failed_calls" });
+  });
+
   it("creates a line from Artisan facts and preserves an explicit zero", async () => {
     const { boundary } = modelBoundary([
       fauxAssistantMessage([fauxToolCall("edit_quote_lines", {

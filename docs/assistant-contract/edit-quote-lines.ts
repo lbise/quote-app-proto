@@ -9,12 +9,13 @@ const lineId = Type.String({
   pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$",
 });
 
-const decimalOrEmpty = Type.String({
-  maxLength: 20,
-  pattern: "^$|^[0-9]+([.,][0-9]+)?$",
-  description:
-    "Decimal without units or currency. Use an empty string for an unknown, cleared or unused value.",
-});
+function decimalOrEmpty(description: string) {
+  return Type.String({
+    maxLength: 20,
+    pattern: "^$|^[0-9]+([.,][0-9]+)?$",
+    description,
+  });
+}
 
 const line = Type.Object(
   {
@@ -26,20 +27,37 @@ const line = Type.Object(
           "For new lines only: destination section ID. Omit or use an empty string for No section.",
       }),
     ),
-    description: Type.String({ maxLength: 20000 }),
+    description: Type.String({
+      maxLength: 20000,
+      description:
+        "The complete current work description. Cite it when a new or changed nonempty description is supplied.",
+    }),
     mode: Type.Union([
       Type.Literal("quantity"),
       Type.Literal("fixed"),
-    ]),
-    quantity: decimalOrEmpty,
-    unit: Type.String({ maxLength: 100 }),
-    unitPrice: decimalOrEmpty,
-    amount: decimalOrEmpty,
+    ], {
+      description:
+        "quantity uses quantity, unit and unitPrice. fixed uses amount. Cite /lines/N/mode for every new line or changed mode.",
+    }),
+    quantity: decimalOrEmpty(
+      "Quantity without a unit. Use only with quantity mode; otherwise send an empty string. Cite /lines/N/quantity when changed and nonempty.",
+    ),
+    unit: Type.String({
+      maxLength: 100,
+      description:
+        "Unit for quantity mode, such as m² or h. Send an empty string for fixed mode. Cite /lines/N/unit when changed and nonempty.",
+    }),
+    unitPrice: decimalOrEmpty(
+      "Unit price without currency. Use only with quantity mode; otherwise send an empty string. Cite /lines/N/unitPrice when changed and nonempty.",
+    ),
+    amount: decimalOrEmpty(
+      "Fixed amount without currency. Use only with fixed mode; otherwise send an empty string. Cite /lines/N/amount when changed and nonempty.",
+    ),
   },
   {
     additionalProperties: false,
     description:
-      "Complete line content. Quantity pricing uses quantity, unit and unitPrice; amount must be empty. Fixed pricing uses amount; quantity, unit and unitPrice must be empty.",
+      "Complete line content. Send every field on every create or edit. Quantity pricing uses quantity, unit and unitPrice and leaves amount empty. Fixed pricing uses amount and leaves quantity, unit and unitPrice empty. Cite each changed nonempty commercial value.",
   },
 );
 
@@ -52,20 +70,20 @@ const evidence = Type.Object(
         maxItems: 200,
         uniqueItems: true,
         description:
-          "Input fields supported by this citation, such as /lines/0/quantity and /lines/0/unitPrice.",
+          "Line JSON Pointer targets supported by this citation, such as /lines/0/quantity and /lines/0/unitPrice. One citation may name every field supported by its excerpt.",
       },
     ),
     source: Type.String({
       minLength: 1,
       maxLength: 256,
       description:
-        "Application-supplied source: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message.",
+        "Application-supplied source only: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message.",
     }),
     text: Type.String({
       minLength: 1,
       maxLength: 2000,
       description:
-        "Exact excerpt from the source. One citation may support several fields.",
+        "Exact literal excerpt from source. Do not paraphrase it. One citation may support several fields.",
     }),
   },
   { additionalProperties: false },
@@ -79,7 +97,7 @@ export const editQuoteLinesParameters = Type.Object(
         minItems: 1,
         maxItems: 200,
         description:
-          "Cite sources for new nonempty commercial facts. Unchanged values and deliberate clearing do not need new evidence.",
+          "Grouped citations. Cite /lines/N/mode for every new line or changed mode, and every changed nonempty description, quantity, unit, unitPrice or amount. No citation is needed for unchanged values, cleared values or structural IDs.",
       }),
     ),
   },
@@ -98,12 +116,11 @@ export function createEditQuoteLinesTool(
     label: "Edit Quote lines",
     description:
       "Create or edit up to 50 Quote Lines in one call. " +
-      "Supply each line's complete description and pricing information. " +
-      "Include its existing ID to edit it; omit the ID to create a new line. " +
-      "Preserve unchanged values from the current draft. " +
-      "Use empty strings for unknown values, deliberately cleared values " +
-      "and fields unused by the selected pricing mode. " +
-      "Do not copy, move or delete lines with this tool.",
+      "Send every line field: include an existing ID to edit it, or omit ID to create it. " +
+      "Preserve unchanged values and use empty strings only for unknown, cleared or mode-incompatible values. " +
+      "For evidence, group supported JSON Pointer fields under one exact excerpt from current, history_N or an original-draft source. " +
+      "Every new line or changed mode needs /lines/N/mode; every changed nonempty description, quantity, unit, unitPrice or amount needs evidence. " +
+      "Do not cite unchanged values, cleared values or structural IDs. Do not copy, move or delete lines with this tool.",
     parameters: editQuoteLinesParameters,
     executionMode: "sequential",
     execute,

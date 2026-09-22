@@ -39,15 +39,15 @@ const tools = [
     description: approvedLineTool.description,
     parameters: approvedLineTool.parameters,
   },
-  tool("edit_quote_sections", "Create or rename up to 50 Quote Sections in one call. Supply a title for each section. Include its existing ID to rename it; omit the ID to create a new section. Use an empty title to clear it. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.", {
+  tool("edit_quote_sections", "Create or rename up to 50 Quote Sections in one call. Supply a title for each section. Include its existing ID to rename it; omit the ID to create a new section. Use an empty title to clear it. Cite evidence for every new or changed nonempty title using /sections/0/title, /sections/1/title, etc. The Artisan's work or room description can support a faithfully reworded title. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.", {
     sections: list(object({ id, title: text(4000) }, ["title"])),
-    evidence,
+    evidence: { ...evidence, description: "Required for every new or changed nonempty title. Cite /sections/0/title, /sections/1/title, etc., using the Artisan's work or room description. Omit only for unchanged or cleared titles." },
   }, ["sections"]),
   tool("copy_quote_work", "Copy up to 50 Quote Lines or one Quote Section with its lines. For line copies, optionally choose a destination section; otherwise copies follow their source lines. For a section copy, supply its title. Set measurementPolicy to retain to keep measurements, or unknown to clear quantities and remove embedded measurements. Other values are retained.", {
     source: { anyOf: [
       object({ lineIds: { ...list(id), uniqueItems: true }, destinationSectionId: sectionIdOrNoSection }, ["lineIds"]),
       object({ sectionId: id, title: { ...text(4000), minLength: 1 } }),
-    ] }, measurementPolicy: choice("retain", "unknown"), evidence,
+    ] }, measurementPolicy: choice("retain", "unknown"), evidence: { ...evidence, description: "Cite the supplied section title with /source/title when copying a section. Line copies only need evidence when they introduce a new nonempty commercial fact; omit for unchanged values or deliberate clearing." },
   }, ["source", "measurementPolicy"]),
   tool("move_quote_work", "Move or reorder up to 50 Quote Lines or Quote Sections. For lines, supply a destination section ID; use an empty string for No section. Supply IDs in the desired order. Use beforeLineId or beforeSectionId to insert before an existing line or section; omit it to append. Do not edit content, copy or delete work with this tool.", {
     move: { anyOf: [

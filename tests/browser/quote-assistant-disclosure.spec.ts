@@ -51,8 +51,15 @@ test("failed-call diagnostics are visible after an assistant response", async ({
   await page.getByLabel("Your message").fill("Please revise the title.");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByRole("alert")).toContainText("The assistant did not respond");
-  await page.getByText("Developer details", { exact: true }).click();
-  await expect(page.getByText("Failed calls: 1/3", { exact: true })).toBeVisible();
+  const debugTrigger = page.getByRole("button", { name: "Developer details" });
+  await debugTrigger.click();
+  const debugDialog = page.getByRole("dialog");
+  await expect(debugDialog).toBeVisible();
+  await expect(debugDialog).toContainText("Failed calls: 1/3");
+  const bounds = await debugDialog.boundingBox();
+  expect(bounds?.width ?? 0).toBeGreaterThan(680);
+  await debugDialog.getByRole("button", { name: "Close" }).click();
+  await expect(debugDialog).toHaveCount(0);
 });
 
 test("an assistant publication request does not open the Publication dialog", async ({ artisan }) => {
