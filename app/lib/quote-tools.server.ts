@@ -69,8 +69,8 @@ const evidenceCitationParameters = Type.Object({
     minItems: 1, maxItems: MAX_EVIDENCE_FIELDS, uniqueItems: true,
     description: "Fields supported by this citation. For edit_quote_details, use field names such as discountMode and discount. For other tools, use JSON Pointers such as /sections/0/title.",
   }),
-  source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_SOURCE, description: "Source supplied by the application: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message." }),
-  text: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT, description: "Exact excerpt from the identified source. One citation may support several fields." }),
+  source: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_SOURCE, description: 'Use "current" for currentMessage.text, not "currentMessage" or "currentMessage.text". Use a supplied history_N ID for an earlier Artisan message. quote.FIELD refers only to that field in the supplied currentWorkingDraft; quote.title contains the existing Quote title, not the Artisan message. line:ID.FIELD and section:ID.FIELD refer to existing supplied work by stable ID. Never invent a source ID or cite an assistant message.' }),
+  text: Type.String({ minLength: 1, maxLength: MAX_EVIDENCE_TEXT, description: 'Copy an exact excerpt from the selected source. For source "current", copy from currentMessage.text, not from the Quote title or your proposed output. If you mistakenly cited currentMessage, change the source to current and keep the exact message excerpt. One citation may cover several fields when the excerpt supports every listed field.' }),
 }, { additionalProperties: false });
 
 const editQuoteDetailsParameters = Type.Object({
@@ -100,7 +100,7 @@ const editQuoteSectionsParameters = Type.Object({
     id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" })),
     title: Type.String({ maxLength: MAX_SECTION_TITLE }),
   }, { additionalProperties: false }), { minItems: 1, maxItems: 50 }),
-  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE, description: "Required for every new or changed nonempty title. Cite /sections/0/title, /sections/1/title, etc., using the Artisan's work or room description. Omit only for unchanged or cleared titles." })),
+  evidence: Type.Optional(Type.Array(evidenceCitationParameters, { minItems: 1, maxItems: MAX_EVIDENCE, description: 'Required for every new or changed nonempty title. Cover /sections/0/title, /sections/1/title, etc. for all changed titles, not just the first. These indexes refer to the sections array in this call. One supporting message excerpt can cover multiple titles in one citation with source "current". Omit only for unchanged or cleared titles.' })),
 }, { additionalProperties: false });
 const copyQuoteWorkParameters = Type.Object({
   source: Type.Union([
@@ -290,7 +290,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
 
   const editQuoteSections: AgentTool = {
     name: "edit_quote_sections", label: "Edit Quote Sections",
-    description: "Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. Cite evidence for every new or changed nonempty title using /sections/0/title, /sections/1/title, etc. The Artisan's work or room description can support a faithfully reworded title. An empty title leaves an incomplete section and never deletes it.",
+    description: 'Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. An empty title leaves an incomplete section and never deletes it. Cite the supplied work or room description for every new or changed nonempty title; faithful French rewording is allowed. For the latest Artisan message, use source "current", which identifies currentMessage.text. "currentMessage" is not a valid source ID. One citation can cover every title supported by the same excerpt, but its fields must list each affected /sections/INDEX/title. Example only: if currentMessage.text contains "Prévois une rubrique Cuisine et une rubrique Couloir.", a valid call is {"sections":[{"title":"Cuisine"},{"title":"Couloir"}],"evidence":[{"fields":["/sections/0/title","/sections/1/title"],"source":"current","text":"Prévois une rubrique Cuisine et une rubrique Couloir."}]}. Use the actual supplied rooms and excerpt, not these example values. After a citation rejection, correct the source, excerpt or missing fields in the complete call; do not replace supporting work notes with unrelated Quote metadata. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.',
     parameters: editQuoteSectionsParameters, executionMode: "sequential",
     prepareArguments: prepare((args) => { editQuoteSectionsInput(args, evidenceContext, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {

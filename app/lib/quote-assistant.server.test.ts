@@ -80,6 +80,42 @@ describe("pi Quote assistant model boundary", () => {
     expect(JSON.stringify(copyTool?.parameters)).toContain("Cite the supplied section title with /source/title when copying a section.");
   });
 
+  it("explains message source IDs and accepts a grouped citation after the observed section-citation mistakes", async () => {
+    const text = "On a les zones A à G. Fais le détail par zone, dans cet ordre.";
+    const sections = ["A", "B", "C", "D", "E", "F", "G"].map(zone => ({ title: `Zone ${zone}` }));
+    const fields = sections.map((_, index) => `/sections/${index}/title`);
+    const { boundary, contexts } = modelBoundary([
+      fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
+        sections, evidence: [lineEvidence(fields, text, "currentMessage")],
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
+        sections, evidence: [lineEvidence([fields[0]], "Bardage et menuiserie", "current")],
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("edit_quote_sections", {
+        sections, evidence: [lineEvidence(fields, text, "current")],
+      })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Les sept zones sont ajoutées."),
+    ]);
+    const result = await generateQuoteChange({ ...input(), text, locale: "fr", quote: { ...emptyQuote("Q-citations"), title: "Bardage et menuiserie" } }, boundary);
+    expect(result.quote?.sections.map(section => section.title)).toEqual(["Zone A", "Zone B", "Zone C", "Zone D", "Zone E", "Zone F", "Zone G"]);
+    expect(result.quote?.lines).toEqual([]);
+    expect(result.debug).toMatchObject({ outcome: "committed_with_failed_calls", failedCalls: 2, attempts: [
+      { outcome: "failed", errorCode: "unknown_evidence_source" },
+      { outcome: "failed", errorCode: "evidence_not_found" },
+      { outcome: "applied" },
+    ] });
+    for (const name of ["edit_quote_details", "edit_quote_lines", "edit_quote_sections", "copy_quote_work"]) {
+      const tool = contexts[0].tools?.find(tool => tool.name === name);
+      expect(tool?.parameters).toMatchObject({ properties: { evidence: { items: { properties: {
+        source: { description: expect.stringContaining('Use "current" for currentMessage.text') },
+        text: { description: expect.stringContaining("not from the Quote title") },
+      } } } } });
+    }
+    const sectionTool = contexts[0].tools?.find(tool => tool.name === "edit_quote_sections");
+    expect(sectionTool?.description).toContain('"fields":["/sections/0/title","/sections/1/title"]');
+    expect(sectionTool?.description).toBe(proposedTools.find(tool => tool.name === "edit_quote_sections")?.description);
+  });
+
   it("returns missing mode and unit paths to the model and accepts the repaired painting call", async () => {
     const text = "Je veux repeindre la chambre d'eugènie en vert pomme. Chambre de 2x4m sur 3m de plafond. Prix au m2 12.50chf";
     const args = {

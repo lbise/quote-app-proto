@@ -59,13 +59,13 @@ const evidence = Type.Object(
       minLength: 1,
       maxLength: 256,
       description:
-        "Application-supplied source: current, history_N, quote.FIELD, line:ID.FIELD or section:ID.FIELD. Never cite an assistant message.",
+        'Use "current" for currentMessage.text, not "currentMessage" or "currentMessage.text". Use a supplied history_N ID for an earlier Artisan message. quote.FIELD refers only to that field in the supplied currentWorkingDraft; quote.title contains the existing Quote title, not the Artisan message. line:ID.FIELD and section:ID.FIELD refer to existing supplied work by stable ID. Never invent a source ID or cite an assistant message.',
     }),
     text: Type.String({
       minLength: 1,
       maxLength: 2000,
       description:
-        "Exact excerpt from the source. One citation may support several fields.",
+        'Copy an exact excerpt from the selected source. For source "current", copy from currentMessage.text, not from the Quote title or your proposed output. If you mistakenly cited currentMessage, change the source to current and keep the exact message excerpt. One citation may cover several fields when the excerpt supports every listed field.',
     }),
   },
   { additionalProperties: false },
