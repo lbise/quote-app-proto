@@ -68,7 +68,7 @@ npm run build
 
 ## Assistant evaluation
 
-Run `npm run eval:review` to browse fictional contract checks, source-derived scenarios and saved results on your trusted network, without provider calls. Preview four small checks, including a multi-paragraph facts case, and one combined multi-batch check with `npm run eval:run -- --suite contract`. See [evaluation.md](docs/evaluation.md) for offline replays and bounded live Gemini runs. Live runs require explicit suite or scenario selection, provider-data approval and call/time/spending limits. Contract correctness, commercial correctness and human review remain separate.
+Run `npm run eval:start` with Docker running to prepare the dedicated evaluation database and open the loopback-only evaluator dashboard. Run `npm run eval:review` to browse fictional contract checks, source-derived scenarios and saved results on your trusted network, without provider calls. Preview four small checks, including a multi-paragraph facts case, and one combined multi-batch check with `npm run eval:run -- --suite contract`. See [evaluation.md](docs/evaluation.md) for offline replays and bounded live Gemini runs. Live runs require explicit suite or scenario selection, provider-data approval and call/time/spending limits. Contract correctness, commercial correctness and human review remain separate.
 
 ## Releases
 

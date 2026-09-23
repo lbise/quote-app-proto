@@ -4,6 +4,10 @@ import { BlockList } from "node:net";
 import { networkInterfaces } from "node:os";
 import { listRuns, readReviews, saveReview, type ReviewInput } from "./artifacts";
 import { renderReport } from "./report";
+import { listEvaluationSessions } from "./sessions";
+import { assertEvaluationControlUrl } from "./isolation";
+import pg from "pg";
+import type { DashboardStatus } from "./report";
 import type { Scenario } from "./types";
 
 async function formBody(request: IncomingMessage): Promise<URLSearchParams> {
@@ -29,7 +33,25 @@ export function privateReviewAddresses(): string[] {
     .filter(entry => entry.family === "IPv4" && !entry.internal && privateAddress(entry.address))
     .map(entry => entry.address)))];
 }
-export function createReviewServer({ root, scenarios, networkAccess = false }: { root: string; scenarios: Scenario[]; networkAccess?: boolean }) {
+export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAccess = false, providerAvailable = false }: {
+  root: string; scenarios: Scenario[]; databaseUrl: string; networkAccess?: boolean; providerAvailable?: boolean;
+}) {
+  if (networkAccess) throw new Error("The evaluator must bind to loopback.");
+  assertEvaluationControlUrl(databaseUrl);
+  listEvaluationSessions(root); // Reconcile interrupted attempts before the first request.
+  return createReviewServer({ root, scenarios, dashboardStatus: async () => {
+    const client = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000, query_timeout: 2000 });
+    try {
+      await client.connect();
+      await client.query("SELECT 1");
+      return { database: "ready", provider: providerAvailable ? "available" : "unavailable" };
+    } catch {
+      return { database: "unavailable", provider: providerAvailable ? "available" : "unavailable" };
+    } finally { await client.end().catch(() => {}); }
+  } });
+}
+
+export function createReviewServer({ root, scenarios, networkAccess = false, dashboardStatus }: { root: string; scenarios: Scenario[]; networkAccess?: boolean; dashboardStatus?: DashboardStatus | (() => Promise<DashboardStatus>) }) {
   // Exact local interface addresses prevent accepting arbitrary DNS Host names.
   const allowedAddresses = ["127.0.0.1", "localhost", "[::1]", ...(networkAccess ? privateReviewAddresses() : [])];
   return createServer(async (request, response) => {
@@ -65,7 +87,12 @@ export function createReviewServer({ root, scenarios, networkAccess = false }: {
       const runId = url.searchParams.get("run") ?? undefined;
       if (runId && !runs.some(run => run.id === runId)) { response.writeHead(404).end("Run not found."); return; }
       response.setHeader("content-type", "text/html; charset=utf-8");
-      response.end(renderReport({ scenarios, runs, runId, scenarioId: url.searchParams.get("scenario") ?? undefined, reviews: runId ? await readReviews(root, runId) : [] }));
+      const historyView = !runId && (!url.searchParams.has("scenario") || url.searchParams.has("outcome") || url.searchParams.has("mode") || url.searchParams.has("view"));
+      const reviewsByRun = historyView ? Object.fromEntries(await Promise.all(runs.map(async run => [run.id, await readReviews(root, run.id)] as const))) : undefined;
+      response.end(renderReport({ scenarios, runs, sessions: listEvaluationSessions(root), dashboardStatus: typeof dashboardStatus === "function" ? await dashboardStatus() : dashboardStatus, runId, scenarioId: url.searchParams.get("scenario") ?? undefined,
+        outcome: url.searchParams.get("outcome") ?? undefined, mode: url.searchParams.get("mode") ?? undefined,
+        historyView, reviewsByRun,
+        reviews: runId ? await readReviews(root, runId) : [] }));
     } catch {
       // Do not disclose filesystem paths or arbitrary provider errors to the browser.
       response.writeHead(400).end("Unable to read the report or save this review. Check the artifact and scenario version.");

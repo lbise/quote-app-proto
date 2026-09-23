@@ -104,7 +104,7 @@ function storedSessions(root: string): EvaluationSessionRecord[] {
   const dir = location(root);
   return readdirSync(dir).filter(name => name.endsWith(".plan.json"))
     .map(name => read(dir, name.slice(0, -10)))
-    .sort((a, b) => b.plan.createdAt.localeCompare(a.plan.createdAt));
+    .sort((a, b) => Date.parse(b.plan.createdAt) - Date.parse(a.plan.createdAt) || a.plan.id.localeCompare(b.plan.id));
 }
 
 /** Owns the cross-process lock until the session finishes. All state writes are atomic and flushed. */

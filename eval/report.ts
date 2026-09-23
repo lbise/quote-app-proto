@@ -1,5 +1,7 @@
 import { calculateQuote, money, type QuoteData } from "../app/lib/quote";
-import type { EvaluationRun, ExpectedCalculation, HumanReview, Scenario, TurnResult } from "./types";
+import { withoutCredentials } from "./artifacts";
+import type { EvaluationRun, EvaluationSessionRecord, ExpectedCalculation, HumanReview, Scenario, TurnResult } from "./types";
+export type DashboardStatus = { database: "ready" | "unavailable"; provider: "available" | "unavailable" };
 
 function scenarioSuite(scenario: Scenario): NonNullable<Scenario["suite"]> {
   return scenario.suite === "contract" ? "contract" : "scenario";
@@ -23,7 +25,7 @@ export function escapeHtml(value: unknown): string {
 }
 const h = escapeHtml;
 const json = (value: unknown) => {
-  const text = value === undefined ? "[missing]" : JSON.stringify(value, null, 2);
+  const text = value === undefined ? "[missing]" : JSON.stringify(value, withoutCredentials, 2);
   return `<pre${text.length > 1000 ? ' tabindex="0"' : ""}>${h(text)}</pre>`;
 };
 const list = (values: string[]) => values.length ? `<ul>${values.map(value => `<li>${h(value)}</li>`).join("")}</ul>` : "<p>None specified.</p>";
@@ -88,20 +90,71 @@ function reviewForm(run: EvaluationRun, reviews: HumanReview[]): string {
     <label>Review notes<textarea name="notes" maxlength="10000" rows="5">${h(last?.notes ?? "")}</textarea></label><button type="submit">Save a new review</button></form>
     <h3>Saved review history</h3>${reviews.length ? reviews.map(review => `<details><summary>${h(review.createdAt)} · ${h(review.reviewer)}</summary><p>Wording: ${h(review.wording)} · Facts: ${h(review.inventedFacts)} · Clarification: ${h(review.clarification)}</p><p class="multiline">${h(review.notes)}</p></details>`).join("") : "<p>Pending human review. No approval recorded.</p>"}</section>`;
 }
-export function renderReport(input: { scenarios: Scenario[]; runs: EvaluationRun[]; scenarioId?: string; runId?: string; reviews: HumanReview[] }): string {
+function runMode(run: EvaluationRun): "live" | "offline-smoke" | "unknown" {
+  if (run.live) return "live";
+  return run.model.provider === "faux" ? "offline-smoke" : "unknown";
+}
+function automatedStatus(session: EvaluationSessionRecord, status: EvaluationSessionRecord["state"]["work"][number]["status"] | undefined, run?: EvaluationRun): string {
+  if (run) return run.automated;
+  return ["starting", "running"].includes(session.state.status) && ["missing", "running"].includes(status ?? "") ? "pending" : "unavailable";
+}
+function reviewStatus(reviews: HumanReview[]): string {
+  const last = reviews.at(-1);
+  if (!last || [last.wording, last.inventedFacts, last.clarification].includes("pending")) return "pending";
+  return [last.wording, last.inventedFacts, last.clarification].includes("fail") ? "changes requested" : "approved";
+}
+function executionStatus(session: EvaluationSessionRecord | undefined, run: EvaluationRun): string {
+  if (!session) return "unavailable (older run without a session)";
+  return session.state.work.find(work => work.runId === run.id && session.plan.work.some(item => item.id === work.id && item.scenarioHash === run.scenarioHash))?.status ?? "unavailable";
+}
+function sessionFor(sessions: EvaluationSessionRecord[], run: EvaluationRun): EvaluationSessionRecord | undefined {
+  return sessions.find(session => session.plan.id === run.sessionId && session.plan.work.some(work => work.id === run.id && work.scenarioHash === run.scenarioHash));
+}
+function history(input: { sessions: EvaluationSessionRecord[]; runs: EvaluationRun[]; reviewsByRun?: Record<string, HumanReview[]>; scenarioId?: string; outcome?: string; mode?: string; dashboardStatus?: DashboardStatus }): string {
+  const { sessions, runs } = input;
+  const outcome = ["passed", "failed", "invalid", "pending"].includes(input.outcome ?? "") ? input.outcome! : "";
+  const mode = ["live", "offline-smoke"].includes(input.mode ?? "") ? input.mode! : "";
+  const scenario = input.scenarioId ?? "";
+  const query = (values: Record<string, string>) => `/?${new URLSearchParams(Object.entries(values).filter(([, value]) => value)).toString()}`;
+  const select = (name: string, label: string, options: [string, string][], value: string) => `<label>${label}<select name="${name}">${options.map(([key, text]) => `<option value="${h(key)}"${key === value ? " selected" : ""}>${h(text)}</option>`).join("")}</select></label>`;
+  const linked = new Set(sessions.flatMap(session => session.plan.work.map(work => `${session.plan.id}:${work.id}:${work.scenarioHash}`)));
+  const older = runs.filter(run => !run.sessionId || !linked.has(`${run.sessionId}:${run.id}:${run.scenarioHash}`))
+    .filter(run => (!scenario || run.scenario.id === scenario) && (!outcome || run.automated === outcome) && (!mode || runMode(run) === mode))
+    .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt) || a.id.localeCompare(b.id));
+  const sessionCards = sessions.map(session => {
+    const entries = session.plan.work.map(work => ({ work, state: session.state.work.find(item => item.id === work.id), run: runs.find(run => run.id === work.id && run.sessionId === session.plan.id && run.scenarioHash === work.scenarioHash) }));
+    const visible = entries.filter(({ work, state, run }) => (!scenario || work.scenarioId === scenario) && (!outcome || automatedStatus(session, state?.status, run) === outcome));
+    if ((mode && session.plan.mode !== mode) || !visible.length) return "";
+    const completed = entries.map(entry => entry.run).filter((run): run is EvaluationRun => Boolean(run));
+    const estimated = completed.length === entries.length && completed.every(run => run.cost?.estimatedUsd != null)
+      ? `USD ${completed.reduce((sum, run) => sum + run.cost.estimatedUsd!, 0).toFixed(6)}` : completed.length === entries.length || !["starting", "running"].includes(session.state.status) ? "unavailable" : "pending";
+    const duration = session.state.startedAt && session.state.finishedAt ? `${Math.max(0, Date.parse(session.state.finishedAt) - Date.parse(session.state.startedAt))} ms` : "pending";
+    return `<details class="session"${scenario || outcome ? " open" : ""}><summary><strong>${h(session.plan.id)}</strong> · ${h(session.plan.createdAt)} · ${h(session.plan.mode === "live" ? "Live model" : "Offline smoke")} · Execution: ${h(session.state.status)}</summary>
+      <p>Provider/model: ${h(session.plan.model.provider)} / ${h(session.plan.model.id)} · Started: ${h(session.state.startedAt ?? "pending")} · Duration: ${h(duration)}</p>
+      <p>Calls: ${h(session.state.calls)} · Estimated usage cost: ${h(estimated)} · Reservations: ${session.plan.mode === "live" ? `USD ${h(session.state.reservedUsd)}` : "not applicable"}</p>
+      <p>Automated checks and human review belong to each Scenario Run. A completed session does not mean either passed.</p>
+      <ol>${visible.map(({ work, state, run }) => `<li>Scenario ${h(work.scenarioId)} · repetition ${h(work.repetition)} · ${run ? `<a href="/?run=${encodeURIComponent(run.id)}">${h(run.id)}</a>` : h(work.id)}<br>Execution: ${h(state?.status ?? "unavailable")} · Automated: ${h(automatedStatus(session, state?.status, run))} · Human review: ${run ? h(reviewStatus(input.reviewsByRun?.[run.id] ?? [])) : "unavailable"}</li>`).join("")}</ol></details>`;
+  }).join("");
+  return `<section class="dashboard"><h1>Evaluation sessions</h1><p>Database: <strong>${h(input.dashboardStatus?.database ?? "unavailable")}</strong> · Configured provider: <strong>${h(input.dashboardStatus?.provider ?? "unavailable")}</strong>. Credentials and connection details are not shown.</p>
+    <form class="filters" method="get" action="/"><input type="hidden" name="view" value="history">${select("scenario", "Scenario", [["", "All scenarios"], ...input.sessions.flatMap(session => session.plan.work.map(work => work.scenarioId)).concat(runs.map(run => run.scenario.id)).filter((id, index, ids) => ids.indexOf(id) === index).map(id => [id, id] as [string, string])], scenario)}${select("outcome", "Automated outcome", [["", "All outcomes"], ["passed", "Passed"], ["failed", "Failed"], ["invalid", "Invalid"], ["pending", "Pending"]], outcome)}${select("mode", "Mode", [["", "All modes"], ["live", "Live model"], ["offline-smoke", "Offline smoke"]], mode)}<button type="submit">Filter</button></form>
+    ${sessionCards || "<p>No saved sessions match.</p>"}
+    <h2>Older runs without a saved session</h2>${older.length ? `<ol>${older.map(run => `<li><a href="/?run=${encodeURIComponent(run.id)}">${h(run.id)}</a> · ${h(run.scenario.title)} · ${h(run.startedAt)} · ${h(runMode(run) === "live" ? "Live model" : runMode(run) === "offline-smoke" ? "Offline smoke" : "Mode unavailable")} · Automated: ${h(run.automated)} · Execution: unavailable · Human review: ${h(reviewStatus(input.reviewsByRun?.[run.id] ?? []))} · Cost: ${run.cost?.estimatedUsd == null ? "unavailable" : `USD ${h(run.cost.estimatedUsd)}`}</li>`).join("")}</ol>` : "<p>No older runs match.</p>"}</section>`;
+}
+export function renderReport(input: { scenarios: Scenario[]; runs: EvaluationRun[]; sessions?: EvaluationSessionRecord[]; dashboardStatus?: DashboardStatus; outcome?: string; mode?: string; scenarioId?: string; runId?: string; historyView?: boolean; reviewsByRun?: Record<string, HumanReview[]>; reviews: HumanReview[] }): string {
   const run = input.runs.find(item => item.id === input.runId);
+  const sessions = input.sessions ?? [];
+  const session = run && sessionFor(sessions, run);
   const scenario = run?.scenario ?? input.scenarios.find(item => item.id === input.scenarioId) ?? input.scenarios[0];
-  const lastReview = input.reviews.at(-1);
-  const human = !lastReview || [lastReview.wording, lastReview.inventedFacts, lastReview.clarification].includes("pending") ? "pending" : [lastReview.wording, lastReview.inventedFacts, lastReview.clarification].includes("fail") ? "changes requested" : "approved";
+  const human = reviewStatus(input.reviews);
   const contractCases = input.scenarios.filter(item => scenarioSuite(item) === "contract");
   const scenarioCases = input.scenarios.filter(item => scenarioSuite(item) === "scenario");
   const scenarioLinks = (items: Scenario[], label: string) => items.length ? `<nav aria-label="${h(label)}">${items.map(item => `<a ${item.id === scenario?.id ? 'aria-current="page"' : ""} href="/?scenario=${encodeURIComponent(item.id)}"><small>${h(item.profession)} · v${item.version}</small>${h(item.title)}</a>`).join("")}</nav>` : "<p>None available.</p>";
   const checks = run ? checksFor(run) : undefined;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Quote evaluation review</title><link rel="stylesheet" href="/report.css"></head><body>
     <header class="masthead"><a href="/">Easy Quote / evaluation</a><p>Private local report. Retained commercial prices and technical details. No provider calls from this browser.</p></header>
-    <div class="workbench"><aside><h2>Contract checks</h2><p>Fictional fixtures that check the edit contract; they are not Artisan work.</p>${scenarioLinks(contractCases, "Contract checks")}<h2>Scenario cases</h2>${scenarioLinks(scenarioCases, "Scenario cases")}<h2>Saved runs</h2><nav aria-label="Runs">${input.runs.length ? input.runs.map(item => `<a href="/?run=${encodeURIComponent(item.id)}"><small>${h(item.startedAt)} · repetition ${item.repetition} · ${h(suiteLabel(item.scenario))}</small>${h(item.scenario.title)}<small>Automated: ${h(item.automated)}</small></a>`).join("") : "<p>No runs yet.</p>"}</nav></aside>
-    <main>${scenario ? `<header><p>${h(scenario.provenance.kind)} · ${h(scenario.profession)} · v${scenario.version} · ${h(scenario.locale)}${scenario.execution === "controlled-only" ? " · Controlled fault injection only" : ""}</p><h1>${h(scenario.title)}</h1>${scenarioSuite(scenario) === "contract" ? "<p class=notice>Fictional contract check for edit behavior; it is not a commercial or Artisan-work example.</p>" : ""}<p>${run?.live ? "Library defaults. " : ""}Provider use: ${h(scenario.review.provider)} · Inputs: ${h(scenario.review.inputs)} · Expectations: ${h(scenario.review.expectations)}</p><p>${h(scenario.review.note)}</p></header>
-    ${run ? `<section class="run-status"><h2>Run results</h2><nav aria-label="Report navigation"><a href="#comparison">Quote comparison</a> · <a href="#script">Scenario script</a> · <a href="#execution">Execution</a> · <a href="#human-review">Human review</a></nav>${checks ? `<p>Contract checks: <strong>${h(checks.contract)}</strong> · Commercial checks: <strong>${h(checks.commercial)}</strong> · Human review: <strong>${human}</strong></p>` : `<p>Automated: <strong>${h(run.automated)}</strong> · Human review: <strong>${human}</strong></p>`}<p>${h(run.model.provider)} / ${h(run.model.id)} · ${run.modelCalls} model calls · ${run.elapsedMs} ms</p>${liveStatus(run)}<details><summary>Run identity, revisions, usage and cost assumptions</summary>${json({ id: run.id, scenarioHash: run.scenarioHash, revision: run.revision, model: run.model, repetition: run.repetition, usage: run.usage, cost: run.cost, live: run.live })}</details></section>` : "<p class=notice>The expected Quote is an authored reference, not a model-generated result. Browse and review inputs before making any provider calls.</p>"}
+    <div class="workbench"><aside><h2>Contract checks</h2><p>Fictional fixtures that check the edit contract; they are not Artisan work.</p>${scenarioLinks(contractCases, "Contract checks")}<h2>Scenario cases</h2>${scenarioLinks(scenarioCases, "Scenario cases")}<h2>History</h2><p><a href="/">Recent sessions and older runs</a></p>${run ? `<small>${h(suiteLabel(run.scenario))}</small>` : ""}</aside>
+    <main>${input.historyView ? `${!scenario ? "<p>No scenarios available</p>" : ""}${history({ sessions, runs: input.runs, scenarioId: input.scenarioId, outcome: input.outcome, mode: input.mode, dashboardStatus: input.dashboardStatus, reviewsByRun: input.reviewsByRun })}` : scenario ? `<header><p>${h(scenario.provenance.kind)} · ${h(scenario.profession)} · v${scenario.version} · ${h(scenario.locale)}${scenario.execution === "controlled-only" ? " · Controlled fault injection only" : ""}</p><h1>${h(scenario.title)}</h1>${scenarioSuite(scenario) === "contract" ? "<p class=notice>Fictional contract check for edit behavior; it is not a commercial or Artisan-work example.</p>" : ""}<p>${run?.live ? "Library defaults. " : ""}Provider use: ${h(scenario.review.provider)} · Inputs: ${h(scenario.review.inputs)} · Expectations: ${h(scenario.review.expectations)}</p><p>${h(scenario.review.note)}</p></header>
+    ${run ? `<section class="run-status"><h2>Run results</h2><nav aria-label="Report navigation"><a href="#comparison">Quote comparison</a> · <a href="#script">Scenario script</a> · <a href="#execution">Execution</a> · <a href="#human-review">Human review</a></nav>${checks ? `<p>Contract checks: <strong>${h(checks.contract)}</strong> · Commercial checks: <strong>${h(checks.commercial)}</strong> · Human review: <strong>${human}</strong></p>` : `<p>Automated: <strong>${h(run.automated)}</strong> · Human review: <strong>${human}</strong></p>`}<p>Execution: <strong>${h(executionStatus(session, run))}</strong> · Started: ${h(run.startedAt)} · Duration: ${h(run.elapsedMs)} ms</p><p>${h(runMode(run) === "live" ? "Live model" : runMode(run) === "offline-smoke" ? "Offline smoke" : "Mode unavailable")} · ${h(run.model.provider)} / ${h(run.model.id)} · ${h(run.modelCalls)} model calls · Estimated usage cost: ${run.cost?.estimatedUsd == null ? "unavailable" : `USD ${h(run.cost.estimatedUsd)}`} · Reservations: ${run.live ? `USD ${h(run.cost?.reservedUsd ?? "unavailable")}` : "not applicable"}</p>${!checks ? "<p>Contract checks: unavailable · Commercial checks: unavailable (not recorded)</p>" : ""}${liveStatus(run)}<details><summary>Run identity, revisions, usage and cost assumptions</summary>${json({ id: run.id, scenarioHash: run.scenarioHash, revision: run.revision, model: run.model, repetition: run.repetition, usage: run.usage, cost: run.cost, live: run.live })}</details></section>` : "<p class=notice>The expected Quote is an authored reference, not a model-generated result. Browse and review inputs before making any provider calls.</p>"}
     <section><h2>Source and adaptations</h2><p>${h(scenario.provenance.alias)}</p>${list(scenario.provenance.notes)}</section>
     ${run ? `<details><summary>Starting Working Draft</summary>${quoteView(scenario.startingQuote)}</details>` : `<div class="comparison"><section><h2>Starting Working Draft</h2>${quoteView(scenario.startingQuote)}</section><section><h2>Expected commercial state</h2>${scenario.expectedQuote ? quoteView(scenario.expectedQuote, true, scenario.expectedCalculation) : "<p>Defined by the step assertions below, not a complete expected Quote.</p>"}</section></div>`}
     <p>Expected amounts and missing fields are independently established scenario data. No expected amount is generated by the application calculator.</p>

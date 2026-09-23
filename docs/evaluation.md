@@ -10,6 +10,14 @@ Inputs and expected outcomes still need human review. The product owner allowed 
 
 Live execution has a dedicated bounded Google boundary. It is not a product benchmark and an offline pass is not evidence of model interpretation quality. Do not claim live evidence until a saved run has been inspected. Product fixes discovered by evaluation, final prompt/tool acceptance and product-owner sign-off remain unfinished parts of #29. #21 still owns production provider approval; #22 owns the external Artisan session. Multi-model comparisons are out of scope.
 
+## Start the local evaluator
+
+With Node.js 24, npm dependencies installed and Docker running, use `npm run eval:start`. It creates or reuses the dedicated disposable evaluation PostgreSQL container, applies migrations, verifies database readiness and schema, then listens at `http://127.0.0.1:4320`. Set `EVAL_DASHBOARD_PORT` or pass `-- --port 4321` to change the port. Use `-- --root /path/to/artifacts` for another local artifact directory. It ignores `DATABASE_URL` and `TEST_DATABASE_URL`, never connects to an application database, and listens only on loopback. Setup failures stop startup. The container remains running after Ctrl-C. Stop it with `npm run eval:db -- down` when finished.
+
+The home page shows saved Evaluation Sessions newest first. Expand one to see its Scenario Runs, or filter by scenario, automated outcome and live/offline mode. Older runs appear separately without invented session information; runs whose mode cannot be established say "Mode unavailable" rather than being counted as offline smoke. Open a run for the Quote comparison, conversation, diagnostics and append-only human reviews; scenario links still show versioned inputs and expectations. Database readiness and configured Google provider availability are shown without connection details or keys. Provider availability means the supported model and key are configured in the process environment, not that a paid request has succeeded. This dashboard does not launch evaluations yet; use `npm run eval:run` for execution.
+
+The dashboard is local and unauthenticated. Do not proxy or forward its port. The separate `eval:review` listener can still serve private-network read-only reports and same-origin human reviews, but has no execution routes. Artifacts remain in `.eval-artifacts/`, which is ignored by Git and excluded from production packaging. With the disposable database running, run `EVAL_DATABASE_URL="$(bash scripts/eval-db.sh url)" npx playwright test -c playwright-evaluator.config.ts` for browser coverage using a temporary evaluator server, never application credentials or provider calls.
+
 ## Browse without making calls
 
 ```sh
