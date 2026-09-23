@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import pg from "pg";
 import { assertEvaluationControlUrl } from "../eval/isolation";
+import { privateReviewAddresses } from "../eval/server";
 
 // The dashboard must never inherit an application connection, even if .env or
 // the invoking shell contains one. Migration runs with NODE_ENV=production.
@@ -14,10 +15,15 @@ delete process.env.TEST_DATABASE_URL;
 const { values } = parseArgs({ options: {
   root: { type: "string", default: ".eval-artifacts" },
   port: { type: "string", default: process.env.EVAL_DASHBOARD_PORT ?? "4320" },
+  host: { type: "string", default: "127.0.0.1" },
 }, strict: true });
 const port = Number(values.port);
 if (!/^\d+$/.test(values.port) || !Number.isInteger(port) || port < 1024 || port > 65535) {
   console.error("Dashboard port must be an integer from 1024 to 65535.");
+  process.exit(1);
+}
+if (!["127.0.0.1", "0.0.0.0", ...privateReviewAddresses()].includes(values.host)) {
+  console.error("Dashboard host must be loopback, 0.0.0.0, or a local private IPv4 address.");
   process.exit(1);
 }
 
@@ -62,12 +68,13 @@ async function main() {
   const { createEvaluatorServer } = await import("../eval/server");
   const { scenarios } = await import("../eval/scenarios");
   const providerAvailable = process.env.QUOTE_AI_PROVIDER === "google" && process.env.QUOTE_AI_MODEL === "gemini-3.5-flash-lite" && Boolean(process.env.GEMINI_API_KEY);
-  const server = createEvaluatorServer({ root: resolve(values.root), scenarios, databaseUrl, providerAvailable });
+  const server = createEvaluatorServer({ root: resolve(values.root), scenarios, databaseUrl, providerAvailable, networkAccess: values.host !== "127.0.0.1" });
   await new Promise<void>((resolveListening, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => { server.off("error", reject); resolveListening(); });
+    server.listen(port, values.host, () => { server.off("error", reject); resolveListening(); });
   });
-  console.log(`Evaluator dashboard: http://127.0.0.1:${port}\nLocal only. Press Ctrl-C to stop. Saved evaluations remain on disk.`);
+  const addresses = values.host === "0.0.0.0" ? ["127.0.0.1", ...privateReviewAddresses()] : [values.host];
+  console.log(`Evaluator dashboard:\n${addresses.map(address => `http://${address}:${port}`).join("\n")}\nNo login. Restrict this port to trusted private devices; do not expose it publicly. Press Ctrl-C to stop.`);
 }
 
 main().catch(error => {

@@ -36,10 +36,9 @@ export function privateReviewAddresses(): string[] {
 export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAccess = false, providerAvailable = false }: {
   root: string; scenarios: Scenario[]; databaseUrl: string; networkAccess?: boolean; providerAvailable?: boolean;
 }) {
-  if (networkAccess) throw new Error("The evaluator must bind to loopback.");
   assertEvaluationControlUrl(databaseUrl);
   listEvaluationSessions(root); // Reconcile interrupted attempts before the first request.
-  return createReviewServer({ root, scenarios, dashboardStatus: async () => {
+  return createReviewServer({ root, scenarios, networkAccess, dashboardStatus: async () => {
     const client = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000, query_timeout: 2000 });
     try {
       await client.connect();

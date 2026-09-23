@@ -2,8 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { get } from "node:http";
-import { connect } from "node:net";
-import { networkInterfaces } from "node:os";
+import { privateReviewAddresses } from "./server";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
 
@@ -25,6 +24,13 @@ function command(directory: string, args: string[] = []) {
   });
 }
 
+it("rejects a non-local dashboard host before provisioning", async () => {
+  const { directory, log } = await fakeDocker("exit 0");
+  const result = command(directory, ["--host", "203.0.113.10"]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("local private IPv4 address");
+  await expect(readFile(log, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+});
 it("rejects an invalid dashboard port before provisioning", async () => {
   const { directory, log } = await fakeDocker("exit 0");
   const result = command(directory, ["--port", "0"]);
@@ -79,10 +85,53 @@ esac`);
 // Full startup needs the real migrated disposable database and executable
 // dashboard server. These are integration checks, not prerequisites for npm test.
 const integration = Boolean(process.env.EVAL_DATABASE_URL);
-it.runIf(integration)("starts the executable dashboard on loopback in a subprocess", async () => {
+it.runIf(integration && Boolean(privateReviewAddresses()[0]))("keeps the dashboard on loopback by default", async () => {
+  const root = await mkdtemp(join(tmpdir(), "eval-start-loopback-"));
+  cleanup.push(() => rm(root, { recursive: true, force: true }));
+  const child = spawn(process.execPath, ["--import", "tsx", "scripts/eval-start.ts", "--port", "4329", "--root", root], {
+    cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"],
+  });
+  cleanup.push(async () => {
+    if (child.exitCode !== null) return;
+    child.kill("SIGTERM");
+    await new Promise<void>(resolve => child.once("exit", () => resolve()));
+  });
+  let output = "";
+  child.stdout.on("data", chunk => { output += String(chunk); });
+  child.stderr.on("data", chunk => { output += String(chunk); });
+  const deadline = Date.now() + 30_000;
+  while (!output.includes("Evaluator dashboard:") && child.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+  expect(output).toContain("http://127.0.0.1:4329");
+  expect(output).not.toContain(`http://${privateReviewAddresses()[0]}:4329`);
+  expect((await fetch("http://127.0.0.1:4329/")).status).toBe(200);
+  await expect(fetch(`http://${privateReviewAddresses()[0]}:4329/`)).rejects.toThrow();
+});
+it.runIf(integration && Boolean(privateReviewAddresses()[0]))("binds just the requested private interface", async () => {
+  const root = await mkdtemp(join(tmpdir(), "eval-start-private-"));
+  cleanup.push(() => rm(root, { recursive: true, force: true }));
+  const privateIp = privateReviewAddresses()[0];
+  const child = spawn(process.execPath, ["--import", "tsx", "scripts/eval-start.ts", "--port", "4330", "--host", privateIp, "--root", root], {
+    cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"],
+  });
+  cleanup.push(async () => {
+    if (child.exitCode !== null) return;
+    child.kill("SIGTERM");
+    await new Promise<void>(resolve => child.once("exit", () => resolve()));
+  });
+  let output = "";
+  child.stdout.on("data", chunk => { output += String(chunk); });
+  child.stderr.on("data", chunk => { output += String(chunk); });
+  const deadline = Date.now() + 30_000;
+  while (!output.includes("Evaluator dashboard:") && child.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+  expect(output).toContain(`http://${privateIp}:4330`);
+  expect(output).not.toContain("http://127.0.0.1:4330");
+  expect((await fetch(`http://${privateIp}:4330/`)).status).toBe(200);
+  await expect(fetch("http://127.0.0.1:4330/")).rejects.toThrow();
+});
+it.runIf(integration)("serves trusted private interfaces when explicitly enabled", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-start-artifacts-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
-  const child = spawn(process.execPath, ["--import", "tsx", "scripts/eval-start.ts", "--port", "4328", "--root", root], {
+  const child = spawn(process.execPath, ["--import", "tsx", "scripts/eval-start.ts", "--port", "4328", "--host", "0.0.0.0", "--root", root], {
     cwd, env: { ...process.env, DATABASE_URL: "postgresql://application-secret@localhost/app" }, stdio: ["ignore", "pipe", "pipe"],
   });
   cleanup.push(async () => {
@@ -95,21 +144,21 @@ it.runIf(integration)("starts the executable dashboard on loopback in a subproce
   child.stderr.on("data", chunk => { output += String(chunk); });
   const deadline = Date.now() + 30_000;
   while (!output.includes("Evaluator dashboard:") && child.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
-  expect(output).toContain("Evaluator dashboard: http://127.0.0.1:4328");
+  expect(output).toContain("Evaluator dashboard:\nhttp://127.0.0.1:4328");
   expect(output).not.toContain("application-secret");
   expect((await fetch("http://127.0.0.1:4328/")).status).toBe(200);
   const hostile = await new Promise<number | undefined>((resolve, reject) => {
     get("http://127.0.0.1:4328/", { headers: { host: "attacker.example" } }, response => { response.resume(); resolve(response.statusCode); }).on("error", reject);
   });
   expect(hostile).toBe(403);
-  const privateIp = Object.values(networkInterfaces()).flatMap(entries => entries ?? []).find(entry => entry.family === "IPv4" && !entry.internal)?.address;
+  const privateIp = privateReviewAddresses()[0];
   if (privateIp) {
-    const reachable = await new Promise<boolean>(resolve => {
-      const socket = connect({ host: privateIp, port: 4328, timeout: 1000 });
-      socket.once("connect", () => { socket.destroy(); resolve(true); });
-      socket.once("error", () => resolve(false));
-      socket.once("timeout", () => { socket.destroy(); resolve(false); });
+    const privateUrl = `http://${privateIp}:4328`;
+    expect((await fetch(privateUrl)).status).toBe(200);
+    const hostilePrivate = await new Promise<number | undefined>((resolve, reject) => {
+      get(privateUrl, { headers: { host: "attacker.example" } }, response => { response.resume(); resolve(response.statusCode); }).on("error", reject);
     });
-    expect(reachable).toBe(false);
+    expect(hostilePrivate).toBe(403);
+    expect((await fetch(`${privateUrl}/reviews`, { method: "POST", headers: { origin: "https://attacker.example", "content-type": "application/x-www-form-urlencoded" }, body: "runId=missing" })).status).toBe(403);
   }
 });
