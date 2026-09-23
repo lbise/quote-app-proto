@@ -100,6 +100,8 @@ export type EvaluationSessionPlan = {
   id: string;
   createdAt: string;
   mode: "live" | "offline-smoke";
+  /** Durable browser idempotency key and canonical settings digest. */
+  browserRequest?: { id: string; fingerprint: string };
   selection: { scenarioIds: string[]; repetitions: number };
   model: { provider: string; id: string; requested: Record<string, unknown>; effective: Record<string, unknown> };
   launchAuthorization: { method: "explicit-cli-launch" | "browser-start"; at: string; scenarioHashes: string[] };

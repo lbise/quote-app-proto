@@ -56,16 +56,19 @@ it("reopening an unfinished live session retains a durable reservation without l
   expect(reconcileEvaluationSessions(path)[0]).toEqual(reopened);
 });
 
-it("recovers a saved Scenario Run when the process died before its status update", () => {
+it.each([
+  { stopReason: undefined, status: "completed" },
+  { stopReason: "user_stop", status: "interrupted" },
+])("recovers saved Scenario Run evidence as $status when the process died before its status update", ({ stopReason, status }) => {
   const path = root(); const first = beginEvaluationSession(path, plan());
   first.running("work-1");
   const directory = join(path, "runs"); mkdirSync(directory);
-  writeFileSync(join(directory, "work-1.json"), JSON.stringify({ format: "quote-evaluation/v1", id: "work-1", sessionId: "test-session", scenarioHash: "abc", repetition: 1, automated: "failed" }));
+  writeFileSync(join(directory, "work-1.json"), JSON.stringify({ format: "quote-evaluation/v1", id: "work-1", sessionId: "test-session", scenarioHash: "abc", repetition: 1, automated: "failed", ...(stopReason ? { live: { stopReason } } : {}) }));
   const stateFile = join(path, "sessions", "test-session.state.json");
   const crashedState = readFileSync(stateFile, "utf8");
   first.stop("test_cleanup"); writeFileSync(stateFile, crashedState);
   expect(reconcileEvaluationSessions(path)[0].state.work).toEqual([
-    { id: "work-1", status: "completed", runId: "work-1" }, { id: "work-2", status: "skipped" },
+    { id: "work-1", status, runId: "work-1" }, { id: "work-2", status: "skipped" },
   ]);
 });
 

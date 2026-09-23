@@ -1,5 +1,5 @@
 import type { QuoteData, QuoteLine } from "../app/lib/quote";
-import expectedCalculations from "./expected-calculations.json";
+import expectedCalculations from "./expected-calculations.json" with { type: "json" };
 import { contractScenarios } from "./contract-scenarios";
 import { joineryJobNotes } from "./inputs/joinery-job-notes";
 import type { Assertion, ExpectedCalculation, Scenario, ScenarioStep } from "./types";

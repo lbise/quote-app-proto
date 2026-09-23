@@ -33,6 +33,7 @@ export type EvaluationLaunch = {
   limits?: EvaluationSessionPlan["limits"];
   pricing?: EvaluationSessionPlan["pricing"];
   authorization?: EvaluationSessionPlan["launchAuthorization"]["method"];
+  browserRequest?: EvaluationSessionPlan["browserRequest"];
   live?: LiveSession;
   onRun?: (id: string, scenario: Scenario, repetition: number, automated: string) => void;
 };
@@ -54,6 +55,7 @@ export function startEvaluation(options: EvaluationLaunch) {
   const hashes = options.scenarios.map(scenarioHash);
   const plan: EvaluationSessionPlan = {
     format: "quote-evaluation-session/v1", id, createdAt: new Date().toISOString(), mode: options.mode,
+    ...(options.browserRequest ? { browserRequest: options.browserRequest } : {}),
     selection: { scenarioIds: options.scenarios.map(scenario => scenario.id), repetitions: options.repetitions },
     model: { provider: options.boundary.model.provider, id: options.boundary.model.id,
       requested: options.settings.requested,
@@ -67,7 +69,7 @@ export function startEvaluation(options: EvaluationLaunch) {
   };
   const state = beginEvaluationSession(options.artifactRoot, plan);
   options.live?.onProgress((calls, reservedUsd) => state.progress(calls, reservedUsd));
-  let cancelRequested = false;
+  let cancelRequested: "user_stop" | "server_shutdown" | undefined;
   const completion = (async () => {
     try {
       state.start();
@@ -81,18 +83,26 @@ export function startEvaluation(options: EvaluationLaunch) {
           ...(!options.live ? { modelSettings: { transport: "faux-controlled", mode: "offline-smoke", providerCalls: false, intentionallyNoop: true } } : {}),
         });
         await saveRun(options.artifactRoot, run);
-        state.completed(work.id, run.id, { calls: run.live?.sessionCalls ?? 0, reservedUsd: run.live?.sessionReservedUsd ?? 0 });
+        state.completed(work.id, run.id, { calls: run.live?.sessionCalls ?? 0, reservedUsd: run.live?.sessionReservedUsd ?? 0 }, Boolean(run.live?.stopReason));
         options.onRun?.(run.id, scenario, work.repetition, run.automated);
       }
       options.live?.close();
-      if (cancelRequested || options.live?.stopped) state.stop(options.live?.stopped ?? "user_stop");
+      if (cancelRequested === "server_shutdown") state.interrupt("server_shutdown");
+      else if (cancelRequested || options.live?.stopped) state.stop(options.live?.stopped ?? "user_stop");
       else state.finish();
     } catch (error) {
       try {
         if (options.live) state.progress(options.live.calls.length, options.live.calls.reduce((sum, call) => sum + call.reservedUsd, 0));
-      } finally { state.fail(error instanceof Error ? error.message : "execution_failed"); }
+      } finally {
+        if (cancelRequested === "server_shutdown") state.interrupt("server_shutdown");
+        else if (cancelRequested) state.stop(cancelRequested);
+        else state.fail("execution_failed");
+      }
       throw error;
     } finally { options.live?.close(); }
   })();
-  return { id, plan, completion, cancel() { cancelRequested = true; options.live?.cancel("user_stop"); } };
+  // Keep the original rejecting promise for CLI callers, but never leave a
+  // server-owned task with an unhandled rejection when its browser disappears.
+  void completion.catch(() => {});
+  return { id, plan, completion, cancel(reason: "user_stop" | "server_shutdown" = "user_stop") { cancelRequested ??= reason; options.live?.cancel(reason); } };
 }

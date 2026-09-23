@@ -67,12 +67,20 @@ async function main() {
 
   const { createEvaluatorServer } = await import("../eval/server");
   const { scenarios } = await import("../eval/scenarios");
-  const providerAvailable = process.env.QUOTE_AI_PROVIDER === "google" && process.env.QUOTE_AI_MODEL === "gemini-3.5-flash-lite" && Boolean(process.env.GEMINI_API_KEY);
-  const server = createEvaluatorServer({ root: resolve(values.root), scenarios, databaseUrl, providerAvailable, networkAccess: values.host !== "127.0.0.1" });
+  const server = createEvaluatorServer({ root: resolve(values.root), scenarios, databaseUrl, networkAccess: values.host !== "127.0.0.1" });
   await new Promise<void>((resolveListening, reject) => {
     server.once("error", reject);
     server.listen(port, values.host, () => { server.off("error", reject); resolveListening(); });
   });
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // close cancels provider work and waits for Quote rollback and evidence.
+    server.close(error => { if (error) process.exitCode = 1; });
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
   const addresses = values.host === "0.0.0.0" ? ["127.0.0.1", ...privateReviewAddresses()] : [values.host];
   console.log(`Evaluator dashboard:\n${addresses.map(address => `http://${address}:${port}`).join("\n")}\nNo login. Restrict this port to trusted private devices; do not expose it publicly. Press Ctrl-C to stop.`);
 }

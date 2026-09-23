@@ -75,9 +75,9 @@ function interrupt(dir: string) {
       if (item.status === "completed") return item;
       const planned = record.plan.work.find(work => work.id === item.id);
       try {
-        const run = JSON.parse(readFileSync(join(dir, "..", "runs", `${safe(item.id)}.json`), "utf8")) as { format?: string; id?: string; sessionId?: string; scenarioHash?: string; repetition?: number; automated?: string };
+        const run = JSON.parse(readFileSync(join(dir, "..", "runs", `${safe(item.id)}.json`), "utf8")) as { format?: string; id?: string; sessionId?: string; scenarioHash?: string; repetition?: number; automated?: string; live?: { stopReason?: string } };
         if (planned && run.format === "quote-evaluation/v1" && ["passed", "failed", "invalid"].includes(run.automated ?? "") && run.id === item.id && run.sessionId === id && run.scenarioHash === planned.scenarioHash && run.repetition === planned.repetition) {
-          return { ...item, status: "completed" as const, runId: item.id };
+          return { ...item, status: run.live?.stopReason ? "interrupted" as const : "completed" as const, runId: item.id };
         }
       } catch { /* No complete artifact for this planned Scenario Run. */ }
       return { ...item, status: item.status === "running" ? "interrupted" as const : "skipped" as const };
@@ -107,12 +107,21 @@ function storedSessions(root: string): EvaluationSessionRecord[] {
     .sort((a, b) => Date.parse(b.plan.createdAt) - Date.parse(a.plan.createdAt) || a.plan.id.localeCompare(b.plan.id));
 }
 
+/** A request already has durable evidence. Matching retries may return its ID. */
+export class ExistingEvaluationRequest extends Error {
+  constructor(readonly record: EvaluationSessionRecord) { super("This browser request already has a session."); }
+}
+
 /** Owns the cross-process lock until the session finishes. All state writes are atomic and flushed. */
 export function beginEvaluationSession(root: string, plan: EvaluationSessionPlan) {
   const release = acquire(root);
   try {
     const dir = location(root);
     interrupt(dir);
+    if (plan.browserRequest) {
+      const existing = storedSessions(root).find(record => record.plan.browserRequest?.id === plan.browserRequest!.id);
+      if (existing) throw new ExistingEvaluationRequest(existing);
+    }
     const state: EvaluationSessionState = { status: "starting", startedAt: null, finishedAt: null,
       work: plan.work.map(item => ({ id: item.id, status: "missing" })), calls: 0, reservedUsd: 0 };
     const path = file(dir, plan.id, "plan");
@@ -139,10 +148,10 @@ export function beginEvaluationSession(root: string, plan: EvaluationSessionPlan
         if (!item || closed) throw new Error("Scenario Run was not planned or was already started.");
         item.status = "running"; state.activeWorkId = id; persist();
       },
-      completed(id: string, runId: string, usage?: { calls: number; reservedUsd: number }) {
+      completed(id: string, runId: string, usage?: { calls: number; reservedUsd: number }, interrupted = false) {
         const item = state.work.find(value => value.id === id && value.status === "running");
         if (!item || closed) throw new Error("Scenario Run is not running.");
-        item.status = "completed"; item.runId = runId; state.activeWorkId = undefined;
+        item.status = interrupted ? "interrupted" : "completed"; item.runId = runId; state.activeWorkId = undefined;
         if (usage) { state.calls = usage.calls; state.reservedUsd = usage.reservedUsd; }
         persist();
       },
@@ -150,6 +159,7 @@ export function beginEvaluationSession(root: string, plan: EvaluationSessionPlan
       finish() { finish("completed"); },
       fail(reason: string) { finish(state.work.every(item => item.status !== "completed") && state.calls === 0 ? "failed-to-start" : "interrupted", reason); },
       stop(reason: string) { finish("stopped", reason); },
+      interrupt(reason: string) { finish("interrupted", reason); },
       cancel(reason: string) { finish("stopped", reason); },
     };
   } catch (error) { release(); throw error; }

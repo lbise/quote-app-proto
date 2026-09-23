@@ -16,6 +16,9 @@ const pricing: LiveEvidence["pricing"] = Object.freeze({
   source: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite",
   inputNanoUsd: 540, outputNanoUsd: 4500, maxInputTokens: 1_048_576, maxOutputTokens: 4096,
 });
+export function assertLivePricing(): void {
+  if (Date.now() < Date.parse(pricing.checkedAt) || Date.now() >= Date.parse(pricing.expiresAt)) throw new Error("Live pricing review has expired or is not yet valid. Recheck the documented Google rates and bounds.");
+}
 const usd = (nano: number) => nano / 1_000_000_000;
 const googleThinkingLevel: Record<Exclude<QuoteAIGeneration["reasoning"], "off" | "xhigh" | "max">, string> = {
   minimal: "MINIMAL", low: "LOW", medium: "MEDIUM", high: "HIGH",
@@ -167,7 +170,7 @@ export class LiveSession {
   get stopped() { return this.reason; }
   onProgress(listener: (calls: number, reservedUsd: number) => void) { this.progressListener = listener; }
   private assertPricing() {
-    if (Date.now() < Date.parse(pricing.checkedAt) || Date.now() >= Date.parse(pricing.expiresAt)) throw new Error("Live pricing review has expired or is not yet valid. Recheck the documented Google rates and bounds.");
+    assertLivePricing();
   }
   private log(value: unknown) {
     appendFileSync(this.ledger, JSON.stringify(value) + "\n", { mode: 0o600, flush: true });
