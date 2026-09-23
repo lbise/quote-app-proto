@@ -107,7 +107,8 @@ function recordedModelSettings(options: RunScenarioOptions): Record<string, unkn
       maxRetries: 0,
       cacheRetention: "none",
       thinkingLevel: options.live?.effectiveGeneration.reasoning ?? options.modelBoundary.generation?.reasoning ?? "off",
-      ...(options.live ? { candidateCount: 1, providerThinking: options.live.effectiveGeneration.reasoning.toUpperCase(), effectiveStatus: "validated-request; provider-internal behavior unknown" } : {}),
+      ...(options.live ? { effectiveStatus: "validated request; provider-internal behavior unknown",
+        ...(options.live.modelProvider === "google" ? { candidateCount: 1, providerThinking: options.live.effectiveGeneration.reasoning.toUpperCase() } : {}) } : {}),
       timeoutMs: options.modelBoundary.timeoutMs,
     },
   };
@@ -359,7 +360,10 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
     const checks = contractChecks(scenario, turns, Boolean(live?.stopReason));
     const allPassed = !live?.stopReason && turns.length === scenario.steps.length && turns.every((turn) => turn.assertions.every((assertion) => assertion.passed))
       && (!checks || checks.contract === "passed" && checks.commercial === "passed");
-    const liveUsage = liveUsageComplete ? live.calls.reduce((sum, call) => ({ input: sum.input + call.usage!.input, output: sum.output + call.usage!.output }), { input: 0, output: 0 }) : undefined;
+    const liveUsage = liveUsageComplete ? live.calls.reduce((sum, call) => ({
+      input: sum.input + call.usage!.input + (options.live?.modelProvider === "openrouter" ? call.usage!.cacheRead + (call.usage!.cacheWrite ?? 0) : 0),
+      output: sum.output + call.usage!.output,
+    }), { input: 0, output: 0 }) : undefined;
     return {
       format: "quote-evaluation/v1",
       id: options.runId ?? randomUUID(),
@@ -374,9 +378,10 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       usage: live ? liveUsage ? { ...liveUsage, total: liveUsage.input + liveUsage.output } : null
         : usageReports ? { input: usage.input, output: usage.output, total: usage.input + usage.output } : null,
       cost: live ? {
-        estimatedUsd: liveUsage ? (liveUsage.input * live.pricing.inputNanoUsd + liveUsage.output * live.pricing.outputNanoUsd) / 1_000_000_000 : null,
+        estimatedUsd: liveUsage && live.calls.every(call => call.estimatedUsd !== null)
+          ? live.calls.reduce((sum, call) => sum + call.estimatedUsd!, 0) : null,
         reservedUsd: live.calls.reduce((sum, call) => sum + call.reservedUsd, 0),
-        assumptions: `Each attempted generation reserves the full model input limit plus ${options.live?.effectiveGeneration.maxOutputTokens ?? 4096} output/thinking tokens at the recorded highest published text rates. Reservations are never released, including errors and aborts. Reported usage estimates price cached input as uncached. This bounds this invocation under the recorded rates, not the provider invoice, taxes, account-wide spending or other commands.`,
+        assumptions: `Each attempted generation reserves a conservative bound for the recorded model, routing and price snapshot before submission. Reservations are never released, including errors and aborts. Usage cost includes supported input, output, cache and per-request charges where applicable; reasoning already included in output is not counted twice. This is an estimate under the recorded rates, not an invoice or account-wide guarantee.`, 
         ceilingEnforceable: true,
       } : { estimatedUsd: null, assumptions: usageReports ? `Usage was reported by ${usageReports} of ${modelCalls} model calls; no provider price schedule is configured.` : "No model call reported token usage or a provider price schedule.", ceilingEnforceable: false },
       modelCalls: live?.calls.length ?? modelCalls,

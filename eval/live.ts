@@ -5,6 +5,8 @@ import { performance } from "node:perf_hooks";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { resolveQuoteAIGeneration, type QuoteAIGeneration, type QuoteAIGenerationOptions, type QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
 import { scenarioHash } from "./scenario-hash";
+import { createOpenRouterTransport, type OpenRouterEvidence } from "./openrouter-transport";
+import type { OpenRouterResolution } from "./openrouter-models";
 import { parseSpendUsd } from "./spend";
 import type { LiveCall, LiveEvidence, Scenario } from "./types";
 
@@ -24,8 +26,26 @@ const usd = (nano: number) => nano / 1_000_000_000;
 const googleThinkingLevel: Record<Exclude<QuoteAIGeneration["reasoning"], "off" | "xhigh" | "max">, string> = {
   minimal: "MINIMAL", low: "LOW", medium: "MEDIUM", high: "HIGH",
 };
-function reservationFor(generation: QuoteAIGeneration) {
-  return pricing.maxInputTokens * pricing.inputNanoUsd + generation.maxOutputTokens * pricing.outputNanoUsd;
+function reservationFor(generation: QuoteAIGeneration, price: LiveEvidence["pricing"]) {
+  const inputRate = Math.max(price.inputNanoUsd, price.cacheReadNanoUsd ?? 0, price.cacheWriteNanoUsd ?? 0);
+  const bound = price.maxInputTokens * inputRate + generation.maxOutputTokens * (price.outputNanoUsd + (price.reasoningNanoUsd ?? 0)) + (price.requestNanoUsd ?? 0);
+  if (!Number.isSafeInteger(bound) || bound <= 0) throw new Error("No usable conservative price bound for this model.");
+  return bound;
+}
+function openRouterPricing(resolution: OpenRouterResolution): LiveEvidence["pricing"] {
+  if (!resolution.available || !resolution.model || !resolution.pricing || !resolution.endpoints.length) throw new Error("OpenRouter model has no verified price and routing metadata.");
+  const { pricing: rates, model } = resolution;
+  const nano = (rate: number) => {
+    if (!Number.isFinite(rate) || rate < 0 || !Number.isSafeInteger(Math.ceil(rate * 1_000_000_000) + 1)) throw new Error("OpenRouter price is unbounded.");
+    return Math.ceil(rate * 1_000_000_000) + 1;
+  };
+  return { id: `openrouter/${resolution.id}/${rates.checkedAt}`, checkedAt: rates.checkedAt,
+    expiresAt: new Date(Date.parse(rates.checkedAt) + 15 * 60_000).toISOString(), source: rates.source,
+    units: "nanodollars per token; request fee per call", routing: rates.routing,
+    endpoints: structuredClone(resolution.endpoints), maxInputTokens: model.contextWindow, maxOutputTokens: model.maxTokens,
+    inputNanoUsd: nano(rates.maxInputUsdPerToken), outputNanoUsd: nano(rates.maxOutputUsdPerToken),
+    cacheReadNanoUsd: nano(rates.maxCacheReadUsdPerToken), cacheWriteNanoUsd: nano(rates.maxCacheWriteUsdPerToken),
+    requestNanoUsd: nano(rates.maxRequestUsd), reasoningNanoUsd: nano(rates.maxReasoningUsdPerToken) };
 }
 
 function syncDirectoryTree(directory: string) {
@@ -48,6 +68,7 @@ export type CreateLiveSessionOptions = {
   artifactRoot: string;
   /** Required for models that cannot genuinely disable reasoning. */
   generation?: QuoteAIGenerationOptions;
+  openRouter?: { resolution: OpenRouterResolution; apiKey: string };
 };
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Unsupported live provider payload.");
@@ -119,6 +140,7 @@ export class LiveSession {
   private readonly _calls: LiveCall[] = [];
   private readonly generation: QuoteAIGeneration;
   private readonly reservation: number;
+  private readonly price: LiveEvidence["pricing"];
   private readonly maxSpendNanoUsd: number;
   private readonly controller = new AbortController();
   private readonly timer: ReturnType<typeof setTimeout>;
@@ -134,9 +156,19 @@ export class LiveSession {
     if (options.approvedProviderDataReview !== true || !options.scenarios.length) throw new Error("Explicit provider-data approval for selected scenarios is required.");
     if (options.scenarios.some(scenario => scenario.execution === "controlled-only")) throw new Error("Fault-injection scenarios are controlled-only.");
     if (options.scenarios.some(scenario => !scenario.steps.some(step => step.kind === "artisan"))) throw new Error("Each live scenario requires an Artisan message to evaluate the model.");
-    if (model.provider !== "google" || model.id !== "gemini-3.5-flash-lite" || model.api !== "google-generative-ai"
-      || model.baseUrl !== "https://generativelanguage.googleapis.com/v1beta" || model.contextWindow !== 1_048_576 || model.maxTokens !== 65_536) {
-      throw new Error("Live pricing supports only google/gemini-3.5-flash-lite at its registered Developer API endpoint.");
+    const router = options.openRouter;
+    if (router) {
+      if (model.provider !== "openrouter" || model.api !== "openai-completions" || !router.apiKey
+        || JSON.stringify(model) !== JSON.stringify(router.resolution.model) || router.resolution.id !== model.id) {
+        throw new Error("OpenRouter resolution and configured provider/model do not match.");
+      }
+      this.price = openRouterPricing(router.resolution);
+    } else {
+      if (model.provider !== "google" || model.id !== "gemini-3.5-flash-lite" || model.api !== "google-generative-ai"
+        || model.baseUrl !== "https://generativelanguage.googleapis.com/v1beta" || model.contextWindow !== 1_048_576 || model.maxTokens !== 65_536) {
+        throw new Error("Live pricing supports only google/gemini-3.5-flash-lite at its registered Developer API endpoint.");
+      }
+      this.price = pricing;
     }
     if (!Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 10_000
       || !Number.isSafeInteger(maxElapsedMs) || maxElapsedMs < 1 || maxElapsedMs > 3_600_000) {
@@ -144,11 +176,24 @@ export class LiveSession {
     }
     this.maxSpendNanoUsd = parseSpendUsd(maxSpendUsd).nanoUsd;
     this.assertPricing();
-    this.generation = resolveQuoteAIGeneration(model, options.generation ?? options.modelBoundary.generation, true);
-    if (this.generation.maxOutputTokens > pricing.maxOutputTokens) {
-      throw new Error(`Live pricing supports at most ${pricing.maxOutputTokens} output tokens per Google call.`);
+    const requested = options.generation ?? options.modelBoundary.generation;
+    if (router) {
+      const supported = router.resolution.reasoning;
+      const reasoning = requested?.reasoning ?? (supported?.offEstablished ? "off" : undefined);
+      if (!reasoning || !supported || reasoning === "off" && !supported.offEstablished
+        || reasoning !== "off" && !supported.supportedLevels.includes(reasoning)) {
+        throw new Error("Choose a reasoning setting supported by the selected OpenRouter model; Off must be verified.");
+      }
+      const maxOutputTokens = requested?.maxOutputTokens ?? Math.min(4096, model.maxTokens);
+      if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > model.maxTokens) throw new Error("Unsupported OpenRouter output-token limit.");
+      this.generation = { reasoning: reasoning as QuoteAIGeneration["reasoning"], maxOutputTokens };
+    } else {
+      this.generation = resolveQuoteAIGeneration(model, requested, true);
     }
-    this.reservation = reservationFor(this.generation);
+    if (this.generation.maxOutputTokens > this.price.maxOutputTokens) {
+      throw new Error(`Live pricing supports at most ${this.price.maxOutputTokens} output tokens per call.`);
+    }
+    this.reservation = reservationFor(this.generation, this.price);
     this._limits = { maxCalls, maxElapsedMs, maxSpendUsd };
     this.modelSignature = JSON.stringify(model);
     this.approved = new Set(options.scenarios.map(scenarioHash));
@@ -156,7 +201,7 @@ export class LiveSession {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.ledger = join(directory, `${this.id}.jsonl`);
     writeFileSync(this.ledger, JSON.stringify({ sessionId: this.id, approvedAt: this.approvedAt, scenarioHashes: [...this.approved],
-      provider: model.provider, model: model.id, generation: this.generation, pricing, limits: this._limits, perCallReservationUsd: usd(this.reservation) }) + "\n", { flag: "wx", mode: 0o600, flush: true });
+      provider: model.provider, model: model.id, generation: this.generation, pricing: this.price, limits: this._limits, perCallReservationUsd: usd(this.reservation) }) + "\n", { flag: "wx", mode: 0o600, flush: true });
     syncDirectoryTree(directory);
     this.timer = setTimeout(() => this.stop("elapsed_limit"), maxElapsedMs);
     this.timer.unref();
@@ -165,14 +210,17 @@ export class LiveSession {
   get effectiveGeneration(): Readonly<QuoteAIGeneration> { return { ...this.generation }; }
   get modelProvider() { return this.options.modelBoundary.model.provider; }
   get modelId() { return this.options.modelBoundary.model.id; }
-  get pricing(): Readonly<LiveEvidence["pricing"]> { return { ...pricing }; }
+  get pricing(): Readonly<LiveEvidence["pricing"]> { return structuredClone(this.price); }
   get limits(): Readonly<LiveEvidence["limits"]> { return { ...this._limits }; }
   get calls(): readonly LiveCall[] { return structuredClone(this._calls); }
   get stopReason() { return this.reason; }
   get stopped() { return this.reason; }
   onProgress(listener: (calls: number, reservedUsd: number) => void) { this.progressListener = listener; }
   private assertPricing() {
-    assertLivePricing();
+    if (!this.options.openRouter) { assertLivePricing(); return; }
+    if (Date.now() < Date.parse(this.price.checkedAt) || Date.now() >= Date.parse(this.price.expiresAt)) {
+      throw new Error("Live pricing metadata has expired or is not yet valid.");
+    }
   }
   private log(value: unknown) {
     appendFileSync(this.ledger, JSON.stringify(value) + "\n", { mode: 0o600, flush: true });
@@ -200,7 +248,7 @@ export class LiveSession {
     const first = this._calls.length;
     const evidence = (): LiveEvidence => ({ sessionId: this.id, approvedScenarioHashes: [...this.approved],
       approval: { at: this.approvedAt, scenarioHash: hash, provider: boundary.model.provider, model: boundary.model.id, method: "explicit-launch" },
-      limits: { ...this._limits }, pricing: { ...pricing }, calls: structuredClone(this._calls.slice(first)),
+      limits: { ...this._limits }, pricing: this.pricing, calls: structuredClone(this._calls.slice(first)),
       sessionCalls: this._calls.length, sessionReservedUsd: usd(this.reserved), ...(this.reason ? { stopReason: this.reason } : {}),
     });
     const wrapped: QuoteAIModelBoundary = { ...boundary, generation: this.generation, streamFn: (model, context, options) => {
@@ -240,14 +288,16 @@ export class LiveSession {
       void (async () => {
         try {
           if (signal.aborted) { aborted(); return; }
-          const upstream = await boundary.streamFn(model, context, { ...options, signal, maxTokens: this.generation.maxOutputTokens, maxRetries: 0, cacheRetention: "none", reasoning: this.generation.reasoning === "off" ? undefined : this.generation.reasoning,
-            onPayload: async (payload, requestModel) => {
-              validatePayload(payload, model.id, this.generation);
+          let routerEvidence: (() => OpenRouterEvidence) | undefined;
+          const upstreamOptions = { ...options, signal, maxTokens: this.generation.maxOutputTokens, maxRetries: 0, cacheRetention: "none" as const,
+            reasoning: this.generation.reasoning === "off" ? undefined : this.generation.reasoning,
+            onPayload: async (payload: unknown, requestModel: typeof model) => {
+              if (!this.options.openRouter) validatePayload(payload, model.id, this.generation);
               // Preserve the production size guard, but allow inspection only.
               const before = JSON.stringify(payload);
-              const payloadSignal = record(record(payload).config).abortSignal;
+              const payloadSignal = !this.options.openRouter ? record(record(payload).config).abortSignal : undefined;
               const next = await options?.onPayload?.(payload, requestModel);
-              if (next !== undefined || JSON.stringify(payload) !== before || record(record(payload).config).abortSignal !== payloadSignal) {
+              if (next !== undefined || JSON.stringify(payload) !== before || !this.options.openRouter && record(record(payload).config).abortSignal !== payloadSignal) {
                 throw new Error("Live payload replacement or mutation is not supported.");
               }
               try { this.assertPricing(); } catch (error) { this.stop("pricing_expired"); throw error; }
@@ -255,20 +305,55 @@ export class LiveSession {
               if (performance.now() - this.started >= this._limits.maxElapsedMs) this.stop("elapsed_limit");
               if (signal.aborted) throw new Error("Live request aborted before submission.");
             },
-          });
+          };
+          const router = this.options.openRouter;
+          const routed = router ? createOpenRouterTransport({ model: model as typeof model & { api: "openai-completions" }, context,
+            options: { signal, timeoutMs: options?.timeoutMs, onPayload: upstreamOptions.onPayload }, key: router.apiKey, generation: this.generation,
+            route: { require_parameters: true, allow_fallbacks: false }, fetch: globalThis.fetch,
+            requireReasoningUsage: (this.price.reasoningNanoUsd ?? 0) > 1 }) : undefined;
+          routerEvidence = routed?.evidence;
+          const upstream = routed?.stream ?? await boundary.streamFn(model, context, upstreamOptions);
           for await (const event of upstream) {
             if (settled) break;
             if (event.type === "error") {
               preserveTerminalReason(call, event.error);
-              failed("provider_error");
+              const routed = routerEvidence?.();
+              if (routed?.routedModel) call.routedModel = routed.routedModel;
+              if (routed?.routedProvider) call.routedProvider = routed.routedProvider;
+              if (routed?.responseId) call.responseId = routed.responseId;
+              if (routed?.reportedCostUsd !== undefined) call.reportedCostUsd = routed.reportedCostUsd;
+              if (routed?.usage) call.usage = { input: routed.usage.input, output: routed.usage.output, cacheRead: routed.usage.cacheRead,
+                cacheWrite: routed.usage.cacheWrite, reasoning: routed.usage.reasoning };
+              failed(routed?.reason ?? "provider_error");
               break;
             }
             if (event.type === "done") {
               preserveTerminalReason(call, event.message);
-              const usage = finalUsage(event.message, this.generation.maxOutputTokens);
-              if (!usage) { failed("usage_unavailable"); break; }
+              const routed = routerEvidence?.();
+              const usage = routed ? routed.status === "complete" && routed.usage
+                ? { input: routed.usage.input, output: routed.usage.output, cacheRead: routed.usage.cacheRead,
+                    cacheWrite: routed.usage.cacheWrite, reasoning: routed.usage.reasoning }
+                : undefined : finalUsage(event.message, this.generation.maxOutputTokens);
+              if (!usage) { failed(routed?.reason ?? "usage_unavailable"); break; }
+              if (routed?.routedModel) call.routedModel = routed.routedModel;
+              if (routed?.routedProvider) call.routedProvider = routed.routedProvider;
+              if (routed?.responseId) call.responseId = routed.responseId;
+              if (routed?.reportedCostUsd !== undefined) call.reportedCostUsd = routed.reportedCostUsd;
               call.usage = usage;
-              call.estimatedUsd = usd(usage.input * pricing.inputNanoUsd + usage.output * pricing.outputNanoUsd);
+              if (this.options.openRouter && usage.input + usage.cacheRead + (usage.cacheWrite ?? 0) > this.price.maxInputTokens) {
+                failed("usage_exceeds_reservation"); break;
+              }
+              const tokenEstimate = usd(usage.input * this.price.inputNanoUsd + usage.output * this.price.outputNanoUsd
+                + (this.options.openRouter ? usage.cacheRead * (this.price.cacheReadNanoUsd ?? this.price.inputNanoUsd) : 0)
+                + (usage.cacheWrite ?? 0) * (this.price.cacheWriteNanoUsd ?? this.price.inputNanoUsd)
+                + (usage.reasoning ?? 0) * (this.price.reasoningNanoUsd ?? 0) + (this.price.requestNanoUsd ?? 0));
+              call.estimatedUsd = Math.max(tokenEstimate, routed?.reportedCostUsd ?? 0);
+              if (routed?.reportedCostUsd !== undefined && Math.ceil(routed.reportedCostUsd * 1_000_000_000) > this.reservation) {
+                failed("cost_exceeds_reservation"); break;
+              }
+              if (Math.ceil(call.estimatedUsd * 1_000_000_000) > this.reservation) {
+                failed("usage_exceeds_reservation"); break;
+              }
               call.status = "complete";
               this.log({ call });
               settled = true;

@@ -59,6 +59,57 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs();
   });
 
+  it("selects an OpenRouter model from live metadata and runs the real Quote agent with server-only credentials", async () => {
+    vi.mocked(Date.now).mockImplementation(() => new Date().getTime());
+    vi.stubEnv("OPENROUTER_API_KEY", "browser-openrouter-secret");
+    const id = "example/quote-tools";
+    vi.stubEnv("QUOTE_AI_PROVIDER", "openrouter");
+    vi.stubEnv("QUOTE_AI_MODEL", id);
+    const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(url);
+      if (path === "https://openrouter.ai/api/v1/models") return Response.json({ data: [{ id, name: "Quote tools", context_length: 65536,
+        architecture: { input_modalities: ["text"], output_modalities: ["text"] }, supported_parameters: ["tools", "max_tokens"] }] });
+      if (path === `https://openrouter.ai/api/v1/models/${id}/endpoints`) return Response.json({ data: { id, endpoints: [{
+        model_id: id, name: "Provider endpoint", provider_name: "Provider", status: 0, context_length: 65536,
+        max_completion_tokens: 2048, supported_parameters: ["tools", "max_tokens"], supports_implicit_caching: false,
+        pricing: { prompt: "0.000001", completion: "0.000002", request: "0.0001" },
+      }] } });
+      expect(path).toBe("https://openrouter.ai/api/v1/chat/completions");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer browser-openrouter-secret");
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({ model: id, max_tokens: 1024, provider: { require_parameters: true, allow_fallbacks: false } });
+      const chunk = { id: "generation-1", model: id, choices: [{ index: 0, delta: { content: "No change." }, finish_reason: "stop" }] };
+      const usage = { id: "generation-1", model: id, choices: [], usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 } };
+      return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify(usage)}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+    });
+    vi.stubGlobal("fetch", transport);
+    const app = await open();
+    const launch = await (await originalFetch(`${app.url}/?launch=1`)).text();
+    expect(launch).toContain('name="provider"');
+    expect(launch).toContain("Quote tools");
+    expect(launch).toContain('<option value="google">Direct Google</option>');
+    expect(launch).not.toContain("browser-openrouter-secret");
+    const modelDetails = await (await originalFetch(`${app.url}/models?id=${encodeURIComponent(id)}`)).json();
+    expect(modelDetails).toMatchObject({ available: true, reasoning: { offEstablished: true }, maxOutputTokens: 2048 });
+    const started = await app.post("/sessions", form({ provider: "openrouter", model: id, reasoning: "off" }));
+    expect(started.status).toBe(202);
+    const { id: sessionId } = await started.json() as { id: string };
+    const completed = await eventually(() => app.record(sessionId), state => !["starting", "running"].includes(state.state.status));
+    expect(completed.state.status, JSON.stringify(completed.state)).toBe("completed");
+    expect(completed.plan.model).toMatchObject({ provider: "openrouter", id, effective: { reasoning: "off", maxOutputTokens: 1024 } });
+    expect(completed.state).toMatchObject({ calls: 1, reservedUsd: expect.any(Number) });
+    const progress = await (await originalFetch(`${app.url}/sessions/${sessionId}`)).json() as { estimatedUsageUsd: number; estimateComplete: boolean };
+    expect(progress.estimateComplete).toBe(true);
+    expect(progress.estimatedUsageUsd).toBeGreaterThan(0);
+    expect(progress.estimatedUsageUsd).toBeLessThan(completed.state.reservedUsd);
+    const generationCalls = transport.mock.calls.filter(([url]) => String(url).endsWith("/chat/completions"));
+    expect(generationCalls).toHaveLength(1);
+    const report = await (await originalFetch(`${app.url}/?run=${completed.state.work[0].runId}`)).text();
+    expect(report).toContain("USD");
+    expect(report).not.toContain("browser-openrouter-secret");
+    expect(JSON.stringify(completed)).not.toContain("browser-openrouter-secret");
+  }, 20_000);
+
   it.each([
     { maxSpendUsd: "4.1", calls: 1 }, { maxSpendUsd: "8.2", calls: 1 }, { maxSpendUsd: "16.4", calls: 1 },
     { maxSpendUsd: "0.000000001", calls: 0 }, { maxSpendUsd: "1000000", calls: 1 },

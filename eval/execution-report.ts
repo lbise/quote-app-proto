@@ -1,5 +1,6 @@
 import { escapeHtml as h } from "./html";
-import type { EvaluationSessionRecord, Scenario } from "./types";
+import type { EvaluationRun, EvaluationSessionRecord, Scenario } from "./types";
+import type { OpenRouterListing } from "./openrouter-models";
 
 export type ExecutionView = {
   executionEnabled?: boolean;
@@ -8,6 +9,9 @@ export type ExecutionView = {
   reuseSession?: EvaluationSessionRecord;
   sessionId?: string;
   providerProblem?: string;
+  googleProblem?: string;
+  routerProblem?: string;
+  modelChoices?: OpenRouterListing;
 };
 
 export function launchForm(input: ExecutionView & { scenarios: Scenario[]; scenarioId?: string }): string {
@@ -21,7 +25,7 @@ export function launchForm(input: ExecutionView & { scenarios: Scenario[]; scena
     <p>Browse each scenario's inputs and expectations before selecting it. Preview links open in a new tab so your selection stays here.</p>
     ${prior ? `<p>Settings copied from <a href="/?session=${encodeURIComponent(prior.id)}">${h(prior.id)}</a>. Start creates a new session with a fresh budget and current scenario versions. No human approvals are copied.</p>` : ""}
     ${missing.length ? `<p class="failure">Unavailable scenarios: ${h(missing.join(", "))}. Choose a current selection.</p>` : ""}
-    ${prior && (prior.model.provider !== "google" || prior.model.id !== "gemini-3.5-flash-lite") ? `<p class="notice">The previous model is not supported for browser execution. This launch uses the Google model shown below; check all settings before Start.</p>` : ""}
+    ${prior?.model.provider === "openrouter" && !input.modelChoices ? `<p class="notice">The earlier OpenRouter model is unavailable until server credentials and metadata are configured. No substitute was selected.</p>` : ""}
     ${input.providerProblem ? `<p class="failure" role="status">${h(input.providerProblem)}</p>` : ""}
     <form id="launch-form" method="post" action="/sessions" data-unavailable="${Boolean(input.providerProblem)}">
     <input type="hidden" name="requestId" value="${h(input.launchRequestId)}">
@@ -31,29 +35,39 @@ export function launchForm(input: ExecutionView & { scenarios: Scenario[]; scena
       ${number("repetitions", "Repetitions", prior?.selection.repetitions ?? 1, 1000)}
       <p data-testid="selection-summary" id="selection-summary" role="status"></p><ul id="selected-scenarios" aria-label="Selected scenarios"></ul><p id="selection-warning" class="failure"></p>
     </fieldset>
-    <fieldset><legend>Model and reasoning</legend><p>Direct Google · <strong>gemini-3.5-flash-lite</strong></p>
-      <label for="reasoning">Reasoning</label><select id="reasoning" name="reasoning">${["minimal", "low", "medium", "high"].map(level => `<option value="${level}"${level === (settings?.reasoning ?? "low") ? " selected" : ""}>${level[0].toUpperCase() + level.slice(1)}</option>`).join("")}</select>
-      <p>This model requires reasoning. Off is not supported.</p>
-      <details><summary>Advanced settings</summary>${number("maxOutputTokens", "Output-token limit", settings?.maxOutputTokens ?? 4096, 4096)}<p>Combined output and thinking tokens, from 1 to 4096.</p></details>
+    <fieldset><legend>Model and reasoning</legend>
+      ${input.modelChoices ? `<label for="provider">Provider</label><select name="provider" id="provider"><option value="openrouter"${prior?.model.provider === "openrouter" || !prior ? " selected" : ""}>OpenRouter</option><option value="google"${prior?.model.provider === "google" ? " selected" : ""}${input.googleProblem ? " disabled" : ""}>Direct Google</option></select>
+      <label for="model">Model</label><select name="model" id="model"><option value="">Choose a model</option>${input.modelChoices.models.map(choice => `<option value="${h(choice.id)}"${choice.id === prior?.model.id && prior.model.provider === "openrouter" ? " selected" : ""}${choice.candidate ? "" : " disabled"}>${h(choice.name || choice.id)}${choice.candidate ? "" : ` · unavailable: ${h(choice.reason)}`}</option>`).join("")}</select>
+      ${input.modelChoices.error ? `<p class="failure">OpenRouter metadata unavailable: ${h(input.modelChoices.error)}</p>` : ""}
+      ${input.googleProblem ? `<p>Direct Google unavailable: ${h(input.googleProblem)}</p>` : ""}` : `<label for="provider">Provider</label><select name="provider" id="provider"><option value="openrouter" disabled>OpenRouter unavailable</option><option value="google" selected>Direct Google</option></select><p role="status">${h(input.routerProblem ?? "OpenRouter model metadata is unavailable.")}</p><p>Direct Google · <strong>gemini-3.5-flash-lite</strong></p>`}
+      <label for="reasoning">Reasoning</label><select id="reasoning" name="reasoning">${["off", "minimal", "low", "medium", "high"].filter(level => input.modelChoices || level !== "off").map(level => `<option value="${level}"${level === (settings?.reasoning ?? (input.modelChoices ? "off" : "low")) ? " selected" : ""}>${level[0].toUpperCase() + level.slice(1)}</option>`).join("")}</select>
+      <p id="model-status" role="status">${input.modelChoices ? "Choose a model to check its reasoning choices, output limit and price availability." : "This Google model requires reasoning. Off is not supported."}</p>
+      <details><summary>Advanced settings</summary>${number("maxOutputTokens", "Output-token limit", settings?.maxOutputTokens ?? 4096, input.modelChoices ? 65536 : 4096)}<p>Combined output and thinking tokens; the selected model may impose a lower limit.</p></details>
     </fieldset>
     <fieldset><legend>Session-wide limits</legend><p>All selected scenarios and repetitions share these limits and one deadline. Reservations are retained, not refunded after a call.</p>
       <div class="review-fields">${number("maxCalls", "Maximum provider calls", prior?.limits?.maxCalls ?? 9, 10000)}${number("maxElapsedMs", "Maximum elapsed time in milliseconds", prior?.limits?.maxElapsedMs ?? 120000, 3600000)}${number("maxSpendUsd", "Maximum spend in USD", (prior?.limits?.maxSpendUsd ?? 6).toFixed(9).replace(/\.?0+$/, ""), 1000000, "0.000000001")}</div>
       <p>USD limits use conservative documented token rates, not a provider invoice guarantee.</p>
     </fieldset>
-    <p>Start authorizes sending only the selected adapted scenario inputs to this Google model with the settings and limits above. It does not change scenario review flags or authorize sending original source documents.</p>
+    <p>Start authorizes sending only the selected adapted scenario inputs to the selected provider and model with the settings and limits above. It does not change scenario review flags or authorize sending original source documents.</p>
     <p id="launch-error" class="failure" role="alert"></p><button type="submit"${input.providerProblem ? " disabled" : ""}>Start</button>
     <noscript><p>Enable JavaScript to start and monitor an evaluation. Browsing and human reviews still work without it.</p></noscript>
     </form></section>`;
 }
 
-export function sessionProgress(session: EvaluationSessionRecord): string {
+export function sessionCost(session: EvaluationSessionRecord, runs: EvaluationRun[]) {
+  const found = session.plan.work.map(work => runs.find(run => run.id === work.id && run.sessionId === session.plan.id && run.scenarioHash === work.scenarioHash));
+  const priced = found.filter(run => run?.cost.estimatedUsd !== null && run?.cost.estimatedUsd !== undefined);
+  return { estimatedUsageUsd: priced.reduce((sum, run) => sum + run!.cost.estimatedUsd!, 0), estimateComplete: priced.length === found.length };
+}
+
+export function sessionProgress(session: EvaluationSessionRecord, runs: EvaluationRun[] = []): string {
   const { plan, state } = session;
   const active = plan.work.find(work => work.id === state.activeWorkId);
   const running = ["starting", "running"].includes(state.status);
   return `<section id="session-progress" data-session-id="${h(plan.id)}"><h1>Evaluation progress</h1><p>${h(plan.id)}</p>
     <p>${h(plan.model.provider)} / ${h(plan.model.id)} · Reasoning: ${h(plan.model.effective.reasoning ?? "not recorded")} · Output-token limit: ${h(plan.model.effective.maxOutputTokens ?? "not recorded")}</p>
     <div role="status"><p>Execution: <strong id="execution-state">${h(state.status)}</strong></p><p id="completed-count">${state.work.filter(work => work.status === "completed").length} / ${plan.work.length} Scenario Runs completed</p><p id="active-scenario">${active ? `Active scenario: ${h(active.scenarioId)} · repetition ${active.repetition}` : "No active scenario."}</p></div>
-    <p id="session-usage">${state.calls} provider calls · USD ${h(state.reservedUsd)} reserved</p>
+    <p id="session-usage">${state.calls} provider calls · USD ${h(state.reservedUsd)} reserved · Estimated usage cost: USD ${h(sessionCost(session, runs).estimatedUsageUsd)}${sessionCost(session, runs).estimateComplete ? "" : " (incomplete)"}</p>
     <p>Session limits: ${h(plan.limits?.maxCalls ?? "unavailable")} calls · ${h(plan.limits?.maxElapsedMs ?? "unavailable")} ms · USD ${h(plan.limits?.maxSpendUsd ?? "unavailable")}</p>
     <p id="execution-reason" class="failure">${h(state.reason)}</p>
     <p>The server owns this work. You can navigate away or close this tab, then reopen this session from history. A server restart interrupts unfinished work and never resumes provider calls.</p>

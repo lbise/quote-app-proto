@@ -16,6 +16,63 @@ if (launch) {
   const repetitions = launch.elements.namedItem("repetitions");
   const error = document.querySelector("#launch-error");
   let submitting = false;
+  const provider = launch.elements.namedItem("provider");
+  const model = launch.elements.namedItem("model");
+  const reasoning = launch.elements.namedItem("reasoning");
+  const output = launch.elements.namedItem("maxOutputTokens");
+  const modelStatus = document.querySelector("#model-status");
+  const routerOptions = model ? [...model.options].map(option => option.cloneNode(true)) : [];
+  let verified = !model;
+  let checkVersion = 0;
+  async function checkModel() {
+    if (!model) return;
+    const version = ++checkVersion;
+    verified = false;
+    if (provider.value === "google") {
+      model.replaceChildren(new Option("gemini-3.5-flash-lite", "gemini-3.5-flash-lite"));
+      const previous = reasoning.value;
+      reasoning.replaceChildren(...["minimal", "low", "medium", "high"].map(level => new Option(level, level)));
+      reasoning.value = ["minimal", "low", "medium", "high"].includes(previous) ? previous : "low";
+      output.max = "4096";
+      if (Number(output.value) > 4096) output.value = "4096";
+      modelStatus.textContent = "Direct Google requires reasoning. Off is unavailable.";
+      verified = true;
+      selection();
+      return;
+    }
+    if (!model.dataset.routerVisible) {
+      model.replaceChildren(...routerOptions.map(option => option.cloneNode(true)));
+      model.dataset.routerVisible = "true";
+    }
+    if (!model.value) { modelStatus.textContent = "Choose an OpenRouter model."; selection(); return; }
+    modelStatus.textContent = "Checking current endpoint capabilities and prices…";
+    selection();
+    try {
+      const response = await fetch(`/models?id=${encodeURIComponent(model.value)}`);
+      if (!response.ok) throw new Error("Model metadata request failed.");
+      const details = await response.json();
+      if (version !== checkVersion) return;
+      if (!details.available) { modelStatus.textContent = `Unavailable: ${details.reason || "Model metadata or pricing cannot establish a safe bound."}`; selection(); return; }
+      const levels = details.reasoning?.supportedLevels ?? [];
+      const choices = [...(details.reasoning?.offEstablished ? ["off"] : []), ...levels];
+      const previous = reasoning.value;
+      reasoning.replaceChildren(...(!details.reasoning?.offEstablished ? [new Option("Choose a supported setting", "")] : []),
+        ...choices.map(level => new Option(level === "off" ? "Off" : level, level)));
+      reasoning.value = choices.includes(previous) ? previous : details.reasoning?.offEstablished ? "off" : "";
+      output.max = String(details.maxOutputTokens);
+      if (Number(output.value) > details.maxOutputTokens) output.value = String(details.maxOutputTokens);
+      modelStatus.textContent = details.reasoning?.offEstablished ? "Off is available. Endpoint and price checks passed for this model." : "Choose a supported reasoning setting. Endpoint and price checks passed for this model.";
+      verified = true;
+      selection();
+    } catch {
+      if (version !== checkVersion) return;
+      modelStatus.textContent = "Model metadata is unavailable. No provider request will be sent.";
+      selection();
+    }
+  }
+  provider?.addEventListener("change", () => { if (provider.value === "openrouter") model.dataset.routerVisible = ""; void checkModel(); });
+  model?.addEventListener("change", () => { void checkModel(); });
+  void checkModel();
   function selection() {
     for (const choice of choices) choice.disabled = Boolean(suite.value) || choice.dataset.controlled === "true";
     const selected = choices.filter(choice => suite.value ? choice.dataset.suite === suite.value : choice.checked);
@@ -29,7 +86,7 @@ if (launch) {
     }));
     const controlled = selected.some(choice => choice.dataset.controlled === "true");
     document.querySelector("#selection-warning").textContent = controlled ? "This selection includes controlled-only cases and cannot run live. Choose a custom subset without those cases." : "";
-    button.disabled = submitting || launch.dataset.unavailable === "true" || !count || controlled;
+    button.disabled = submitting || launch.dataset.unavailable === "true" || !count || controlled || !verified || (model && !model.value) || !reasoning.value;
   }
   launch.addEventListener("input", selection);
   launch.addEventListener("change", selection);
@@ -63,13 +120,13 @@ if (progress) {
   const error = document.querySelector("#progress-error");
   let stopPending = false;
   let timer;
-  function display({ plan, state }) {
+  function display({ plan, state, estimatedUsageUsd, estimateComplete }) {
     const running = ["starting", "running"].includes(state.status);
     document.querySelector("#execution-state").textContent = state.status;
     document.querySelector("#completed-count").textContent = `${state.work.filter(work => work.status === "completed").length} / ${plan.work.length} Scenario Runs completed`;
     const active = plan.work.find(work => work.id === state.activeWorkId);
     document.querySelector("#active-scenario").textContent = active ? `Active scenario: ${active.scenarioId} · repetition ${active.repetition}` : "No active scenario.";
-    document.querySelector("#session-usage").textContent = `${state.calls} provider calls · USD ${state.reservedUsd} reserved`;
+    document.querySelector("#session-usage").textContent = `${state.calls} provider calls · USD ${state.reservedUsd} reserved · Estimated usage cost: USD ${estimatedUsageUsd ?? 0}${estimateComplete ? "" : " (incomplete)"}`;
     document.querySelector("#execution-reason").textContent = state.reason ?? "";
     button.disabled = !running || stopPending;
     button.textContent = running && stopPending ? "Stopping…" : "Stop";

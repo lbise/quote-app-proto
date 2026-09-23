@@ -5,11 +5,14 @@ import { BlockList } from "node:net";
 import { networkInterfaces } from "node:os";
 import { listRuns, readReviews, saveReview, withoutCredentials, type ReviewInput } from "./artifacts";
 import { renderReport } from "./report";
+import { sessionCost } from "./execution-report";
 import { ActiveEvaluationSessionError, beginEvaluationSession, listEvaluationSessions } from "./sessions";
 import { createEvaluationPlan, selectEvaluationScenarios, startEvaluation } from "./execution";
 import { assertLivePricing, createLiveSession } from "./live";
 import { parseSpendUsd } from "./spend";
 import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
+import { discoverOpenRouterModels, resolveOpenRouterModel } from "./openrouter-models";
+import { resolveEvaluationModel } from "./model-config";
 import { assertEvaluationControlUrl } from "./isolation";
 import pg from "pg";
 import type { DashboardStatus } from "./report";
@@ -42,7 +45,7 @@ class FormProblem extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 function browserSelection(form: URLSearchParams) {
-  const allowed = ["requestId", "scenario", "suite", "repetitions", "reasoning", "maxOutputTokens", "maxCalls", "maxElapsedMs", "maxSpendUsd"];
+  const allowed = ["requestId", "scenario", "suite", "repetitions", "provider", "model", "reasoning", "maxOutputTokens", "maxCalls", "maxElapsedMs", "maxSpendUsd"];
   for (const key of form.keys()) {
     if (!allowed.includes(key)) throw new FormProblem("Unsupported launch field. Credentials and configuration belong on the server.");
     if (key !== "scenario" && form.getAll(key).length !== 1) throw new FormProblem("Launch settings must not be repeated.");
@@ -62,15 +65,20 @@ function browserSelection(form: URLSearchParams) {
     return Number(value);
   };
   const repetitions = integer("repetitions", 1000, "1");
+  const provider = form.get("provider") ?? "google";
+  if (provider !== "google" && provider !== "openrouter") throw new FormProblem("Select direct Google or OpenRouter.");
+  const model = form.get("model") ?? (provider === "google" ? "gemini-3.5-flash-lite" : "");
+  if (provider === "google" && model !== "gemini-3.5-flash-lite" || provider === "openrouter" && !/^[a-zA-Z0-9][\w.~-]*\/[a-zA-Z0-9][\w.:-]*$/.test(model)) throw new FormProblem("Choose a known model for this provider.");
   const reasoning = form.get("reasoning");
-  if (reasoning !== "minimal" && reasoning !== "low" && reasoning !== "medium" && reasoning !== "high") throw new FormProblem("Choose minimal, low, medium or high reasoning. This Google model cannot disable reasoning.");
-  const generation = { reasoning, maxOutputTokens: integer("maxOutputTokens", 4096, "4096") };
+  if (!["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(reasoning ?? "")) throw new FormProblem("Choose a supported reasoning setting.");
+  if (provider === "google" && reasoning === "off") throw new FormProblem("This Google model cannot disable reasoning.");
+  const generation = { reasoning: reasoning!, maxOutputTokens: integer("maxOutputTokens", provider === "google" ? 4096 : 65536, "4096") };
   let maxSpendUsd: number;
   try { maxSpendUsd = parseSpendUsd(form.get("maxSpendUsd") ?? "").usd; }
   catch { throw new FormProblem("maxSpendUsd must be positive, at most 1000000, with at most nine decimals."); }
   const limits = { maxCalls: integer("maxCalls", 10_000), maxElapsedMs: integer("maxElapsedMs", 3_600_000), maxSpendUsd };
-  const fingerprint = createHash("sha256").update(JSON.stringify({ scenarios: selected.map(scenario => scenario.id), repetitions, generation, limits })).digest("hex");
-  return { selected, repetitions, generation, limits, browserRequest: { id: requestId.toLowerCase(), fingerprint } };
+  const fingerprint = createHash("sha256").update(JSON.stringify({ scenarios: selected.map(scenario => scenario.id), repetitions, provider, model, generation, limits })).digest("hex");
+  return { selected, repetitions, provider, model, generation, limits, browserRequest: { id: requestId.toLowerCase(), fingerprint } };
 }
 const providerProblems = {
   model: "Set QUOTE_AI_PROVIDER=google and QUOTE_AI_MODEL=gemini-3.5-flash-lite in .env or the server environment, then restart the evaluator.",
@@ -80,9 +88,11 @@ const providerProblems = {
 };
 /** Only fixed, actionable messages reach the browser. Never echo environment values. */
 function providerProblem(environment: Record<string, string | undefined>): string | undefined {
-  if (environment.QUOTE_AI_PROVIDER?.trim() !== "google" || environment.QUOTE_AI_MODEL?.trim() !== "gemini-3.5-flash-lite") return providerProblems.model;
+  const provider = environment.QUOTE_AI_PROVIDER?.trim();
+  if (provider && provider !== "google" && provider !== "openrouter"
+    || provider !== "openrouter" && environment.QUOTE_AI_MODEL?.trim() && environment.QUOTE_AI_MODEL?.trim() !== "gemini-3.5-flash-lite") return providerProblems.model;
   if (!environment.GEMINI_API_KEY?.trim()) return providerProblems.credential;
-  try { configuredQuoteAI(environment); } catch { return providerProblems.configuration; }
+  try { configuredQuoteAI({ ...environment, QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite" }); } catch { return providerProblems.configuration; }
   try { assertLivePricing(); } catch { return providerProblems.pricing; }
 }
 function publicSession(record: EvaluationSessionRecord): EvaluationSessionRecord {
@@ -95,7 +105,10 @@ function publicSession(record: EvaluationSessionRecord): EvaluationSessionRecord
 }
 type ExecutionControl = {
   providerProblem(): string | undefined;
-  launch(form: URLSearchParams): string;
+  googleProblem(): string | undefined;
+  models(): ReturnType<typeof discoverOpenRouterModels> | undefined;
+  modelDetails(id: string): ReturnType<typeof resolveOpenRouterModel> | undefined;
+  launch(form: URLSearchParams): Promise<string>;
   stop(id: string): void;
 };
 type ReportServerOptions = { root: string; scenarios: Scenario[]; networkAccess?: boolean; dashboardStatus?: DashboardStatus | (() => Promise<DashboardStatus>) };
@@ -106,12 +119,15 @@ export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAcc
   listEvaluationSessions(root); // Reconcile interrupted attempts before the first request.
   // The isolated product runner temporarily sets process.env for module setup.
   // Capture only server-owned provider fields before any task can change them.
-  const environment = Object.fromEntries(["QUOTE_AI_PROVIDER", "QUOTE_AI_MODEL", "GEMINI_API_KEY", "QUOTE_AI_TIMEOUT_MS"].map(key => [key, providerEnvironment[key]]));
+  const environment = Object.fromEntries(["QUOTE_AI_PROVIDER", "QUOTE_AI_MODEL", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "QUOTE_AI_TIMEOUT_MS"].map(key => [key, providerEnvironment[key]]));
   const tasks = new Map<string, ReturnType<typeof startEvaluation>>();
   let closing = false;
   const execution: ExecutionControl = {
-    providerProblem: () => providerProblem(environment),
-    launch(form) {
+    providerProblem: () => environment.OPENROUTER_API_KEY?.trim() ? undefined : providerProblem(environment),
+    googleProblem: () => providerProblem(environment),
+    models: () => environment.OPENROUTER_API_KEY?.trim() ? discoverOpenRouterModels() : undefined,
+    modelDetails: (id) => environment.OPENROUTER_API_KEY?.trim() ? resolveOpenRouterModel(id) : undefined,
+    async launch(form) {
       if (closing) throw new FormProblem("The evaluator is shutting down. Restart it before launching.", 503);
       const input = browserSelection(form);
       const previousId = () => {
@@ -123,13 +139,14 @@ export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAcc
       const previous = previousId();
       if (previous) return previous;
       if (listEvaluationSessions(root).some(record => ["starting", "running"].includes(record.state.status))) throw new ActiveEvaluationSessionError();
-      const problem = providerProblem(environment);
+      let problem = input.provider === "google" ? providerProblem(environment) : !environment.OPENROUTER_API_KEY?.trim() ? "Set OPENROUTER_API_KEY on the evaluator server, then restart. Never enter credentials in the browser." : undefined;
       let live: ReturnType<typeof createLiveSession> | undefined;
       try {
         if (problem) throw new Error("provider_unavailable");
-        const boundary = configuredQuoteAI(environment);
+        const selection = await resolveEvaluationModel({ provider: input.provider, modelId: input.model, environment });
+        const boundary = selection.boundary;
         live = createLiveSession({ modelBoundary: boundary, scenarios: input.selected, approvedProviderDataReview: true,
-          ...input.limits, generation: input.generation, artifactRoot: root });
+          ...input.limits, generation: input.generation, artifactRoot: root, ...(selection.openRouter ? { openRouter: selection.openRouter } : {}) });
         const task = startEvaluation({ artifactRoot: root, databaseUrl, scenarios: input.selected, repetitions: input.repetitions,
           boundary, live, mode: "live", settings: { requested: input.generation, effective: live.effectiveGeneration },
           authorization: "browser-start", browserRequest: input.browserRequest });
@@ -144,9 +161,10 @@ export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAcc
         if (error instanceof ActiveEvaluationSessionError) throw error;
         // Configuration failures are attempts too. Preserve their selection and
         // authorization, without claiming unvalidated effective settings.
+        problem ??= input.provider === "openrouter" ? "OpenRouter model, metadata, reasoning or pricing is unavailable. Recheck its model details and server configuration." : undefined;
         const plan = createEvaluationPlan({
           scenarios: input.selected, repetitions: input.repetitions, mode: "live", browserRequest: input.browserRequest,
-          model: { provider: "google", id: "gemini-3.5-flash-lite", requested: input.generation, effective: {} },
+          model: { provider: input.provider, id: input.model, requested: input.generation, effective: {} },
           authorization: "browser-start", limits: input.limits,
         });
         try { beginEvaluationSession(root, plan).fail(problem ?? "execution_failed"); }
@@ -214,8 +232,15 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
         response.setHeader("content-type", "text/javascript; charset=utf-8");
         response.end(await readFile(new URL("./execution-client.js", import.meta.url), "utf8")); return;
       }
+      if (execution && request.method === "GET" && url.pathname === "/models") {
+        const id = url.searchParams.get("id") ?? "";
+        const resolved = await execution.modelDetails(id);
+        if (!resolved) { json(200, { available: false, reason: "Set OPENROUTER_API_KEY on the evaluator server." }); return; }
+        json(200, { id, available: resolved.available, reason: resolved.reason, reasoning: resolved.reasoning,
+          maxOutputTokens: resolved.model?.maxTokens ?? null }); return;
+      }
       if (execution && request.method === "POST" && url.pathname === "/sessions") {
-        json(202, { id: execution.launch(await formBody(request)) }); return;
+        json(202, { id: await execution.launch(await formBody(request)) }); return;
       }
       const sessionRoute = /^\/sessions\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})(\/stop)?$/.exec(url.pathname);
       if (execution && sessionRoute) {
@@ -223,7 +248,7 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
         if (request.method === "GET" && !stop) {
           const record = listEvaluationSessions(root).find(record => record.plan.id === id);
           if (!record) throw new FormProblem("Session not found.", 404);
-          json(200, publicSession(record)); return;
+          json(200, { ...publicSession(record), ...sessionCost(record, await listRuns(root)) }); return;
         }
         if (request.method === "POST" && stop) {
           if ((await formBody(request)).size) throw new FormProblem("Stop accepts an empty form only.");
@@ -254,7 +279,10 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
       const reuseSession = reuseId ? sessions.find(record => record.plan.id === reuseId) : undefined;
       if (reuseId && !reuseSession || sessionId && !sessions.some(record => record.plan.id === sessionId)) throw new FormProblem("Session not found.", 404);
       const launchView = Boolean(execution && (url.searchParams.get("launch") === "1" || reuseSession));
-      const executionInput = execution ? { executionEnabled: true, launchView, reuseSession, sessionId, launchRequestId: launchView ? randomUUID() : undefined, providerProblem: execution.providerProblem() } : {};
+      const modelChoices = launchView ? await execution?.models() : undefined;
+      const executionInput = execution ? { executionEnabled: true, launchView, reuseSession, sessionId, launchRequestId: launchView ? randomUUID() : undefined,
+        providerProblem: execution.providerProblem(), modelChoices, googleProblem: execution.googleProblem(),
+        routerProblem: modelChoices ? modelChoices.error : "Set OPENROUTER_API_KEY on the evaluator server to browse OpenRouter models. Never enter credentials in the browser." } : {};
       response.end(renderReport({ scenarios, runs, sessions, ...executionInput, dashboardStatus: typeof dashboardStatus === "function" ? await dashboardStatus() : dashboardStatus, runId, scenarioId: url.searchParams.get("scenario") ?? undefined,
         outcome: url.searchParams.get("outcome") ?? undefined, mode: url.searchParams.get("mode") ?? undefined,
         historyView, reviewsByRun,

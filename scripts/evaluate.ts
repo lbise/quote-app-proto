@@ -1,8 +1,8 @@
 import { readProviderEnvironment } from "../eval/provider-environment";
+import { resolveEvaluationModel } from "../eval/model-config";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 
-import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
 import { selectEvaluationScenarios, startEvaluation } from "../eval/execution";
 import { createLiveSession } from "../eval/live";
 import { parseSpendUsd } from "../eval/spend";
@@ -21,14 +21,16 @@ const help = `Usage: npm run eval:run -- [options]
   --max-calls N                 Required with --live.
   --max-elapsed-ms N            Required with --live.
   --max-spend-usd USD           Required with --live; at most 1000000 with up to 9 decimal places.
-  --reasoning LEVEL             Google: minimal|low|medium|high (Off is unsupported).
-  --max-output-tokens N         Advanced output and reasoning token limit per call (at most 4096).
+  --provider google|openrouter  Live provider; defaults to configured QUOTE_AI_PROVIDER.
+  --model ID                    Exact live model ID; defaults to configured QUOTE_AI_MODEL.
+  --reasoning LEVEL             Google: minimal|low|medium|high. OpenRouter: verified level or off.
+  --max-output-tokens N         Advanced output and reasoning token limit per call (validated for selected model).
   --provider-env-file PATH      Read only provider variables from PATH, after live approval.
   --help                        Show this help.
 
 Offline smoke uses createQuoteHandler, the registered tools, and a fresh PostgreSQL case database. It saves a faux-controlled artifact and intentionally fails reconstruction assertions. It never calls a provider.
 
-Live evaluation requires an explicit --scenario or --suite selection, runtime provider-data approval, a dedicated database, and bounded calls, elapsed time, and spend. It supports only the registered Google gemini-3.5-flash-lite boundary; other provider/model selections fail closed.`;
+Live evaluation requires an explicit --scenario or --suite selection, runtime provider-data approval, a dedicated database, and bounded calls, elapsed time, and spend. Direct Google supports only the registered gemini-3.5-flash-lite model. OpenRouter requires verified model metadata and an OPENROUTER_API_KEY.`;
 
 type Suite = "contract" | "scenario";
 
@@ -47,6 +49,8 @@ type Arguments = {
   envFile?: string;
   reasoning?: string;
   maxOutputTokens?: number;
+  provider?: "google" | "openrouter";
+  modelId?: string;
   help: boolean;
 };
 
@@ -69,7 +73,7 @@ function parseArguments(argv: string[]): Arguments {
     scenarioIds: [], repetitions: 1, artifactRoot: ".eval-artifacts", offlineSmoke: false,
     live: false, approvedProviderDataReview: false, help: false,
   };
-  const singleValues = new Set(["--suite", "--repetitions", "--artifacts", "--database-url", "--max-calls", "--max-elapsed-ms", "--max-spend-usd", "--provider-env-file", "--reasoning", "--max-output-tokens"]);
+  const singleValues = new Set(["--suite", "--repetitions", "--artifacts", "--database-url", "--max-calls", "--max-elapsed-ms", "--max-spend-usd", "--provider-env-file", "--reasoning", "--max-output-tokens", "--provider", "--model"]);
   const seen = new Set<string>();
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -98,6 +102,11 @@ function parseArguments(argv: string[]): Arguments {
       if (argument === "--max-elapsed-ms") parsed.maxElapsedMs = positiveInteger(argument, value);
       if (argument === "--max-spend-usd") parsed.maxSpendUsd = positiveUsd(value);
       if (argument === "--provider-env-file") parsed.envFile = value;
+      if (argument === "--provider") {
+        if (value !== "google" && value !== "openrouter") fail("--provider must be google or openrouter.");
+        parsed.provider = value;
+      }
+      if (argument === "--model") parsed.modelId = value;
       if (argument === "--reasoning") parsed.reasoning = value;
       if (argument === "--max-output-tokens") parsed.maxOutputTokens = positiveInteger(argument, value);
       continue;
@@ -136,8 +145,8 @@ function controlledNoopBoundary() {
 
 function assertOfflineSmoke(parsed: Arguments, selected: Scenario[]) {
   if (parsed.live) fail("--offline-smoke and --live cannot be used together.");
-  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.envFile !== undefined || parsed.reasoning !== undefined || parsed.maxOutputTokens !== undefined) {
-    fail("Provider approval, live limits, and --provider-env-file cannot be used with --offline-smoke.");
+  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.envFile !== undefined || parsed.reasoning !== undefined || parsed.maxOutputTokens !== undefined || parsed.provider !== undefined || parsed.modelId !== undefined) {
+    fail("Provider selection, approval, live limits, and --provider-env-file cannot be used with --offline-smoke.");
   }
   if (!parsed.databaseUrl) fail("--offline-smoke requires --database-url from npm run eval:db -- up. DATABASE_URL is never used.");
   if (selected.length !== 1 || !selected[0].id.endsWith("-full-reconstruction") || selected[0].provenance.kind !== "source-derived" || !selected[0].expectedQuote) {
@@ -154,8 +163,7 @@ function assertLive(parsed: Arguments, selected: Scenario[]) {
   }
   if (parsed.maxCalls > 10_000) fail("--max-calls must not exceed 10000.");
   if (parsed.maxElapsedMs > 3_600_000) fail("--max-elapsed-ms must not exceed 3600000.");
-  if (parsed.reasoning !== undefined && !["minimal", "low", "medium", "high"].includes(parsed.reasoning)) fail("--reasoning must be minimal, low, medium or high for this Google model; off is unsupported.");
-  if (parsed.maxOutputTokens !== undefined && parsed.maxOutputTokens > 4096) fail("--max-output-tokens must not exceed 4096 for this price bound.");
+  if (parsed.maxOutputTokens !== undefined && parsed.maxOutputTokens > 65_536) fail("--max-output-tokens must not exceed 65536.");
   const controlledOnly = selected.filter((scenario) => scenario.execution === "controlled-only");
   if (controlledOnly.length) fail(`--live cannot run controlled-only scenarios: ${controlledOnly.map((scenario) => scenario.id).join(", ")}.`);
 }
@@ -172,9 +180,20 @@ async function runOfflineSmoke(parsed: Arguments, scenario: Scenario) {
 
 async function runLive(parsed: Arguments, selected: Scenario[]) {
   assertLive(parsed, selected);
-  const modelBoundary = configuredQuoteAI(readProviderEnvironment({ file: parsed.envFile }));
+  const environment = readProviderEnvironment({ file: parsed.envFile });
+  if (parsed.provider === "openrouter" && !parsed.modelId && environment.QUOTE_AI_PROVIDER !== "openrouter") {
+    fail("--provider openrouter requires --model with the exact OpenRouter ID.");
+  }
+  const provider = parsed.provider ?? environment.QUOTE_AI_PROVIDER ?? "google";
+  const modelId = parsed.modelId ?? environment.QUOTE_AI_MODEL ?? "";
+  if (provider === "google" && parsed.maxOutputTokens !== undefined && parsed.maxOutputTokens > 4096) fail("--max-output-tokens must not exceed 4096 for direct Google pricing.");
+  if (provider === "google" && parsed.reasoning !== undefined && !["minimal", "low", "medium", "high"].includes(parsed.reasoning)) {
+    fail("--reasoning must be minimal, low, medium or high for this Google model; off is unsupported.");
+  }
+  const { boundary: modelBoundary, openRouter } = await resolveEvaluationModel({ provider, modelId, environment });
   const session = createLiveSession({
     modelBoundary,
+    ...(openRouter ? { openRouter } : {}),
     scenarios: selected,
     approvedProviderDataReview: true,
     maxCalls: parsed.maxCalls!,
@@ -216,8 +235,8 @@ async function main() {
     await runLive(parsed, selected);
     return;
   }
-  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.databaseUrl || parsed.envFile !== undefined || parsed.reasoning !== undefined || parsed.maxOutputTokens !== undefined) {
-    fail("Provider approval, live limits, --provider-env-file, and --database-url require --live or --offline-smoke.");
+  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.databaseUrl || parsed.envFile !== undefined || parsed.reasoning !== undefined || parsed.maxOutputTokens !== undefined || parsed.provider !== undefined || parsed.modelId !== undefined) {
+    fail("Provider approval, live limits, provider selection, --provider-env-file, and --database-url require --live or --offline-smoke.");
   }
   console.info(`Selected ${selected.length} case(s), ${parsed.repetitions} repetition(s): ${selected.map(scenario => `${scenario.id} [${scenarioSuite(scenario)}]`).join(", ")}. No provider call was made. Pass --offline-smoke for retained real-path evidence, or --live only after provider-data approval.`);
 }

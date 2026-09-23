@@ -69,7 +69,7 @@ export function startEvaluation(options: EvaluationLaunch) {
   if (options.mode === "live" && !options.live || options.mode !== "live" && options.live) throw new Error("Live transport requires a bounded live session.");
   if (options.mode === "live" && !options.live?.pricing) throw new Error("Live execution requires limits and usable pricing.");
   if (options.live && (options.boundary.model.provider !== options.live.modelProvider || options.boundary.model.id !== options.live.modelId)) throw new Error("Live model differs from the approved session.");
-  if (options.live && (options.settings.requested.reasoning !== options.live.effectiveGeneration.reasoning
+  if (options.live && (options.settings.requested.reasoning !== "unspecified" && options.settings.requested.reasoning !== options.live.effectiveGeneration.reasoning
     || options.settings.requested.maxOutputTokens !== undefined && options.settings.requested.maxOutputTokens !== options.live.effectiveGeneration.maxOutputTokens)) {
     throw new Error("Requested live generation differs from validated effective settings.");
   }
@@ -80,7 +80,8 @@ export function startEvaluation(options: EvaluationLaunch) {
       requested: options.settings.requested,
       effective: options.live ? { ...options.live.effectiveGeneration } : options.settings.effective },
     limits: options.live ? { ...options.live.limits } : options.limits,
-    pricing: options.live ? { ...options.live.pricing, units: "nanodollars per token", assumptions: "Highest published text rate; full context plus configured output reserved before each request, never refunded." } : options.pricing,
+    pricing: options.live ? { ...options.live.pricing, units: options.live.pricing.units ?? "nanodollars per token",
+      assumptions: "A conservative recorded model/routing price bound is reserved before each request and never refunded; estimated usage is separate and neither is an invoice guarantee." } : options.pricing,
   });
   const { id } = plan;
   const state = beginEvaluationSession(options.artifactRoot, plan);

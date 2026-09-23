@@ -82,14 +82,19 @@ export type LiveCall = {
   stopReason?: string;
   /** Bounded provider-native terminal reason, when supplied by the SDK. */
   rawStopReason?: string;
-  usage?: { input: number; output: number; cacheRead: number };
+  usage?: { input: number; output: number; cacheRead: number; cacheWrite?: number; reasoning?: number };
+  routedModel?: string;
+  routedProvider?: string;
+  responseId?: string;
+  reportedCostUsd?: number;
 };
 export type LiveEvidence = {
   sessionId: string;
   approvedScenarioHashes: string[];
   approval: { at: string; scenarioHash: string; provider: string; model: string; method: "explicit-launch" };
   limits: { maxCalls: number; maxElapsedMs: number; maxSpendUsd: number };
-  pricing: { id: string; checkedAt: string; expiresAt: string; source: string; inputNanoUsd: number; outputNanoUsd: number; maxInputTokens: number; maxOutputTokens: number };
+  pricing: { id: string; checkedAt: string; expiresAt: string; source: string; inputNanoUsd: number; outputNanoUsd: number; maxInputTokens: number; maxOutputTokens: number;
+    units?: string; routing?: string; endpoints?: unknown[]; cacheReadNanoUsd?: number; cacheWriteNanoUsd?: number; requestNanoUsd?: number; reasoningNanoUsd?: number };
   calls: LiveCall[];
   sessionCalls: number;
   sessionReservedUsd: number;

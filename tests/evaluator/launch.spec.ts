@@ -49,4 +49,5 @@ test("browse inputs, select scenarios or a suite, and configure an explicit laun
   await page.getByLabel("Output-token limit").fill("1024");
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
   await expect(page.getByText(/GEMINI_API_KEY/)).toBeVisible();
+  await expect(page.getByText(/Set OPENROUTER_API_KEY/)).toBeVisible();
 });
