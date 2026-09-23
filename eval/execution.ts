@@ -30,9 +30,9 @@ export type EvaluationLaunch = {
   boundary: QuoteAIModelBoundary;
   mode: EvaluationSessionPlan["mode"];
   settings: { requested: Record<string, unknown>; effective: Record<string, unknown> };
-  limits: EvaluationSessionPlan["limits"];
-  pricing: EvaluationSessionPlan["pricing"];
-  authorization?: EvaluationSessionPlan["authorization"]["method"];
+  limits?: EvaluationSessionPlan["limits"];
+  pricing?: EvaluationSessionPlan["pricing"];
+  authorization?: EvaluationSessionPlan["launchAuthorization"]["method"];
   live?: LiveSession;
   onRun?: (id: string, scenario: Scenario, repetition: number, automated: string) => void;
 };
@@ -44,15 +44,23 @@ export function startEvaluation(options: EvaluationLaunch) {
     throw new Error("Live selection requires known non-controlled scenario versions.");
   }
   if (options.mode === "live" && !options.live || options.mode !== "live" && options.live) throw new Error("Live transport requires a bounded live session.");
-  if (options.mode === "live" && (!options.limits || !options.pricing)) throw new Error("Live execution requires limits and usable pricing.");
+  if (options.mode === "live" && !options.live?.pricing) throw new Error("Live execution requires limits and usable pricing.");
+  if (options.live && (options.boundary.model.provider !== options.live.modelProvider || options.boundary.model.id !== options.live.modelId)) throw new Error("Live model differs from the approved session.");
+  if (options.live && (options.settings.requested.reasoning !== options.live.effectiveGeneration.reasoning
+    || options.settings.requested.maxOutputTokens !== undefined && options.settings.requested.maxOutputTokens !== options.live.effectiveGeneration.maxOutputTokens)) {
+    throw new Error("Requested live generation differs from validated effective settings.");
+  }
   const id = options.live?.id ?? randomUUID();
   const hashes = options.scenarios.map(scenarioHash);
   const plan: EvaluationSessionPlan = {
     format: "quote-evaluation-session/v1", id, createdAt: new Date().toISOString(), mode: options.mode,
     selection: { scenarioIds: options.scenarios.map(scenario => scenario.id), repetitions: options.repetitions },
-    model: { provider: options.boundary.model.provider, id: options.boundary.model.id, requested: options.settings.requested, effective: options.settings.effective },
-    authorization: { method: options.authorization ?? "explicit-cli-launch", at: new Date().toISOString(), scenarioHashes: hashes },
-    limits: options.limits, pricing: options.pricing,
+    model: { provider: options.boundary.model.provider, id: options.boundary.model.id,
+      requested: options.settings.requested,
+      effective: options.live ? { ...options.live.effectiveGeneration } : options.settings.effective },
+    launchAuthorization: { method: options.authorization ?? "explicit-cli-launch", at: new Date().toISOString(), scenarioHashes: hashes },
+    limits: options.live ? { ...options.live.limits } : options.limits ?? null,
+    pricing: options.live ? { ...options.live.pricing, units: "nanodollars per token", assumptions: "Highest published text rate; full context plus configured output reserved before each request, never refunded." } : options.pricing ?? null,
     work: Array.from({ length: options.repetitions }, (_, index) => options.scenarios.map(scenario => ({
       id: randomUUID(), scenarioId: scenario.id, scenarioHash: scenarioHash(scenario), repetition: index + 1,
     }))).flat(),

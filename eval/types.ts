@@ -102,7 +102,7 @@ export type EvaluationSessionPlan = {
   mode: "live" | "offline-smoke";
   selection: { scenarioIds: string[]; repetitions: number };
   model: { provider: string; id: string; requested: Record<string, unknown>; effective: Record<string, unknown> };
-  authorization: { method: "explicit-cli-launch" | "browser-start"; at: string; scenarioHashes: string[] };
+  launchAuthorization: { method: "explicit-cli-launch" | "browser-start"; at: string; scenarioHashes: string[] };
   limits: { maxCalls: number; maxElapsedMs: number; maxSpendUsd: number } | null;
   pricing: (LiveEvidence["pricing"] & { units: string; assumptions: string }) | null;
   work: { id: string; scenarioId: string; scenarioHash: string; repetition: number }[];

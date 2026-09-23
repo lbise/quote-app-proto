@@ -203,9 +203,8 @@ async function runLive(parsed: Arguments, selected: Scenario[]) {
   });
   let execution: ReturnType<typeof startEvaluation>;
   try { execution = startEvaluation({ artifactRoot: parsed.artifactRoot, databaseUrl: parsed.databaseUrl!, scenarios: selected, repetitions: parsed.repetitions,
-    boundary: modelBoundary, mode: "live", live: session, limits: session.limits,
-    pricing: { ...session.pricing, units: "nanodollars per token", assumptions: "Highest published text rate; full context plus configured output reserved before each request, never refunded." },
-    settings: { requested: { reasoning: parsed.reasoning ?? "unknown", maxOutputTokens: parsed.maxOutputTokens ?? 4096 }, effective: session.effectiveGeneration },
+    boundary: modelBoundary, mode: "live", live: session,
+    settings: { requested: { reasoning: parsed.reasoning ?? "unspecified", ...(parsed.maxOutputTokens ? { maxOutputTokens: parsed.maxOutputTokens } : {}) }, effective: session.effectiveGeneration },
     onRun: (id, scenario, repetition, automated) => {
       console.info(`${scenario.id} [${scenarioSuite(scenario)}] repetition ${repetition}: automated ${automated}, human review pending. Saved run ${id}.`);
       if (automated !== "passed") process.exitCode = 1;

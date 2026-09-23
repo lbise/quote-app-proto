@@ -158,6 +158,8 @@ export class LiveSession {
   }
   /** Settings that Agent and Google will receive for every evaluation call. */
   get effectiveGeneration(): Readonly<QuoteAIGeneration> { return { ...this.generation }; }
+  get modelProvider() { return this.options.modelBoundary.model.provider; }
+  get modelId() { return this.options.modelBoundary.model.id; }
   get pricing(): Readonly<LiveEvidence["pricing"]> { return { ...pricing }; }
   get limits(): Readonly<LiveEvidence["limits"]> { return { ...this._limits }; }
   get calls(): readonly LiveCall[] { return structuredClone(this._calls); }

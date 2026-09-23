@@ -105,6 +105,11 @@ it("records failed-to-start work from a CLI subprocess and keeps it interrupted 
     expect(record.state.status).toBe("failed-to-start");
     expect(record.state.work[0].status).toBe("interrupted");
     expect(record.state.calls).toBe(0);
+    const reopening = await exec(process.execPath, ["--import", "tsx", "--input-type=module", "-e",
+      "import { reconcileEvaluationSessions } from './eval/sessions.ts'; console.log(JSON.stringify(reconcileEvaluationSessions(process.argv[1])[0].state));", directory],
+      { env, timeout: 10000 });
+    expect(JSON.parse(reopening.stdout).status).toBe("failed-to-start");
+    expect(listEvaluationSessions(directory)[0].state.calls).toBe(0);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

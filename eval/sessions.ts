@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { EvaluationSessionPlan, EvaluationSessionRecord, EvaluationSessionState } from "./types";
 import { withoutCredentials } from "./artifacts";
@@ -20,35 +21,30 @@ function saveState(dir: string, id: string, state: EvaluationSessionState) {
   } finally { rmSync(temporary, { force: true }); }
 }
 function read(dir: string, id: string): EvaluationSessionRecord {
-  return { plan: JSON.parse(readFileSync(file(dir, id, "plan"), "utf8")), state: JSON.parse(readFileSync(file(dir, id, "state"), "utf8")) };
-}
-function activePid(lock: string): boolean {
-  try {
-    const pid = Number(readFileSync(join(lock, "pid"), "utf8"));
-    if (!Number.isSafeInteger(pid) || pid < 1) return false;
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EPERM") return true;
-    // A concurrent launcher may be between mkdir and flushing its PID.
-    if ((error as NodeJS.ErrnoException).code === "ENOENT" && Date.now() - statSync(lock).mtimeMs < 5_000) return true;
-    return false;
+  const plan = JSON.parse(readFileSync(file(dir, id, "plan"), "utf8")) as EvaluationSessionPlan;
+  try { return { plan, state: JSON.parse(readFileSync(file(dir, id, "state"), "utf8")) }; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return { plan, state: { status: "starting", startedAt: null, finishedAt: null, calls: 0, reservedUsd: 0,
+      work: plan.work.map(item => ({ id: item.id, status: "missing" })) } };
   }
 }
 function acquire(root: string) {
   mkdirSync(resolve(root), { recursive: true, mode: 0o700 });
-  const lock = join(resolve(root), ".evaluation-active");
-  try { mkdirSync(lock, { mode: 0o700 }); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    if (activePid(lock)) throw new Error("An evaluation session is already active.");
-    rmSync(lock, { recursive: true, force: true });
-    try { mkdirSync(lock, { mode: 0o700 }); }
-    catch { throw new Error("An evaluation session is already active."); }
+  const lock = join(resolve(root), ".evaluation-active.lock");
+  // flock holds an open-file-description lock. The child acquires it on the
+  // parent's inherited fd; it survives child exit and the OS releases it on a crash.
+  // Never unlink this file: a new inode would allow two separate locks.
+  const fd = openSync(lock, "a", 0o600);
+  try {
+    execFileSync("flock", ["-n", "3"], { stdio: ["ignore", "ignore", "ignore", fd] });
+    flush(resolve(root));
+    return () => closeSync(fd);
+  } catch (error) {
+    closeSync(fd);
+    if ((error as { status?: number }).status === 1) throw new Error("An evaluation session is already active.");
+    throw error;
   }
-  writeFileSync(join(lock, "pid"), String(process.pid), { flag: "wx", mode: 0o600, flush: true });
-  flush(resolve(root));
-  return () => rmSync(lock, { recursive: true, force: true });
 }
 function interrupt(dir: string) {
   for (const name of readdirSync(dir).filter(item => item.endsWith(".plan.json"))) {
