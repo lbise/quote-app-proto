@@ -35,7 +35,7 @@ it("persists an immutable plan before execution and serializes competing launche
 it("recovers a process that died between writing its plan and its first state", () => {
   const path = root(); const directory = join(path, "sessions"); mkdirSync(directory);
   writeFileSync(join(directory, "test-session.plan.json"), JSON.stringify(plan()));
-  const [record] = reconcileEvaluationSessions(path);
+  const [record] = listEvaluationSessions(path);
   expect(record.state.status).toBe("interrupted");
   expect(record.state.work.map(item => item.status)).toEqual(["skipped", "skipped"]);
 });

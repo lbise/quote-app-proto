@@ -88,10 +88,19 @@ function interrupt(dir: string) {
 /** Reopening never launches work; it only marks unfinished evidence interrupted. */
 export function reconcileEvaluationSessions(root: string): EvaluationSessionRecord[] {
   const release = acquire(root);
-  try { interrupt(location(root)); return listEvaluationSessions(root); }
+  try { interrupt(location(root)); return storedSessions(root); }
   finally { release(); }
 }
+/** Opening persisted sessions reconciles crash evidence without starting work. */
 export function listEvaluationSessions(root: string): EvaluationSessionRecord[] {
+  try { return reconcileEvaluationSessions(root); }
+  catch (error) {
+    // A running evaluator owns transitions. Its last flushed state is safe to read.
+    if (error instanceof Error && error.message === "An evaluation session is already active.") return storedSessions(root);
+    throw error;
+  }
+}
+function storedSessions(root: string): EvaluationSessionRecord[] {
   const dir = location(root);
   return readdirSync(dir).filter(name => name.endsWith(".plan.json"))
     .map(name => read(dir, name.slice(0, -10)))
