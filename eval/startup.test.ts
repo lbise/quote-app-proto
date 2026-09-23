@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { get } from "node:http";
 import { privateReviewAddresses } from "./server";
@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
 
 const cwd = resolve(import.meta.dirname, "..");
+const startup = ["--import", import.meta.resolve("tsx"), "--import", "data:text/javascript,Date.now=()=>Date.parse('2026-09-23T12:00:00Z');globalThis.fetch=async()=>{throw new Error('Unexpected provider request')}", resolve(cwd, "scripts/eval-start.ts")];
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); });
 
@@ -18,8 +19,8 @@ async function fakeDocker(body: string) {
   return { directory, log };
 }
 function command(directory: string, args: string[] = []) {
-  return spawnSync("npm", ["run", "eval:start", "--", ...args], {
-    cwd, encoding: "utf8", timeout: 15_000,
+  return spawnSync(process.execPath, [...startup, ...args], {
+    cwd: directory, encoding: "utf8", timeout: 15_000,
     env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, DATABASE_URL: "postgresql://application-secret@localhost/app", TEST_DATABASE_URL: "postgresql://other-secret@localhost/test", EVAL_DB_CONTAINER: "startup-test", EVAL_DB_PORT: "55434" },
   });
 }
@@ -36,6 +37,16 @@ it("rejects an invalid dashboard port before provisioning", async () => {
   const result = command(directory, ["--port", "0"]);
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("Dashboard port must be an integer");
+  await expect(readFile(log, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("reports an unreadable .env without exposing paths or provisioning", async () => {
+  const { directory, log } = await fakeDocker("exit 0");
+  await mkdir(join(directory, ".env"));
+  const result = command(directory);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("Could not read the provider environment file. Check its access permissions.");
+  expect(result.stderr).not.toContain(directory);
   await expect(readFile(log, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 });
 
@@ -85,11 +96,44 @@ esac`);
 // Full startup needs the real migrated disposable database and executable
 // dashboard server. These are integration checks, not prerequisites for npm test.
 const integration = Boolean(process.env.EVAL_DATABASE_URL);
+it.runIf(integration).each([
+  { name: "reads only provider settings from .env", file: true, exportedModel: undefined, available: true },
+  { name: "keeps exported provider settings ahead of .env", file: true, exportedModel: "unsupported", available: false },
+  { name: "allows browsing when .env is absent", file: false, exportedModel: undefined, available: false },
+])("$name", async ({ file, exportedModel, available }) => {
+  const root = await mkdtemp(join(tmpdir(), "eval-start-provider-"));
+  cleanup.push(() => rm(root, { recursive: true, force: true }));
+  if (file) await writeFile(join(root, ".env"), [
+    'QUOTE_AI_PROVIDER="google"', "QUOTE_AI_MODEL=gemini-3.5-flash-lite", "GEMINI_API_KEY=startup-fixture-key", "QUOTE_AI_TIMEOUT_MS=45000",
+    "DATABASE_URL=postgresql://file-secret@localhost/application", "TEST_DATABASE_URL=invalid",
+    "EVAL_DATABASE_URL=invalid", "EVAL_DB_PORT=invalid", "EVAL_DB_CONTAINER=must-not-use-file-container",
+    "EVAL_DASHBOARD_PORT=invalid", "NODE_ENV=development", "NODE_OPTIONS=--invalid-option",
+  ].join("\n"));
+  const child = spawn(process.execPath, [...startup, "--port", "4331", "--root", root], {
+    cwd: root, stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, QUOTE_AI_PROVIDER: undefined, QUOTE_AI_MODEL: exportedModel, GEMINI_API_KEY: undefined, QUOTE_AI_TIMEOUT_MS: undefined },
+  });
+  cleanup.push(async () => {
+    if (child.exitCode !== null) return;
+    child.kill("SIGTERM");
+    await new Promise<void>(resolve => child.once("exit", () => resolve()));
+  });
+  let output = "";
+  child.stdout.on("data", chunk => { output += String(chunk); });
+  child.stderr.on("data", chunk => { output += String(chunk); });
+  const deadline = Date.now() + 30_000;
+  while (!output.includes("Evaluator dashboard:") && child.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+  expect(output).toContain("http://127.0.0.1:4331");
+  const html = await (await fetch("http://127.0.0.1:4331/")).text();
+  expect(html).toContain(`Configured provider: <strong>${available ? "available" : "unavailable"}</strong>`);
+  expect(html).toContain("Database: <strong>ready</strong>");
+  expect(output + html).not.toMatch(/startup-fixture-key|file-secret|must-not-use-file-container/);
+});
 it.runIf(integration && Boolean(privateReviewAddresses()[0]))("keeps the dashboard on loopback by default", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-start-loopback-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
-  const child = spawn(process.execPath, ["--import", "tsx", "scripts/eval-start.ts", "--port", "4329", "--root", root], {
-    cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"],
+  const child = spawn(process.execPath, [...startup, "--port", "4329", "--root", root], {
+    cwd: root, env: process.env, stdio: ["ignore", "pipe", "pipe"],
   });
   cleanup.push(async () => {
     if (child.exitCode !== null) return;
@@ -110,8 +154,8 @@ it.runIf(integration && Boolean(privateReviewAddresses()[0]))("binds just the re
   const root = await mkdtemp(join(tmpdir(), "eval-start-private-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const privateIp = privateReviewAddresses()[0];
-  const child = spawn(process.execPath, ["--import", "tsx", "scripts/eval-start.ts", "--port", "4330", "--host", privateIp, "--root", root], {
-    cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"],
+  const child = spawn(process.execPath, [...startup, "--port", "4330", "--host", privateIp, "--root", root], {
+    cwd: root, env: process.env, stdio: ["ignore", "pipe", "pipe"],
   });
   cleanup.push(async () => {
     if (child.exitCode !== null) return;
@@ -131,8 +175,8 @@ it.runIf(integration && Boolean(privateReviewAddresses()[0]))("binds just the re
 it.runIf(integration)("serves trusted private interfaces when explicitly enabled", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-start-artifacts-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
-  const child = spawn(process.execPath, ["--import", "tsx", "scripts/eval-start.ts", "--port", "4328", "--host", "0.0.0.0", "--root", root], {
-    cwd, env: { ...process.env, DATABASE_URL: "postgresql://application-secret@localhost/app" }, stdio: ["ignore", "pipe", "pipe"],
+  const child = spawn(process.execPath, [...startup, "--port", "4328", "--host", "0.0.0.0", "--root", root], {
+    cwd: root, env: { ...process.env, DATABASE_URL: "postgresql://application-secret@localhost/app" }, stdio: ["ignore", "pipe", "pipe"],
   });
   cleanup.push(async () => {
     if (child.exitCode !== null) return;

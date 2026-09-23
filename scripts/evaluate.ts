@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
-
-import { parse as parseDotenv } from "dotenv";
+import { readProviderEnvironment } from "../eval/provider-environment";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 
@@ -162,21 +160,6 @@ function assertLive(parsed: Arguments, selected: Scenario[]) {
   if (controlledOnly.length) fail(`--live cannot run controlled-only scenarios: ${controlledOnly.map((scenario) => scenario.id).join(", ")}.`);
 }
 
-const liveEnvironmentNames = ["QUOTE_AI_PROVIDER", "QUOTE_AI_MODEL", "GEMINI_API_KEY", "QUOTE_AI_TIMEOUT_MS"] as const;
-
-function liveEnvironment(envFile?: string): Record<string, string | undefined> {
-  let fileValues: Record<string, string | undefined> = {};
-  if (envFile) {
-    try {
-      const parsed = parseDotenv(readFileSync(envFile));
-      fileValues = Object.fromEntries(liveEnvironmentNames.map((name) => [name, parsed[name]]));
-    } catch {
-      fail(`Could not read --provider-env-file ${envFile}.`);
-    }
-  }
-  return Object.fromEntries(liveEnvironmentNames.map((name) => [name, process.env[name] === undefined ? fileValues[name] : process.env[name]]));
-}
-
 async function runOfflineSmoke(parsed: Arguments, scenario: Scenario) {
   const execution = startEvaluation({ artifactRoot: parsed.artifactRoot, databaseUrl: parsed.databaseUrl!, scenarios: [scenario], repetitions: parsed.repetitions,
     boundary: controlledNoopBoundary(), mode: "offline-smoke", settings: { requested: { transport: "faux-controlled" }, effective: { providerCalls: false, intentionallyNoop: true } },
@@ -189,7 +172,7 @@ async function runOfflineSmoke(parsed: Arguments, scenario: Scenario) {
 
 async function runLive(parsed: Arguments, selected: Scenario[]) {
   assertLive(parsed, selected);
-  const modelBoundary = configuredQuoteAI(liveEnvironment(parsed.envFile));
+  const modelBoundary = configuredQuoteAI(readProviderEnvironment({ file: parsed.envFile }));
   const session = createLiveSession({
     modelBoundary,
     scenarios: selected,

@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import pg from "pg";
 import { assertEvaluationControlUrl } from "../eval/isolation";
 import { privateReviewAddresses } from "../eval/server";
+import { readProviderEnvironment } from "../eval/provider-environment";
 
 // The dashboard must never inherit an application connection, even if .env or
 // the invoking shell contains one. Migration runs with NODE_ENV=production.
@@ -39,6 +40,7 @@ function evalDb(action: "ensure" | "url") {
 }
 
 async function main() {
+  const providerEnvironment = readProviderEnvironment({ file: resolve(".env"), optionalFile: true });
   try {
     evalDb("ensure");
   } catch {
@@ -67,7 +69,7 @@ async function main() {
 
   const { createEvaluatorServer } = await import("../eval/server");
   const { scenarios } = await import("../eval/scenarios");
-  const server = createEvaluatorServer({ root: resolve(values.root), scenarios, databaseUrl, networkAccess: values.host !== "127.0.0.1" });
+  const server = createEvaluatorServer({ root: resolve(values.root), scenarios, databaseUrl, providerEnvironment, networkAccess: values.host !== "127.0.0.1" });
   await new Promise<void>((resolveListening, reject) => {
     server.once("error", reject);
     server.listen(port, values.host, () => { server.off("error", reject); resolveListening(); });
@@ -88,6 +90,7 @@ async function main() {
 main().catch(error => {
   // Neither provider errors nor database exceptions may disclose URLs or paths.
   const safe = error instanceof Error && (
+    error.message.startsWith("Could not read the provider environment file.") ||
     error.message.startsWith("Evaluation database setup failed.") ||
     error.message.startsWith("Could not obtain the dedicated local") ||
     error.message.startsWith("Evaluation database readiness") ||

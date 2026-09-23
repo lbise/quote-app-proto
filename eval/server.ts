@@ -73,8 +73,8 @@ function browserSelection(form: URLSearchParams) {
   return { selected, repetitions, generation, limits, browserRequest: { id: requestId.toLowerCase(), fingerprint } };
 }
 const providerProblems = {
-  model: "Set QUOTE_AI_PROVIDER=google and QUOTE_AI_MODEL=gemini-3.5-flash-lite in the server environment, then restart the evaluator.",
-  credential: "Set GEMINI_API_KEY in the server environment, then restart the evaluator. Never enter credentials in the browser.",
+  model: "Set QUOTE_AI_PROVIDER=google and QUOTE_AI_MODEL=gemini-3.5-flash-lite in .env or the server environment, then restart the evaluator.",
+  credential: "Set GEMINI_API_KEY in .env or the server environment, then restart the evaluator. Never enter credentials in the browser.",
   configuration: "Check the server provider configuration. QUOTE_AI_TIMEOUT_MS must be an integer from 1000 to 45000.",
   pricing: "The Google pricing review is outside its valid dates. Recheck the documented rates and bounds before launching.",
 };
@@ -99,14 +99,14 @@ type ExecutionControl = {
   stop(id: string): void;
 };
 type ReportServerOptions = { root: string; scenarios: Scenario[]; networkAccess?: boolean; dashboardStatus?: DashboardStatus | (() => Promise<DashboardStatus>) };
-export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAccess = false }: {
-  root: string; scenarios: Scenario[]; databaseUrl: string; networkAccess?: boolean;
+export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAccess = false, providerEnvironment = process.env }: {
+  root: string; scenarios: Scenario[]; databaseUrl: string; networkAccess?: boolean; providerEnvironment?: Record<string, string | undefined>;
 }) {
   assertEvaluationControlUrl(databaseUrl);
   listEvaluationSessions(root); // Reconcile interrupted attempts before the first request.
   // The isolated product runner temporarily sets process.env for module setup.
   // Capture only server-owned provider fields before any task can change them.
-  const environment = Object.fromEntries(["QUOTE_AI_PROVIDER", "QUOTE_AI_MODEL", "GEMINI_API_KEY", "QUOTE_AI_TIMEOUT_MS"].map(key => [key, process.env[key]]));
+  const environment = Object.fromEntries(["QUOTE_AI_PROVIDER", "QUOTE_AI_MODEL", "GEMINI_API_KEY", "QUOTE_AI_TIMEOUT_MS"].map(key => [key, providerEnvironment[key]]));
   const tasks = new Map<string, ReturnType<typeof startEvaluation>>();
   let closing = false;
   const execution: ExecutionControl = {
