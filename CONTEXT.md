@@ -41,3 +41,13 @@ _Avoid_: Chapter, sub-quote
 **Quote Discount**:
 An unconditional reduction of a Quote's price before VAT, expressed as either a percentage or a fixed monetary amount.
 _Avoid_: Early-payment discount, negative Quote Line
+
+## Evaluation language
+
+**Evaluation Session**:
+A deliberately started group of Scenario Runs sharing execution settings and a budget, used to evaluate Easy Quote's agent tools and a model's ability to produce the expected Quote state from realistic inputs.
+_Avoid_: Run when referring to the whole session
+
+**Scenario Run**:
+One execution of an evaluation scenario, with its own produced Quote state, automated checks and human reviews. Each repetition is a separate Scenario Run within an Evaluation Session.
+_Avoid_: Session when referring to an individual scenario execution
