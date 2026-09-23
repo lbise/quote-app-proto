@@ -56,6 +56,19 @@ it("reopening an unfinished live session retains a durable reservation without l
   expect(reconcileEvaluationSessions(path)[0]).toEqual(reopened);
 });
 
+it("recovers a saved Scenario Run when the process died before its status update", () => {
+  const path = root(); const first = beginEvaluationSession(path, plan());
+  first.running("work-1");
+  const directory = join(path, "runs"); mkdirSync(directory);
+  writeFileSync(join(directory, "work-1.json"), JSON.stringify({ format: "quote-evaluation/v1", id: "work-1", sessionId: "test-session", scenarioHash: "abc", repetition: 1, automated: "failed" }));
+  const stateFile = join(path, "sessions", "test-session.state.json");
+  const crashedState = readFileSync(stateFile, "utf8");
+  first.stop("test_cleanup"); writeFileSync(stateFile, crashedState);
+  expect(reconcileEvaluationSessions(path)[0].state.work).toEqual([
+    { id: "work-1", status: "completed", runId: "work-1" }, { id: "work-2", status: "skipped" },
+  ]);
+});
+
 it("reopening after a dead process marks running work interrupted and never resets saved progress", () => {
   const path = root(); const first = beginEvaluationSession(path, plan());
   first.running("work-1"); first.completed("work-1", "run-1"); first.running("work-2");

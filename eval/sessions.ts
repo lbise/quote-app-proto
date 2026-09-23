@@ -71,7 +71,17 @@ function interrupt(dir: string) {
     state.reason = "process_interrupted";
     state.finishedAt = new Date().toISOString();
     state.activeWorkId = undefined;
-    state.work = state.work.map(item => ({ ...item, status: item.status === "running" ? "interrupted" : item.status === "missing" ? "skipped" : item.status }));
+    state.work = state.work.map(item => {
+      if (item.status === "completed") return item;
+      const planned = record.plan.work.find(work => work.id === item.id);
+      try {
+        const run = JSON.parse(readFileSync(join(dir, "..", "runs", `${safe(item.id)}.json`), "utf8")) as { format?: string; id?: string; sessionId?: string; scenarioHash?: string; repetition?: number; automated?: string };
+        if (planned && run.format === "quote-evaluation/v1" && ["passed", "failed", "invalid"].includes(run.automated ?? "") && run.id === item.id && run.sessionId === id && run.scenarioHash === planned.scenarioHash && run.repetition === planned.repetition) {
+          return { ...item, status: "completed" as const, runId: item.id };
+        }
+      } catch { /* No complete artifact for this planned Scenario Run. */ }
+      return { ...item, status: item.status === "running" ? "interrupted" as const : "skipped" as const };
+    });
     saveState(dir, id, state);
   }
 }

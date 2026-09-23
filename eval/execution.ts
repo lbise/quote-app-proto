@@ -88,8 +88,9 @@ export function startEvaluation(options: EvaluationLaunch) {
       if (cancelRequested || options.live?.stopped) state.stop(options.live?.stopped ?? "user_stop");
       else state.finish();
     } catch (error) {
-      if (options.live) state.progress(options.live.calls.length, options.live.calls.reduce((sum, call) => sum + call.reservedUsd, 0));
-      state.fail(error instanceof Error ? error.message : "execution_failed");
+      try {
+        if (options.live) state.progress(options.live.calls.length, options.live.calls.reduce((sum, call) => sum + call.reservedUsd, 0));
+      } finally { state.fail(error instanceof Error ? error.message : "execution_failed"); }
       throw error;
     } finally { options.live?.close(); }
   })();
