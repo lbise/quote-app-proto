@@ -10,6 +10,10 @@ export type OpenRouterEvidence = {
   responseId?: string;
   /** OpenRouter's reported request total, when present. It may include charges beyond token rates. */
   reportedCostUsd?: number;
+  httpStatus?: number;
+  /** Only fixed categories and known parameter names are retained, never provider prose. */
+  providerErrorCategory?: "unsupported_parameter" | "no_compatible_endpoint" | "invalid_request" | "invalid_prompt" | "context_length_exceeded" | "string_too_long";
+  providerErrorField?: string;
   stopReason?: string;
   reason?: "usage_missing" | "usage_partial" | "usage_inconsistent" | "stream_incomplete" | "provider_error" | "request_invalid" | "model_mismatch";
   /** Reasoning tokens are included in output, not an additional output charge. */
@@ -66,6 +70,49 @@ function usageFrom(raw: unknown, maxOutputTokens: number, requireReasoningUsage:
   return { ...(reportedCost !== undefined ? { reportedCostUsd: reportedCost } : {}),
     usage: { input: prompt - (cacheRead as number) - (cacheWrite as number), cacheRead: cacheRead as number,
       cacheWrite: cacheWrite as number, output, reasoning: reasoning as number, totalTokens: total } };
+}
+
+const safeErrorFields = new Set(["store", "strict", "tools", "reasoning", "max_tokens", "max_completion_tokens", "tool_choice", "provider", "stream_options"]);
+/** Keep only a bounded, structured HTTP diagnostic. Provider prose can echo keys or Quote content. */
+async function inspectErrorResponse(response: Response, evidence: OpenRouterEvidence, signal: AbortSignal) {
+  if (response.status < 400 || response.status > 599) return;
+  if (!response.headers.get("content-type")?.includes("application/json")) return;
+  const reader = response.clone().body?.getReader();
+  if (!reader) return;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      // A tee branch's cancel may wait for the SDK to consume the original branch.
+      if (size > 4096) { cancel(); return; }
+      chunks.push(value);
+    }
+    const raw = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { raw.set(chunk, offset); offset += chunk.byteLength; }
+    if (signal.aborted) return;
+    const body: unknown = JSON.parse(new TextDecoder().decode(raw));
+    if (!object(body) || !object(body.error) || typeof body.error.message !== "string") return;
+    const metadata = body.error.metadata;
+    const typedError = object(metadata) ? metadata.error_type : undefined;
+    if (["invalid_request", "invalid_prompt", "context_length_exceeded", "string_too_long"].includes(String(typedError))) {
+      evidence.providerErrorCategory = typedError as NonNullable<OpenRouterEvidence["providerErrorCategory"]>;
+    }
+    const message = body.error.message.slice(0, 256);
+    const parameter = /^unsupported (?:request )?parameter:?\s*["'`]?([a-z_]+)\b/i.exec(message);
+    if (parameter && safeErrorFields.has(parameter[1].toLowerCase())) {
+      evidence.providerErrorCategory = "unsupported_parameter";
+      evidence.providerErrorField = parameter[1].toLowerCase();
+    } else if (/^no (?:endpoints?|providers?) (?:found|available) (?:that |which )?(?:support|match)/i.test(message)) {
+      evidence.providerErrorCategory = "no_compatible_endpoint";
+    }
+  } catch { /* HTTP status still survives; never store or log the provider body. */ }
+  finally { signal.removeEventListener("abort", cancel); }
 }
 
 /** An SSE observer on the injected HTTP boundary. It retains counts and bounded identities, never content or headers. */
@@ -144,7 +191,17 @@ export function createOpenRouterTransport(request: OpenRouterTransportRequest) {
     ...options, apiKey: key, fetch: async (input, init) => {
       const url = input instanceof Request ? input.url : String(input);
       if (url !== "https://openrouter.ai/api/v1/chat/completions") throw new Error("Unexpected OpenRouter endpoint.");
-      return observe(await fetch(input, init), state);
+      const response = await fetch(input, init);
+      if (!response.ok) {
+        if (response.status >= 400 && response.status <= 599) evidence.httpStatus = response.status;
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([inspectErrorResponse(response, evidence, controller.signal),
+            new Promise<void>((resolve) => { timer = setTimeout(() => { controller.abort(); resolve(); }, 150); })]);
+        } finally { if (timer) clearTimeout(timer); }
+      }
+      return observe(response, state);
     },
     maxRetries: 0, maxTokens: generation.maxOutputTokens, reasoning: generation.reasoning === "off" ? undefined : generation.reasoning,
     cacheRetention: "none", transport: "sse",

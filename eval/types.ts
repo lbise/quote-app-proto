@@ -87,6 +87,9 @@ export type LiveCall = {
   routedProvider?: string;
   responseId?: string;
   reportedCostUsd?: number;
+  httpStatus?: number;
+  providerErrorCategory?: "unsupported_parameter" | "no_compatible_endpoint" | "invalid_request" | "invalid_prompt" | "context_length_exceeded" | "string_too_long";
+  providerErrorField?: string;
 };
 export type LiveEvidence = {
   sessionId: string;

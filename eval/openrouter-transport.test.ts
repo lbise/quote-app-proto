@@ -189,6 +189,72 @@ it("reports an HTTP provider failure without SDK retries or leaking the provider
   expect(JSON.stringify(evidence())).not.toMatch(/secret/);
 });
 
+it("records a bounded HTTP 400 diagnostic without retaining provider prose or secrets", async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ error: {
+    code: 400, message: "Unsupported parameter: store. private customer description; apiKey=do-not-save",
+    metadata: { raw: "Bearer do-not-save" },
+  } }), { status: 400, headers: { "content-type": "application/json" } }));
+  const { stream, evidence } = createOpenRouterTransport({ model, context, key: "private-key",
+    generation: { reasoning: "off", maxOutputTokens: 128 }, route, fetch });
+  for await (const _event of stream) { /* consume */ }
+  expect(evidence()).toMatchObject({ status: "uncertain", reason: "provider_error", httpStatus: 400,
+    providerErrorCategory: "unsupported_parameter", providerErrorField: "store" });
+  expect(JSON.stringify(evidence())).not.toMatch(/private|customer|do-not-save|Bearer|apiKey/);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("preserves only OpenRouter's documented error type, never raw provider metadata", async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ error: { code: 400,
+    message: "Private Quote text and apiKey=do-not-save", metadata: { error_type: "invalid_request", raw: "secret" },
+  } }), { status: 400, headers: { "content-type": "application/json" } }));
+  const { stream, evidence } = createOpenRouterTransport({ model, context, key: "private-key",
+    generation: { reasoning: "off", maxOutputTokens: 128 }, route, fetch });
+  for await (const _event of stream) { /* consume */ }
+  expect(evidence()).toMatchObject({ status: "uncertain", httpStatus: 400, providerErrorCategory: "invalid_request" });
+  expect(JSON.stringify(evidence())).not.toMatch(/Private|Quote|do-not-save|secret/);
+});
+
+it("does not store unclassified provider messages even when an HTTP status is available", async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ error: { message: "Private customer description, apiKey=do-not-save" } }),
+    { status: 400, headers: { "content-type": "application/json" } }));
+  const { stream, evidence } = createOpenRouterTransport({ model, context, key: "private-key",
+    generation: { reasoning: "off", maxOutputTokens: 128 }, route, fetch });
+  for await (const _event of stream) { /* consume */ }
+  expect(evidence()).toMatchObject({ status: "uncertain", httpStatus: 400 });
+  expect(evidence().providerErrorCategory).toBeUndefined();
+  expect(JSON.stringify(evidence())).not.toMatch(/Private|customer|do-not-save/);
+});
+
+it("caps error inspection without stalling a large provider response", async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ error: { message: "private".repeat(1000) } }),
+    { status: 400, headers: { "content-type": "application/json" } }));
+  const { stream, evidence } = createOpenRouterTransport({ model, context, key: "private-key",
+    generation: { reasoning: "off", maxOutputTokens: 128 }, route, fetch });
+  await Promise.race([
+    (async () => { for await (const _event of stream) { /* consume */ } })(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("error inspection stalled")), 1000)),
+  ]);
+  expect(evidence()).toMatchObject({ status: "uncertain", httpStatus: 400 });
+  expect(JSON.stringify(evidence())).not.toContain("private");
+});
+
+it("records the HTTP status before a slow error body finishes", async () => {
+  const response = new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"error":{"message":"'));
+      setTimeout(() => { controller.enqueue(new TextEncoder().encode('private"}}')); controller.close(); }, 450);
+    },
+  }), { status: 400, headers: { "content-type": "application/json" } });
+  const fetch = vi.fn(async () => response);
+  const { stream, evidence } = createOpenRouterTransport({ model, context, key: "private-key",
+    generation: { reasoning: "off", maxOutputTokens: 128 }, route, fetch });
+  const consume = (async () => { for await (const _event of stream) { /* consume */ } })();
+  await new Promise((resolve) => setTimeout(resolve, 225));
+  expect(evidence().httpStatus).toBe(400);
+  await consume;
+  expect(JSON.stringify(evidence())).not.toContain("private");
+});
+
 it("fails closed before HTTP when routing cannot enforce requested parameters", async () => {
   const fetch = vi.fn();
   expect(() => createOpenRouterTransport({ model, context, key: "test-secret", generation: { reasoning: "off", maxOutputTokens: 128 }, route: {}, fetch })).toThrow("routing");

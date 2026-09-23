@@ -56,6 +56,13 @@ it("keeps automatic success separate from human approval and displays failed ass
   expect(liveHtml).toContain("Provider finish reason: MAX_TOKENS");
   expect(liveHtml).toContain("Call 2");
   expect(liveHtml).toContain("SDK stop reason: not recorded");
+  const rejected: EvaluationRun = { ...live, live: { ...live.live!, calls: [
+    { ...live.live!.calls[1], httpStatus: 400, providerErrorCategory: "unsupported_parameter", providerErrorField: "store" },
+  ] } };
+  const rejectedHtml = renderReport({ scenarios: [scenario], runs: [rejected], runId: rejected.id, reviews: [] });
+  expect(rejectedHtml).toContain("HTTP 400");
+  expect(rejectedHtml).toContain("unsupported_parameter: store");
+  expect(rejectedHtml).not.toContain("do-not-save");
   expect(liveHtml).toContain("Human review: <strong>pending</strong>");
   const review: HumanReview = { format: "quote-evaluation-review/v1", id: "review-1", runId: run.id, scenarioHash: run.scenarioHash, createdAt: run.startedAt, reviewer: "Maintainer", wording: "pass", inventedFacts: "pass", clarification: "pending", notes: "Still checking" };
   expect(renderReport({ scenarios: [scenario], runs: [run], runId: run.id, reviews: [review] })).toContain("Human review: <strong>pending</strong>");

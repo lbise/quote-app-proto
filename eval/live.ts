@@ -270,10 +270,16 @@ export class LiveSession {
       const stream = createAssistantMessageEventStream();
       const signal = AbortSignal.any([this.controller.signal, ...(options?.signal ? [options.signal] : [])]);
       let settled = false;
+      let routerEvidence: (() => OpenRouterEvidence) | undefined;
       const failed = (reason: string) => {
         if (settled) return;
         settled = true;
         call.status = "uncertain";
+        // Preserve an HTTP status even if the session deadline interrupts error-body inspection.
+        const diagnostic = routerEvidence?.();
+        if (diagnostic?.httpStatus) call.httpStatus = diagnostic.httpStatus;
+        if (diagnostic?.providerErrorCategory) call.providerErrorCategory = diagnostic.providerErrorCategory;
+        if (diagnostic?.providerErrorField) call.providerErrorField = diagnostic.providerErrorField;
         this.stop(reason);
         const error: AssistantMessage = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
           content: [], timestamp: Date.now(), stopReason: "error", errorMessage: `Live evaluation stopped: ${this.reason}.`,
@@ -288,7 +294,6 @@ export class LiveSession {
       void (async () => {
         try {
           if (signal.aborted) { aborted(); return; }
-          let routerEvidence: (() => OpenRouterEvidence) | undefined;
           const upstreamOptions = { ...options, signal, maxTokens: this.generation.maxOutputTokens, maxRetries: 0, cacheRetention: "none" as const,
             reasoning: this.generation.reasoning === "off" ? undefined : this.generation.reasoning,
             onPayload: async (payload: unknown, requestModel: typeof model) => {
