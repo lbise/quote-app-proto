@@ -421,15 +421,22 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("keeps review-only servers free of execution routes, controls and script permissions", async () => {
+  it("allows local theme controls on review-only servers without execution routes or connection permissions", async () => {
     const app = await open();
     const server = createReviewServer({ root: app.root, scenarios });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     cleanup.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const page = await originalFetch(`${url}/?launch=1`);
-    expect(page.headers.get("content-security-policy")).not.toContain("script-src");
-    expect(await page.text()).not.toContain('id="launch-form"');
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+    expect(page.headers.get("content-security-policy")).not.toContain("connect-src");
+    const html = await page.text();
+    expect(html).not.toContain('id="launch-form"');
+    expect(html).toContain('src="/report-ui.js"');
+    expect(html).not.toContain('src="/execution.js"');
+    const theme = await originalFetch(`${url}/report-ui.js`);
+    expect(theme.status).toBe(200);
+    expect(theme.headers.get("content-type")).toContain("text/javascript");
     for (const path of ["/sessions", "/sessions/missing/stop"]) {
       expect((await originalFetch(`${url}${path}`, { method: "POST", headers: { origin: url, "content-type": "application/x-www-form-urlencoded" }, body: form() })).status).toBe(404);
     }

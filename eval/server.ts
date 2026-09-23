@@ -214,7 +214,7 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
     response.setHeader("cache-control", "no-store");
     response.setHeader("x-content-type-options", "nosniff");
     response.setHeader("referrer-policy", "same-origin");
-    response.setHeader("content-security-policy", `default-src 'none'; style-src 'self'; ${execution ? "script-src 'self'; connect-src 'self'; " : ""}form-action 'self'; frame-ancestors 'none'; base-uri 'none'`);
+    response.setHeader("content-security-policy", `default-src 'none'; style-src 'self'; script-src 'self'; ${execution ? "connect-src 'self'; " : ""}form-action 'self'; frame-ancestors 'none'; base-uri 'none'`);
     const host = request.headers.host ?? "";
     const address = request.socket.localPort;
     const peer = request.socket.remoteAddress?.replace(/^::ffff:/, "") ?? "";
@@ -228,6 +228,10 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
         response.writeHead(403).end("Same-origin form required."); return;
       }
       const json = (status: number, value: unknown) => { response.writeHead(status, { "content-type": "application/json; charset=utf-8" }).end(JSON.stringify(value, withoutCredentials)); };
+      if (request.method === "GET" && url.pathname === "/report-ui.js") {
+        response.setHeader("content-type", "text/javascript; charset=utf-8");
+        response.end(await readFile(new URL("./report-ui.js", import.meta.url), "utf8")); return;
+      }
       if (execution && request.method === "GET" && url.pathname === "/execution.js") {
         response.setHeader("content-type", "text/javascript; charset=utf-8");
         response.end(await readFile(new URL("./execution-client.js", import.meta.url), "utf8")); return;
@@ -271,7 +275,8 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
       const runId = url.searchParams.get("run") ?? undefined;
       if (runId && !runs.some(run => run.id === runId)) { response.writeHead(404).end("Run not found."); return; }
       response.setHeader("content-type", "text/html; charset=utf-8");
-      const historyView = !runId && (!url.searchParams.has("scenario") || url.searchParams.has("outcome") || url.searchParams.has("mode") || url.searchParams.has("view"));
+      const libraryView = !runId && url.searchParams.get("view") === "library";
+      const historyView = !libraryView && !runId && (!url.searchParams.has("scenario") || url.searchParams.has("outcome") || url.searchParams.has("mode") || url.searchParams.get("view") === "history");
       const reviewsByRun = historyView ? Object.fromEntries(await Promise.all(runs.map(async run => [run.id, await readReviews(root, run.id)] as const))) : undefined;
       const sessions = listEvaluationSessions(root).map(publicSession);
       const reuseId = execution ? url.searchParams.get("reuse") : null;
@@ -285,7 +290,7 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
         routerProblem: modelChoices ? modelChoices.error : "Set OPENROUTER_API_KEY on the evaluator server to browse OpenRouter models. Never enter credentials in the browser." } : {};
       response.end(renderReport({ scenarios, runs, sessions, ...executionInput, dashboardStatus: typeof dashboardStatus === "function" ? await dashboardStatus() : dashboardStatus, runId, scenarioId: url.searchParams.get("scenario") ?? undefined,
         outcome: url.searchParams.get("outcome") ?? undefined, mode: url.searchParams.get("mode") ?? undefined,
-        historyView, reviewsByRun,
+        historyView, libraryView, reviewsByRun,
         reviews: runId ? await readReviews(root, runId) : [] }));
     } catch (error) {
       // Only locally authored validation messages may cross this boundary.

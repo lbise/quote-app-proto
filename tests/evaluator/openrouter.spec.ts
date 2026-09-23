@@ -48,15 +48,16 @@ test.afterAll(async () => {
 
 test("shows unavailable models and verifies reasoning Off before enabling Start", async ({ page }) => {
   await page.goto(`${url}/?launch=1&scenario=contract-fixed-line`);
-  const model = page.getByLabel("Model", { exact: true });
-  await expect(model.locator(`option[value="${unusable}"]`)).toBeDisabled();
+  const model = page.getByRole("combobox", { name: "Model", exact: true });
+  // Playwright's disabled check retargets options inside a label to their enabled select.
+  await expect(model.locator(`option[value="${unusable}"]`)).toHaveJSProperty("disabled", true);
   await expect(model.locator(`option[value="${unusable}"]`)).toContainText(/unavailable.*tools/i);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
   await model.selectOption(id);
   await expect(page.getByRole("status").filter({ hasText: "Off is available" })).toBeVisible();
-  await expect(page.getByLabel("Reasoning", { exact: true }).locator("option")).toHaveText(["Off", "low"]);
-  await expect(page.getByLabel("Reasoning", { exact: true })).toHaveValue("off");
+  await expect(page.getByRole("combobox", { name: "Reasoning", exact: true }).locator("option")).toHaveText(["Off", "low"]);
+  await expect(page.getByRole("combobox", { name: "Reasoning", exact: true })).toHaveValue("off");
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
-  await page.getByLabel("Reasoning", { exact: true }).selectOption("low");
-  await expect(page.getByLabel("Reasoning", { exact: true })).toHaveValue("low");
+  await page.getByRole("combobox", { name: "Reasoning", exact: true }).selectOption("low");
+  await expect(page.getByRole("combobox", { name: "Reasoning", exact: true })).toHaveValue("low");
 });

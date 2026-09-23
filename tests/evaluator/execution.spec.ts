@@ -20,7 +20,7 @@ const originalNow = Date.now;
 test.beforeAll(async () => {
   // Fixed review date and fake credentials. No external request can escape this transport.
   Date.now = () => Date.parse("2026-09-23T09:00:00Z");
-  Object.assign(process.env, { QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "browser-test-key", QUOTE_AI_TIMEOUT_MS: "45000" });
+  Object.assign(process.env, { QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "browser-test-key", OPENROUTER_API_KEY: "", QUOTE_AI_TIMEOUT_MS: "45000" });
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     if (!request.url.startsWith("https://generativelanguage.googleapis.com/")) throw new Error("Unexpected external transport");
@@ -43,7 +43,7 @@ test.afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   globalThis.fetch = originalFetch;
   Date.now = originalNow;
-  for (const key of ["QUOTE_AI_PROVIDER", "QUOTE_AI_MODEL", "GEMINI_API_KEY", "QUOTE_AI_TIMEOUT_MS"]) {
+  for (const key of ["QUOTE_AI_PROVIDER", "QUOTE_AI_MODEL", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "QUOTE_AI_TIMEOUT_MS"]) {
     if (originalEnv[key] === undefined) delete process.env[key]; else process.env[key] = originalEnv[key];
   }
   await rm(root, { recursive: true, force: true });
@@ -51,7 +51,7 @@ test.afterAll(async () => {
 
 test("Start survives navigation and tab closure, rejects competing tabs, stops, and reuses settings only on a new Start", async ({ page, context }) => {
   await page.goto(`${url}/?launch=1&scenario=contract-fixed-line`);
-  await page.getByLabel("Reasoning", { exact: true }).selectOption("high");
+  await page.getByRole("combobox", { name: "Reasoning", exact: true }).selectOption("high");
   await page.getByLabel("Repetitions").fill("2");
   await page.getByText("Advanced settings", { exact: true }).click();
   await page.getByLabel("Output-token limit").fill("1024");
@@ -64,6 +64,7 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
   const sessionUrl = page.url();
   await expect.poll(() => calls).toBe(1);
   await expect(page.getByText("Active scenario: contract-fixed-line · repetition 1")).toBeVisible();
+  await expect(page.locator("#execution-guidance")).toContainText("Execution continues if you leave");
   await page.getByRole("link", { name: "All sessions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Evaluation sessions" })).toBeVisible();
   await page.close();
@@ -81,7 +82,9 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
   await expect(reopened.getByText("1 / 2 Scenario Runs completed")).toBeVisible();
   await reopened.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(reopened.locator("#execution-state")).toHaveText("stopped");
+  await expect(reopened.locator("#execution-guidance")).toHaveText("Execution has ended. Saved results remain available in this session.");
   await expect(reopened.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
+  await reopened.getByText("Stopping and recovery", { exact: true }).click();
   await expect(reopened.getByText(/Cancellation does not guarantee the provider avoids charging/)).toBeVisible();
   await expect(reopened.locator("#progress-work")).toContainText("interrupted");
   await expect(reopened.getByRole("link", { name: "View result" }).first()).toBeVisible();
@@ -90,7 +93,7 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
 
   await reopened.getByRole("link", { name: "Reuse selection and settings" }).click();
   await expect(reopened.getByLabel("Repetitions")).toHaveValue("2");
-  await expect(reopened.getByLabel("Reasoning", { exact: true })).toHaveValue("high");
+  await expect(reopened.getByRole("combobox", { name: "Reasoning", exact: true })).toHaveValue("high");
   await expect(reopened.getByLabel("Output-token limit")).toHaveValue("1024");
   await expect(reopened.locator('input[name="scenario"]:checked')).toHaveCount(1);
   expect(calls).toBe(2);
@@ -101,6 +104,9 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
   expect(reopened.url()).not.toBe(sessionUrl);
   expect(calls).toBe(3);
   await expect(reopened.getByText("1 / 1 Scenario Runs completed")).toBeVisible();
+  await expect(reopened.locator("#execution-guidance")).toContainText("Execution has ended");
+  await reopened.reload();
+  await expect(reopened.locator("#execution-guidance")).toContainText("Execution has ended");
 });
 
 test("reuse preserves a nine-decimal USD limit without scientific notation or provider calls", async ({ page }) => {

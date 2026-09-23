@@ -16,6 +16,30 @@ if (launch) {
   const repetitions = launch.elements.namedItem("repetitions");
   const error = document.querySelector("#launch-error");
   let submitting = false;
+  let activeSuite = "";
+  let customSelection = new Set(choices.filter(choice => choice.checked).map(choice => choice.value));
+  const search = document.querySelector("#scenario-search");
+  const selectVisible = document.querySelector("#select-visible");
+  const clearSelection = document.querySelector("#clear-selection");
+  function filterScenarios() {
+    const query = search.value.trim().toLowerCase();
+    const rows = choices.map(choice => choice.closest(".scenario-choice"));
+    for (const row of rows) row.hidden = !row.dataset.search.includes(query);
+    const visible = rows.filter(row => !row.hidden).length;
+    document.querySelector("#visible-count").textContent = `${visible} of ${rows.length} scenarios`;
+    document.querySelector("#no-scenarios").hidden = visible > 0;
+  }
+  search.addEventListener("input", filterScenarios);
+  selectVisible.addEventListener("click", () => {
+    if (suite.value) return;
+    for (const choice of choices) if (!choice.disabled && !choice.closest(".scenario-choice").hidden) choice.checked = true;
+    selection();
+  });
+  clearSelection.addEventListener("click", () => {
+    if (suite.value) return;
+    for (const choice of choices) choice.checked = false;
+    selection();
+  });
   const provider = launch.elements.namedItem("provider");
   const model = launch.elements.namedItem("model");
   const reasoning = launch.elements.namedItem("reasoning");
@@ -74,7 +98,18 @@ if (launch) {
   model?.addEventListener("change", () => { void checkModel(); });
   void checkModel();
   function selection() {
-    for (const choice of choices) choice.disabled = Boolean(suite.value) || choice.dataset.controlled === "true";
+    if (suite.value !== activeSuite) {
+      if (!activeSuite) customSelection = new Set(choices.filter(choice => choice.checked).map(choice => choice.value));
+      if (!suite.value) for (const choice of choices) choice.checked = customSelection.has(choice.value);
+      activeSuite = suite.value;
+    }
+    for (const choice of choices) {
+      choice.disabled = Boolean(suite.value) || choice.dataset.controlled === "true";
+      if (suite.value) choice.checked = choice.dataset.suite === suite.value;
+      choice.closest(".scenario-choice").dataset.selected = String(choice.checked);
+    }
+    selectVisible.disabled = Boolean(suite.value);
+    clearSelection.disabled = Boolean(suite.value);
     const selected = choices.filter(choice => suite.value ? choice.dataset.suite === suite.value : choice.checked);
     const count = selected.length;
     const repeat = Number(repetitions.value);
@@ -128,14 +163,24 @@ if (progress) {
     document.querySelector("#active-scenario").textContent = active ? `Active scenario: ${active.scenarioId} · repetition ${active.repetition}` : "No active scenario.";
     document.querySelector("#session-usage").textContent = `${state.calls} provider calls · USD ${state.reservedUsd} reserved · Estimated usage cost: USD ${estimatedUsageUsd ?? 0}${estimateComplete ? "" : " (incomplete)"}`;
     document.querySelector("#execution-reason").textContent = state.reason ?? "";
+    document.querySelector("#execution-guidance").textContent = running
+      ? "Execution continues if you leave this page. Reopen this session to see progress."
+      : "Execution has ended. Saved results remain available in this session.";
     button.disabled = !running || stopPending;
     button.textContent = running && stopPending ? "Stopping…" : "Stop";
     const rows = plan.work.map(work => {
       const result = state.work.find(item => item.id === work.id);
       const row = document.createElement("li");
-      row.textContent = `${work.scenarioId} · repetition ${work.repetition} · ${result?.status ?? "missing"}`;
+      const title = document.createElement("span");
+      title.textContent = work.scenarioId;
+      const repetition = document.createElement("small");
+      repetition.textContent = `Repetition ${work.repetition}`;
+      title.append(repetition);
+      const status = document.createElement("span");
+      status.className = "status";
+      status.textContent = result?.status ?? "missing";
+      row.append(title, status);
       if (result?.runId) {
-        row.append(" · ");
         const link = document.createElement("a");
         link.href = `/?run=${encodeURIComponent(result.runId)}`;
         link.textContent = "View result";
