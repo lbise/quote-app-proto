@@ -37,7 +37,7 @@ export function launchForm(input: ExecutionView & { scenarios: Scenario[]; scena
       <details><summary>Advanced settings</summary>${number("maxOutputTokens", "Output-token limit", settings?.maxOutputTokens ?? 4096, 4096)}<p>Combined output and thinking tokens, from 1 to 4096.</p></details>
     </fieldset>
     <fieldset><legend>Session-wide limits</legend><p>All selected scenarios and repetitions share these limits and one deadline. Reservations are retained, not refunded after a call.</p>
-      <div class="review-fields">${number("maxCalls", "Maximum provider calls", prior?.limits?.maxCalls ?? 9, 10000)}${number("maxElapsedMs", "Maximum elapsed time in milliseconds", prior?.limits?.maxElapsedMs ?? 120000, 3600000)}${number("maxSpendUsd", "Maximum spend in USD", prior?.limits?.maxSpendUsd ?? 6, 1000000, "0.000000001")}</div>
+      <div class="review-fields">${number("maxCalls", "Maximum provider calls", prior?.limits?.maxCalls ?? 9, 10000)}${number("maxElapsedMs", "Maximum elapsed time in milliseconds", prior?.limits?.maxElapsedMs ?? 120000, 3600000)}${number("maxSpendUsd", "Maximum spend in USD", (prior?.limits?.maxSpendUsd ?? 6).toFixed(9).replace(/\.?0+$/, ""), 1000000, "0.000000001")}</div>
       <p>USD limits use conservative documented token rates, not a provider invoice guarantee.</p>
     </fieldset>
     <p>Start authorizes sending only the selected adapted scenario inputs to this Google model with the settings and limits above. It does not change scenario review flags or authorize sending original source documents.</p>

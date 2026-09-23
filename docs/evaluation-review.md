@@ -49,3 +49,24 @@ Added directory and ancestor fsync after creating the reservation ledger, so flu
 - Typecheck, production build and independent Decimal expectations passed.
 - Browser check over the private-network URL confirmed the authored-reference notice, version-2 offline expected/actual report and pending human review. No detected WCAG A/AA violations or horizontal overflow at 375px.
 - One new version-2 no-op smoke artifact was intentionally retained locally. It fails reconstruction as expected and is not live-model evidence.
+
+## Browser execution follow-up, 2026-09-23
+
+Baseline: `be942343`. Issue #34 adds browser launch authorization, server-owned execution, progress polling, Stop and settings reuse. The standalone review server still cannot execute evaluations.
+
+### Standards review
+
+No documented-standard violations. The two maintainability findings are resolved with typed active-session conflicts and shared plan construction.
+
+### Spec review
+
+Review found two USD-limit defects. Floating-point multiplication rejected valid amounts such as `4.1`, and settings reuse rendered very small limits in scientific notation that the launch validator rejected. Shared exact decimal-to-nanodollar parsing now validates HTTP, CLI and live limits, and the reuse form renders fixed-point amounts. Regression coverage exercises decimal limits through HTTP and reuses `0.000000001` through the browser without making provider calls.
+
+### Verification
+
+- Typecheck, production build and independent Decimal expectations passed.
+- All 266 Vitest tests passed with separate disposable application-test and evaluation databases. All provider transport was mocked.
+- All four evaluator browser tests passed, covering selection, reasoning, repetitions, concurrent tabs, navigation and reopening, Stop, explicit settings reuse and nine-decimal USD limits.
+- Follow-up standards and spec reviews found no remaining actionable findings.
+- Desktop and 375px browser inspection found no horizontal overflow. The launch page's WCAG A/AA audit found zero violations, with offscreen contrast checks left for manual review. The mechanical style check flagged only existing accent borders.
+- No paid provider calls, original-document transmission or human approval occurred.

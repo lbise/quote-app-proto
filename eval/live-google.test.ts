@@ -117,6 +117,43 @@ it("passes explicit evaluation generation through Agent to the Google request", 
   }
 });
 
+it.each([
+  { maxSpendUsd: 4.1, calls: 1 }, { maxSpendUsd: 8.2, calls: 1 }, { maxSpendUsd: 16.4, calls: 1 },
+  { maxSpendUsd: 1e-9, calls: 0 }, { maxSpendUsd: 1_000_000, calls: 1 },
+  { maxSpendUsd: 0.58466304, calls: 1 }, { maxSpendUsd: 0.584663039, calls: 0 },
+])("enforces the exact decimal cap $maxSpendUsd at the live boundary", async ({ maxSpendUsd, calls }) => {
+  const root = await mkdtemp(join(tmpdir(), "eval-google-decimal-limit-"));
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
+  const network = vi.fn(async () => new Response(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "No change." }] }, finishReason: "STOP" }],
+    usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, totalTokenCount: 150 } })}\n\n`, { headers: { "content-type": "text/event-stream" } }));
+  vi.stubGlobal("fetch", network);
+  let live: ReturnType<typeof createLiveSession> | undefined;
+  try {
+    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
+      maxCalls: 2, maxElapsedMs: 10000, maxSpendUsd, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 4096 } });
+    const { boundary: wrapped } = live.forRun(scenarios[0], boundary);
+    const completion = generateQuoteChange({ quote: emptyQuote("DECIMAL-LIMIT"), messages: [], text: "Do not change the draft.", locale: "en" }, wrapped);
+    if (calls) expect((await completion).quote).toBeNull();
+    else await expect(completion).rejects.toThrow("could not complete this request");
+    expect(live.limits.maxSpendUsd).toBe(maxSpendUsd);
+    expect(live.calls).toHaveLength(calls);
+    expect(network).toHaveBeenCalledTimes(calls);
+    if (!calls) expect(live.stopReason).toBe("spend_limit");
+  } finally {
+    live?.close(); vi.unstubAllGlobals(); clock.mockRestore(); await rm(root, { recursive: true, force: true });
+  }
+});
+
+it.each([0, -1, 1e-10, 1.0000000001, 1_000_000.000000001, NaN, Infinity])("rejects invalid numeric live cap %s without rounding it into an allowance", async maxSpendUsd => {
+  const root = await mkdtemp(join(tmpdir(), "eval-google-invalid-limit-"));
+  try {
+    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    expect(() => createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
+      maxCalls: 1, maxElapsedMs: 1000, maxSpendUsd, artifactRoot: root, generation: { reasoning: "minimal" } })).toThrow("USD must be a positive amount");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("requires an explicit supported Gemini setting and never accepts off", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-google-settings-validation-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));

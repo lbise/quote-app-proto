@@ -7,6 +7,7 @@ import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/provid
 import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
 import { selectEvaluationScenarios, startEvaluation } from "../eval/execution";
 import { createLiveSession } from "../eval/live";
+import { parseSpendUsd } from "../eval/spend";
 import type { Scenario } from "../eval/types";
 
 const help = `Usage: npm run eval:run -- [options]
@@ -61,10 +62,8 @@ function positiveInteger(name: string, value: string): number {
 }
 
 function positiveUsd(value: string): number {
-  if (!/^\d+(?:\.\d{1,9})?$/.test(value) || !Number.isFinite(Number(value)) || Number(value) <= 0 || Number(value) > 1_000_000) {
-    fail("--max-spend-usd must be a positive amount up to 1000000 with at most 9 decimal places.");
-  }
-  return Number(value);
+  try { return parseSpendUsd(value).usd; }
+  catch { fail("--max-spend-usd must be a positive amount up to 1000000 with at most 9 decimal places."); }
 }
 
 function parseArguments(argv: string[]): Arguments {

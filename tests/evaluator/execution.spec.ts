@@ -81,6 +81,7 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
   await expect(reopened.getByText("1 / 2 Scenario Runs completed")).toBeVisible();
   await reopened.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(reopened.locator("#execution-state")).toHaveText("stopped");
+  await expect(reopened.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
   await expect(reopened.getByText(/Cancellation does not guarantee the provider avoids charging/)).toBeVisible();
   await expect(reopened.locator("#progress-work")).toContainText("interrupted");
   await expect(reopened.getByRole("link", { name: "View result" }).first()).toBeVisible();
@@ -100,4 +101,19 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
   expect(reopened.url()).not.toBe(sessionUrl);
   expect(calls).toBe(3);
   await expect(reopened.getByText("1 / 1 Scenario Runs completed")).toBeVisible();
+});
+
+test("reuse preserves a nine-decimal USD limit without scientific notation or provider calls", async ({ page }) => {
+  const before = calls;
+  await page.goto(`${url}/?launch=1&scenario=contract-fixed-line`);
+  await page.getByLabel("Maximum spend in USD").fill("0.000000001");
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.locator("#execution-state")).toHaveText("stopped");
+  const previous = page.url();
+  await page.getByRole("link", { name: "Reuse selection and settings" }).click();
+  await expect(page.getByLabel("Maximum spend in USD")).toHaveValue("0.000000001");
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.locator("#execution-state")).toHaveText("stopped");
+  expect(page.url()).not.toBe(previous);
+  expect(calls).toBe(before);
 });

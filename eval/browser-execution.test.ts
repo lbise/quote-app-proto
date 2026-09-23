@@ -59,6 +59,30 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs();
   });
 
+  it.each([
+    { maxSpendUsd: "4.1", calls: 1 }, { maxSpendUsd: "8.2", calls: 1 }, { maxSpendUsd: "16.4", calls: 1 },
+    { maxSpendUsd: "0.000000001", calls: 0 }, { maxSpendUsd: "1000000", calls: 1 },
+  ])("accepts a decimal USD limit of $maxSpendUsd without binary floating-point rejection", async ({ maxSpendUsd, calls }) => {
+    const network = vi.fn(async () => googleReply()); vi.stubGlobal("fetch", network);
+    const app = await open();
+    const response = await app.post("/sessions", form({ maxSpendUsd }));
+    expect(response.status).toBe(202);
+    const { id } = await response.json() as { id: string };
+    const record = await eventually(() => app.record(id), record => !["starting", "running"].includes(record.state.status));
+    expect(record.plan.limits?.maxSpendUsd).toBe(Number(maxSpendUsd));
+    expect(record.state.status).toBe(calls ? "completed" : "stopped");
+    expect(record.state.calls).toBe(calls);
+    expect(network).toHaveBeenCalledTimes(calls);
+  });
+
+  it.each(["0", "-1", "0.0000000001", "1.0000000001", "1000000.000000001", "NaN", "Infinity", "1e-9"])("rejects invalid decimal USD text %s before provider access", async maxSpendUsd => {
+    const app = await open();
+    const response = await app.post("/sessions", form({ maxSpendUsd }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("maxSpendUsd") });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("launches promptly, persists progress after navigation, and commits a real Quote turn", async () => {
     const network = vi.fn(async () => network.mock.calls.length === 1
       ? googleReply([{ functionCall: { name: "edit_quote_details", args: { fields: { title: "Browser committed title" } } } }]) : googleReply([{ text: "Done." }]));

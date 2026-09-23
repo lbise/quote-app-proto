@@ -72,6 +72,7 @@ if (progress) {
     document.querySelector("#session-usage").textContent = `${state.calls} provider calls · USD ${state.reservedUsd} reserved`;
     document.querySelector("#execution-reason").textContent = state.reason ?? "";
     button.disabled = !running || stopPending;
+    button.textContent = running && stopPending ? "Stopping…" : "Stop";
     const rows = plan.work.map(work => {
       const result = state.work.find(item => item.id === work.id);
       const row = document.createElement("li");

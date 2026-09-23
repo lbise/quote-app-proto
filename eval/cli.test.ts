@@ -87,20 +87,25 @@ it("rejects live bounds that exceed the CLI safety ceiling", async () => {
     .rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("--max-spend-usd") });
 });
 
+it.each(["0", "-1", "0.0000000001", "1.0000000001", "1000000.000000001", "NaN", "Infinity", "1e-9"])("rejects invalid CLI decimal USD text %s before configuration", async maxSpendUsd => {
+  await expect(command("--max-spend-usd", maxSpendUsd)).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("--max-spend-usd must be a positive amount") });
+});
+
 it("rejects an unsupported reasoning claim and output bound before credentials or requests", async () => {
   const flags = ["--live", "--scenario", "joinery-full-reconstruction", "--approve-provider-data-review", "--database-url", "invalid", "--max-calls", "1", "--max-elapsed-ms", "1000", "--max-spend-usd", "1"];
   await expect(command(...flags, "--reasoning", "off")).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("off is unsupported") });
   await expect(command(...flags, "--reasoning", "low", "--max-output-tokens", "4097")).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("--max-output-tokens") });
 });
 
-it("records failed-to-start work from a CLI subprocess and keeps it interrupted only when unfinished", async () => {
+it.each(["1", "4.1", "8.2", "16.4", "0.000000001", "1000000"])("retains decimal USD cap %s and failed-to-start work through CLI exit and reopening", async maxSpendUsd => {
   const directory = await mkdtemp(join(tmpdir(), "eval-cli-session-"));
   try {
     const env = { ...process.env, QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "local-fake-key", QUOTE_AI_TIMEOUT_MS: "1000" };
-    await expect(exec(process.execPath, ["--import", "tsx", "scripts/evaluate.ts", "--live", "--scenario", "joinery-full-reconstruction", "--approve-provider-data-review", "--database-url", "invalid", "--max-calls", "1", "--max-elapsed-ms", "10000", "--max-spend-usd", "1", "--reasoning", "low", "--artifacts", directory], { env, timeout: 10000 }))
+    await expect(exec(process.execPath, ["--import", "tsx", "--import", "data:text/javascript,Date.now=()=>Date.parse('2026-09-22T12:00:00Z')", "scripts/evaluate.ts", "--live", "--scenario", "joinery-full-reconstruction", "--approve-provider-data-review", "--database-url", "invalid", "--max-calls", "1", "--max-elapsed-ms", "10000", "--max-spend-usd", maxSpendUsd, "--reasoning", "low", "--artifacts", directory], { env, timeout: 10000 }))
       .rejects.toMatchObject({ code: 2 });
     const [record] = listEvaluationSessions(directory);
     expect(record.plan.work).toHaveLength(1);
+    expect(record.plan.limits?.maxSpendUsd).toBe(Number(maxSpendUsd));
     expect(record.plan.model.effective).toMatchObject({ reasoning: "low" });
     expect(record.state.status).toBe("failed-to-start");
     expect(record.state.work[0].status).toBe("interrupted");

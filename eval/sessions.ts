@@ -5,6 +5,10 @@ import { join, resolve } from "node:path";
 import type { EvaluationSessionPlan, EvaluationSessionRecord, EvaluationSessionState } from "./types";
 import { withoutCredentials } from "./artifacts";
 
+export class ActiveEvaluationSessionError extends Error {
+  constructor() { super("An evaluation session is already active."); }
+}
+
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const unfinished = new Set<EvaluationSessionState["status"]>(["starting", "running"]);
 function safe(id: string) { if (!idPattern.test(id)) throw new Error("Invalid session identifier."); return id; }
@@ -42,7 +46,7 @@ function acquire(root: string) {
     return () => closeSync(fd);
   } catch (error) {
     closeSync(fd);
-    if ((error as { status?: number }).status === 1) throw new Error("An evaluation session is already active.");
+    if ((error as { status?: number }).status === 1) throw new ActiveEvaluationSessionError();
     throw error;
   }
 }
@@ -96,7 +100,7 @@ export function listEvaluationSessions(root: string): EvaluationSessionRecord[] 
   try { return reconcileEvaluationSessions(root); }
   catch (error) {
     // A running evaluator owns transitions. Its last flushed state is safe to read.
-    if (error instanceof Error && error.message === "An evaluation session is already active.") return storedSessions(root);
+    if (error instanceof ActiveEvaluationSessionError) return storedSessions(root);
     throw error;
   }
 }

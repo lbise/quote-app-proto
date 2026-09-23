@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { resolveQuoteAIGeneration, type QuoteAIGeneration, type QuoteAIGenerationOptions, type QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
 import { scenarioHash } from "./scenario-hash";
+import { parseSpendUsd } from "./spend";
 import type { LiveCall, LiveEvidence, Scenario } from "./types";
 
 // Reviewed primary sources and SDK behavior: docs/research/evaluation-google-budget.md.
@@ -118,6 +119,7 @@ export class LiveSession {
   private readonly _calls: LiveCall[] = [];
   private readonly generation: QuoteAIGeneration;
   private readonly reservation: number;
+  private readonly maxSpendNanoUsd: number;
   private readonly controller = new AbortController();
   private readonly timer: ReturnType<typeof setTimeout>;
   private readonly ledger: string;
@@ -137,10 +139,10 @@ export class LiveSession {
       throw new Error("Live pricing supports only google/gemini-3.5-flash-lite at its registered Developer API endpoint.");
     }
     if (!Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 10_000
-      || !Number.isSafeInteger(maxElapsedMs) || maxElapsedMs < 1 || maxElapsedMs > 3_600_000
-      || !Number.isFinite(maxSpendUsd) || maxSpendUsd <= 0 || maxSpendUsd > 1_000_000 || !Number.isSafeInteger(maxSpendUsd * 1_000_000_000)) {
+      || !Number.isSafeInteger(maxElapsedMs) || maxElapsedMs < 1 || maxElapsedMs > 3_600_000) {
       throw new Error("Live limits require 1–10000 calls, 1–3600000 ms, and positive USD with at most nine decimals, at most 1000000.");
     }
+    this.maxSpendNanoUsd = parseSpendUsd(maxSpendUsd).nanoUsd;
     this.assertPricing();
     this.generation = resolveQuoteAIGeneration(model, options.generation ?? options.modelBoundary.generation, true);
     if (this.generation.maxOutputTokens > pricing.maxOutputTokens) {
@@ -207,7 +209,7 @@ export class LiveSession {
       try { this.assertPricing(); } catch (error) { this.stop("pricing_expired"); throw error; }
       if (performance.now() - this.started >= this._limits.maxElapsedMs) this.stop("elapsed_limit");
       if (this._calls.length >= this._limits.maxCalls) this.stop("call_limit");
-      if (this.reserved + this.reservation > this._limits.maxSpendUsd * 1_000_000_000) this.stop("spend_limit");
+      if (this.reserved + this.reservation > this.maxSpendNanoUsd) this.stop("spend_limit");
       if (this.reason) throw new Error(`Live session stopped: ${this.reason}.`);
       // Reserve and fsync before invoking a transport, including retries of logical Artisan turns.
       const call: LiveCall = { number: this._calls.length + 1, reservedUsd: usd(this.reservation), status: "reserved", estimatedUsd: null };

@@ -38,6 +38,28 @@ export type EvaluationLaunch = {
   onRun?: (id: string, scenario: Scenario, repetition: number, automated: string) => void;
 };
 
+type EvaluationPlanInput = Pick<EvaluationLaunch, "scenarios" | "repetitions" | "mode" | "authorization" | "browserRequest" | "limits" | "pricing"> & {
+  id?: string;
+  model: EvaluationSessionPlan["model"];
+};
+
+/** Successful launches and failed starts retain the same selection and authorization record. */
+export function createEvaluationPlan(options: EvaluationPlanInput): EvaluationSessionPlan {
+  const createdAt = new Date().toISOString();
+  const selected = options.scenarios.map(scenario => ({ scenarioId: scenario.id, scenarioHash: scenarioHash(scenario) }));
+  return {
+    format: "quote-evaluation-session/v1", id: options.id ?? randomUUID(), createdAt, mode: options.mode,
+    ...(options.browserRequest ? { browserRequest: options.browserRequest } : {}),
+    selection: { scenarioIds: selected.map(item => item.scenarioId), repetitions: options.repetitions },
+    model: options.model,
+    launchAuthorization: { method: options.authorization ?? "explicit-cli-launch", at: createdAt, scenarioHashes: selected.map(item => item.scenarioHash) },
+    limits: options.limits ?? null, pricing: options.pricing ?? null,
+    work: Array.from({ length: options.repetitions }, (_, index) => selected.map(item => ({
+      id: randomUUID(), ...item, repetition: index + 1,
+    }))).flat(),
+  };
+}
+
 /** CLI and local server share this supervisor. A start returns immediately; the work outlives its caller. */
 export function startEvaluation(options: EvaluationLaunch) {
   if (!options.scenarios.length || !Number.isSafeInteger(options.repetitions) || options.repetitions < 1 || options.repetitions > 1000) throw new Error("Select scenarios and 1–1000 repetitions.");
@@ -51,22 +73,16 @@ export function startEvaluation(options: EvaluationLaunch) {
     || options.settings.requested.maxOutputTokens !== undefined && options.settings.requested.maxOutputTokens !== options.live.effectiveGeneration.maxOutputTokens)) {
     throw new Error("Requested live generation differs from validated effective settings.");
   }
-  const id = options.live?.id ?? randomUUID();
-  const hashes = options.scenarios.map(scenarioHash);
-  const plan: EvaluationSessionPlan = {
-    format: "quote-evaluation-session/v1", id, createdAt: new Date().toISOString(), mode: options.mode,
-    ...(options.browserRequest ? { browserRequest: options.browserRequest } : {}),
-    selection: { scenarioIds: options.scenarios.map(scenario => scenario.id), repetitions: options.repetitions },
+  const plan = createEvaluationPlan({
+    id: options.live?.id, scenarios: options.scenarios, repetitions: options.repetitions, mode: options.mode,
+    browserRequest: options.browserRequest, authorization: options.authorization,
     model: { provider: options.boundary.model.provider, id: options.boundary.model.id,
       requested: options.settings.requested,
       effective: options.live ? { ...options.live.effectiveGeneration } : options.settings.effective },
-    launchAuthorization: { method: options.authorization ?? "explicit-cli-launch", at: new Date().toISOString(), scenarioHashes: hashes },
-    limits: options.live ? { ...options.live.limits } : options.limits ?? null,
-    pricing: options.live ? { ...options.live.pricing, units: "nanodollars per token", assumptions: "Highest published text rate; full context plus configured output reserved before each request, never refunded." } : options.pricing ?? null,
-    work: Array.from({ length: options.repetitions }, (_, index) => options.scenarios.map(scenario => ({
-      id: randomUUID(), scenarioId: scenario.id, scenarioHash: scenarioHash(scenario), repetition: index + 1,
-    }))).flat(),
-  };
+    limits: options.live ? { ...options.live.limits } : options.limits,
+    pricing: options.live ? { ...options.live.pricing, units: "nanodollars per token", assumptions: "Highest published text rate; full context plus configured output reserved before each request, never refunded." } : options.pricing,
+  });
+  const { id } = plan;
   const state = beginEvaluationSession(options.artifactRoot, plan);
   options.live?.onProgress((calls, reservedUsd) => state.progress(calls, reservedUsd));
   let cancelRequested: "user_stop" | "server_shutdown" | undefined;

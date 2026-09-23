@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, expect, it } from "vitest";
-import { beginEvaluationSession, listEvaluationSessions, reconcileEvaluationSessions } from "./sessions";
+import { ActiveEvaluationSessionError, beginEvaluationSession, listEvaluationSessions, reconcileEvaluationSessions } from "./sessions";
 import type { EvaluationSessionPlan } from "./types";
 
 const roots: string[] = [];
@@ -21,7 +21,7 @@ function plan(): EvaluationSessionPlan {
 it("persists an immutable plan before execution and serializes competing launches", () => {
   const path = root(); const first = beginEvaluationSession(path, plan());
   expect(statSync(join(path, "sessions", "test-session.plan.json")).mode & 0o777).toBe(0o600);
-  expect(() => beginEvaluationSession(path, { ...plan(), id: "second" })).toThrow(/active/i);
+  expect(() => beginEvaluationSession(path, { ...plan(), id: "second" })).toThrow(ActiveEvaluationSessionError);
   expect(() => execFileSync("flock", ["-n", join(path, ".evaluation-active.lock"), "true"])).toThrow();
   first.running("work-1"); first.completed("work-1", "run-1"); first.running("work-2"); first.stop("user_stop");
   expect(listEvaluationSessions(path)[0].state.work).toEqual([

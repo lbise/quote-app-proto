@@ -5,15 +5,15 @@ import { BlockList } from "node:net";
 import { networkInterfaces } from "node:os";
 import { listRuns, readReviews, saveReview, withoutCredentials, type ReviewInput } from "./artifacts";
 import { renderReport } from "./report";
-import { beginEvaluationSession, listEvaluationSessions } from "./sessions";
-import { selectEvaluationScenarios, startEvaluation } from "./execution";
+import { ActiveEvaluationSessionError, beginEvaluationSession, listEvaluationSessions } from "./sessions";
+import { createEvaluationPlan, selectEvaluationScenarios, startEvaluation } from "./execution";
 import { assertLivePricing, createLiveSession } from "./live";
+import { parseSpendUsd } from "./spend";
 import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
-import { scenarioHash } from "./scenario-hash";
 import { assertEvaluationControlUrl } from "./isolation";
 import pg from "pg";
 import type { DashboardStatus } from "./report";
-import type { EvaluationSessionPlan, EvaluationSessionRecord, Scenario } from "./types";
+import type { EvaluationSessionRecord, Scenario } from "./types";
 
 async function formBody(request: IncomingMessage): Promise<URLSearchParams> {
   if (request.headers["content-type"]?.split(";")[0] !== "application/x-www-form-urlencoded") throw new Error("Invalid form.");
@@ -41,7 +41,6 @@ export function privateReviewAddresses(): string[] {
 class FormProblem extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
-const activeMessage = "An evaluation session is already active.";
 function browserSelection(form: URLSearchParams) {
   const allowed = ["requestId", "scenario", "suite", "repetitions", "reasoning", "maxOutputTokens", "maxCalls", "maxElapsedMs", "maxSpendUsd"];
   for (const key of form.keys()) {
@@ -66,9 +65,9 @@ function browserSelection(form: URLSearchParams) {
   const reasoning = form.get("reasoning");
   if (reasoning !== "minimal" && reasoning !== "low" && reasoning !== "medium" && reasoning !== "high") throw new FormProblem("Choose minimal, low, medium or high reasoning. This Google model cannot disable reasoning.");
   const generation = { reasoning, maxOutputTokens: integer("maxOutputTokens", 4096, "4096") };
-  const amount = form.get("maxSpendUsd") ?? "";
-  const maxSpendUsd = Number(amount);
-  if (!/^\d+(?:\.\d{1,9})?$/.test(amount) || maxSpendUsd <= 0 || maxSpendUsd > 1_000_000 || !Number.isSafeInteger(maxSpendUsd * 1e9)) throw new FormProblem("maxSpendUsd must be positive, at most 1000000, with at most nine decimals.");
+  let maxSpendUsd: number;
+  try { maxSpendUsd = parseSpendUsd(form.get("maxSpendUsd") ?? "").usd; }
+  catch { throw new FormProblem("maxSpendUsd must be positive, at most 1000000, with at most nine decimals."); }
   const limits = { maxCalls: integer("maxCalls", 10_000), maxElapsedMs: integer("maxElapsedMs", 3_600_000), maxSpendUsd };
   const fingerprint = createHash("sha256").update(JSON.stringify({ scenarios: selected.map(scenario => scenario.id), repetitions, generation, limits })).digest("hex");
   return { selected, repetitions, generation, limits, browserRequest: { id: requestId.toLowerCase(), fingerprint } };
@@ -123,7 +122,7 @@ export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAcc
       };
       const previous = previousId();
       if (previous) return previous;
-      if (listEvaluationSessions(root).some(record => ["starting", "running"].includes(record.state.status))) throw new FormProblem(activeMessage, 409);
+      if (listEvaluationSessions(root).some(record => ["starting", "running"].includes(record.state.status))) throw new ActiveEvaluationSessionError();
       const problem = providerProblem(environment);
       let live: ReturnType<typeof createLiveSession> | undefined;
       try {
@@ -142,27 +141,21 @@ export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAcc
         // Another process may have claimed this key after our initial read.
         const raced = previousId();
         if (raced) return raced;
-        if (error instanceof Error && error.message === activeMessage) throw new FormProblem(activeMessage, 409);
+        if (error instanceof ActiveEvaluationSessionError) throw error;
         // Configuration failures are attempts too. Preserve their selection and
         // authorization, without claiming unvalidated effective settings.
-        const id = randomUUID();
-        const now = new Date().toISOString();
-        const plan: EvaluationSessionPlan = {
-          format: "quote-evaluation-session/v1", id, createdAt: now, mode: "live", browserRequest: input.browserRequest,
-          selection: { scenarioIds: input.selected.map(item => item.id), repetitions: input.repetitions },
+        const plan = createEvaluationPlan({
+          scenarios: input.selected, repetitions: input.repetitions, mode: "live", browserRequest: input.browserRequest,
           model: { provider: "google", id: "gemini-3.5-flash-lite", requested: input.generation, effective: {} },
-          launchAuthorization: { method: "browser-start", at: now, scenarioHashes: input.selected.map(scenarioHash) },
-          limits: input.limits, pricing: null,
-          work: Array.from({ length: input.repetitions }, (_, index) => input.selected.map(item => ({ id: randomUUID(), scenarioId: item.id, scenarioHash: scenarioHash(item), repetition: index + 1 }))).flat(),
-        };
+          authorization: "browser-start", limits: input.limits,
+        });
         try { beginEvaluationSession(root, plan).fail(problem ?? "execution_failed"); }
         catch (failure) {
           const raced = previousId();
           if (raced) return raced;
-          if (failure instanceof Error && failure.message === activeMessage) throw new FormProblem(activeMessage, 409);
           throw failure;
         }
-        return id;
+        return plan.id;
       }
     },
     stop(id) {
@@ -268,8 +261,8 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
         reviews: runId ? await readReviews(root, runId) : [] }));
     } catch (error) {
       // Only locally authored validation messages may cross this boundary.
-      if (error instanceof FormProblem) {
-        response.writeHead(error.status, { "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ error: error.message })); return;
+      if (error instanceof FormProblem || error instanceof ActiveEvaluationSessionError) {
+        response.writeHead(error instanceof ActiveEvaluationSessionError ? 409 : error.status, { "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ error: error.message })); return;
       }
       response.writeHead(400).end("Unable to read the report or save this request. Check the artifact and scenario version.");
     }
