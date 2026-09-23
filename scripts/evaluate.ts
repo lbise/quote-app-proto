@@ -5,10 +5,8 @@ import { createModels } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 
 import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
-import { saveRun } from "../eval/artifacts";
+import { selectEvaluationScenarios, startEvaluation } from "../eval/execution";
 import { createLiveSession } from "../eval/live";
-import { runScenario } from "../eval/runner";
-import { scenarios } from "../eval/scenarios";
 import type { Scenario } from "../eval/types";
 
 const help = `Usage: npm run eval:run -- [options]
@@ -24,6 +22,8 @@ const help = `Usage: npm run eval:run -- [options]
   --max-calls N                 Required with --live.
   --max-elapsed-ms N            Required with --live.
   --max-spend-usd USD           Required with --live; at most 1000000 with up to 9 decimal places.
+  --reasoning LEVEL             Google: minimal|low|medium|high (Off is unsupported).
+  --max-output-tokens N         Advanced output and reasoning token limit per call (at most 4096).
   --provider-env-file PATH      Read only provider variables from PATH, after live approval.
   --help                        Show this help.
 
@@ -46,6 +46,8 @@ type Arguments = {
   maxElapsedMs?: number;
   maxSpendUsd?: number;
   envFile?: string;
+  reasoning?: string;
+  maxOutputTokens?: number;
   help: boolean;
 };
 
@@ -70,7 +72,7 @@ function parseArguments(argv: string[]): Arguments {
     scenarioIds: [], repetitions: 1, artifactRoot: ".eval-artifacts", offlineSmoke: false,
     live: false, approvedProviderDataReview: false, help: false,
   };
-  const singleValues = new Set(["--suite", "--repetitions", "--artifacts", "--database-url", "--max-calls", "--max-elapsed-ms", "--max-spend-usd", "--provider-env-file"]);
+  const singleValues = new Set(["--suite", "--repetitions", "--artifacts", "--database-url", "--max-calls", "--max-elapsed-ms", "--max-spend-usd", "--provider-env-file", "--reasoning", "--max-output-tokens"]);
   const seen = new Set<string>();
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -99,6 +101,8 @@ function parseArguments(argv: string[]): Arguments {
       if (argument === "--max-elapsed-ms") parsed.maxElapsedMs = positiveInteger(argument, value);
       if (argument === "--max-spend-usd") parsed.maxSpendUsd = positiveUsd(value);
       if (argument === "--provider-env-file") parsed.envFile = value;
+      if (argument === "--reasoning") parsed.reasoning = value;
+      if (argument === "--max-output-tokens") parsed.maxOutputTokens = positiveInteger(argument, value);
       continue;
     }
     fail(`Unknown argument: ${argument}. Use --help for supported options.`);
@@ -109,17 +113,6 @@ function parseArguments(argv: string[]): Arguments {
 
 function scenarioSuite(scenario: Scenario): Suite {
   return scenario.suite === "contract" ? "contract" : "scenario";
-}
-
-function selectedScenarios(ids: string[], suite?: Suite): Scenario[] {
-  for (const id of ids) {
-    const scenario = scenarios.find((candidate) => candidate.id === id);
-    if (!scenario) fail(`Unknown scenario ID: ${id}.`);
-    if (suite && scenarioSuite(scenario) !== suite) fail(`Scenario ID ${id} is not in the ${suite} suite.`);
-  }
-  const selected = scenarios.filter((scenario) => (!suite || scenarioSuite(scenario) === suite) && (!ids.length || ids.includes(scenario.id)));
-  if (!selected.length) fail(`No scenarios are selected${suite ? ` in the ${suite} suite` : ""}.`);
-  return selected;
 }
 
 function runOutcome(run: { automated: string; checks?: unknown }): string {
@@ -146,7 +139,7 @@ function controlledNoopBoundary() {
 
 function assertOfflineSmoke(parsed: Arguments, selected: Scenario[]) {
   if (parsed.live) fail("--offline-smoke and --live cannot be used together.");
-  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.envFile !== undefined) {
+  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.envFile !== undefined || parsed.reasoning !== undefined || parsed.maxOutputTokens !== undefined) {
     fail("Provider approval, live limits, and --provider-env-file cannot be used with --offline-smoke.");
   }
   if (!parsed.databaseUrl) fail("--offline-smoke requires --database-url from npm run eval:db -- up. DATABASE_URL is never used.");
@@ -164,6 +157,8 @@ function assertLive(parsed: Arguments, selected: Scenario[]) {
   }
   if (parsed.maxCalls > 10_000) fail("--max-calls must not exceed 10000.");
   if (parsed.maxElapsedMs > 3_600_000) fail("--max-elapsed-ms must not exceed 3600000.");
+  if (parsed.reasoning !== undefined && !["minimal", "low", "medium", "high"].includes(parsed.reasoning)) fail("--reasoning must be minimal, low, medium or high for this Google model; off is unsupported.");
+  if (parsed.maxOutputTokens !== undefined && parsed.maxOutputTokens > 4096) fail("--max-output-tokens must not exceed 4096 for this price bound.");
   const controlledOnly = selected.filter((scenario) => scenario.execution === "controlled-only");
   if (controlledOnly.length) fail(`--live cannot run controlled-only scenarios: ${controlledOnly.map((scenario) => scenario.id).join(", ")}.`);
 }
@@ -184,16 +179,13 @@ function liveEnvironment(envFile?: string): Record<string, string | undefined> {
 }
 
 async function runOfflineSmoke(parsed: Arguments, scenario: Scenario) {
-  for (let repetition = 1; repetition <= parsed.repetitions; repetition += 1) {
-    const run = await runScenario(scenario, {
-      databaseUrl: parsed.databaseUrl!,
-      modelBoundary: controlledNoopBoundary(),
-      repetition,
-      modelSettings: { transport: "faux-controlled", mode: "offline-smoke", providerCalls: false, intentionallyNoop: true },
-    });
-    await saveRun(parsed.artifactRoot, run);
-    console.info(`${scenario.id} repetition ${repetition}: ${run.automated}. Saved faux-controlled offline smoke evidence. Human review remains ${run.human}.`);
-  }
+  const execution = startEvaluation({ artifactRoot: parsed.artifactRoot, databaseUrl: parsed.databaseUrl!, scenarios: [scenario], repetitions: parsed.repetitions,
+    boundary: controlledNoopBoundary(), mode: "offline-smoke", settings: { requested: { transport: "faux-controlled" }, effective: { providerCalls: false, intentionallyNoop: true } },
+    limits: null, pricing: null,
+    onRun: (id, item, repetition, automated) => console.info(`${item.id} repetition ${repetition}: ${automated}. Saved faux-controlled offline smoke evidence ${id}. Human review remains pending.`),
+  });
+  console.info(`Offline smoke session ${execution.id}.`);
+  await execution.completion;
 }
 
 async function runLive(parsed: Arguments, selected: Scenario[]) {
@@ -207,28 +199,22 @@ async function runLive(parsed: Arguments, selected: Scenario[]) {
     maxElapsedMs: parsed.maxElapsedMs!,
     maxSpendUsd: parsed.maxSpendUsd!,
     artifactRoot: parsed.artifactRoot,
+    generation: { ...(parsed.reasoning ? { reasoning: parsed.reasoning } : {}), ...(parsed.maxOutputTokens ? { maxOutputTokens: parsed.maxOutputTokens } : {}) },
   });
-  console.info(`Live session ${session.id}: ${modelBoundary.model.provider}/${modelBoundary.model.id}. Selected ${selected.map(scenario => `${scenario.id}@v${scenario.version} [${scenarioSuite(scenario)}]`).join(", ")}.`);
+  let execution: ReturnType<typeof startEvaluation>;
+  try { execution = startEvaluation({ artifactRoot: parsed.artifactRoot, databaseUrl: parsed.databaseUrl!, scenarios: selected, repetitions: parsed.repetitions,
+    boundary: modelBoundary, mode: "live", live: session, limits: session.limits,
+    pricing: { ...session.pricing, units: "nanodollars per token", assumptions: "Highest published text rate; full context plus configured output reserved before each request, never refunded." },
+    settings: { requested: { reasoning: parsed.reasoning ?? "unknown", maxOutputTokens: parsed.maxOutputTokens ?? 4096 }, effective: session.effectiveGeneration },
+    onRun: (id, scenario, repetition, automated) => {
+      console.info(`${scenario.id} [${scenarioSuite(scenario)}] repetition ${repetition}: automated ${automated}, human review pending. Saved run ${id}.`);
+      if (automated !== "passed") process.exitCode = 1;
+    },
+  }); } catch (error) { session.close(); throw error; }
+  console.info(`Live session ${execution.id}: ${modelBoundary.model.provider}/${modelBoundary.model.id}. Selected ${selected.map(scenario => `${scenario.id}@v${scenario.version} [${scenarioSuite(scenario)}]`).join(", ")}.`);
   console.info(`Whole-command limits: ${parsed.maxCalls} calls, ${parsed.maxElapsedMs} ms, USD ${parsed.maxSpendUsd}. Conservative reservations are not actual charges.`);
-  try {
-    runs: for (let repetition = 1; repetition <= parsed.repetitions; repetition += 1) {
-      for (const scenario of selected) {
-        const run = await runScenario(scenario, {
-          databaseUrl: parsed.databaseUrl!, modelBoundary, repetition, live: session,
-        });
-        await saveRun(parsed.artifactRoot, run);
-        console.info(`${scenario.id} [${scenarioSuite(scenario)}] repetition ${repetition}: ${runOutcome(run)}, human review ${run.human}. Saved run ${run.id}.`);
-        if (run.automated !== "passed") process.exitCode = 1;
-        if (session.stopped) {
-          console.error(`Live session ${session.id} stopped: ${session.stopped}`);
-          process.exitCode = 1;
-          break runs;
-        }
-      }
-    }
-  } finally {
-    session.close();
-  }
+  await execution.completion;
+  if (session.stopped) { console.error(`Live session ${session.id} stopped: ${session.stopped}`); process.exitCode = 1; }
 }
 
 async function main() {
@@ -238,7 +224,8 @@ async function main() {
     console.info(help);
     return;
   }
-  const selected = selectedScenarios(parsed.scenarioIds, parsed.suite);
+  if (parsed.live && !parsed.scenarioIds.length && !parsed.suite) fail("--live requires at least one explicit --scenario ID or --suite.");
+  const selected = selectEvaluationScenarios(parsed.scenarioIds, parsed.suite);
   if (parsed.offlineSmoke) {
     assertOfflineSmoke(parsed, selected);
     await runOfflineSmoke(parsed, selected[0]);
@@ -248,7 +235,7 @@ async function main() {
     await runLive(parsed, selected);
     return;
   }
-  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.databaseUrl || parsed.envFile !== undefined) {
+  if (parsed.approvedProviderDataReview || parsed.maxCalls !== undefined || parsed.maxElapsedMs !== undefined || parsed.maxSpendUsd !== undefined || parsed.databaseUrl || parsed.envFile !== undefined || parsed.reasoning !== undefined || parsed.maxOutputTokens !== undefined) {
     fail("Provider approval, live limits, --provider-env-file, and --database-url require --live or --offline-smoke.");
   }
   console.info(`Selected ${selected.length} case(s), ${parsed.repetitions} repetition(s): ${selected.map(scenario => `${scenario.id} [${scenarioSuite(scenario)}]`).join(", ")}. No provider call was made. Pass --offline-smoke for retained real-path evidence, or --live only after provider-data approval.`);

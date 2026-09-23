@@ -1,4 +1,4 @@
-import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
+import { Agent, type StreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import { calculateQuote, type QuoteData } from "./quote";
@@ -26,8 +26,55 @@ export type QuoteAIResult = {
   debug?: QuoteAssistantSuccessDebug;
 };
 
+/** Evaluation-only overrides. Production omits this and retains its existing defaults. */
+export type QuoteAIGenerationOptions = {
+  /** Untrusted configuration is validated before it reaches Agent. */
+  reasoning?: string;
+  maxOutputTokens?: number;
+};
+
+export type QuoteAIGeneration = {
+  reasoning: ThinkingLevel;
+  maxOutputTokens: number;
+};
+
+const productGeneration: QuoteAIGeneration = Object.freeze({ reasoning: "off", maxOutputTokens: 4096 });
+const thinkingLevels = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+const geminiFlashLiteReasoning = new Set<ThinkingLevel>(["minimal", "low", "medium", "high"]);
+
+function isGeminiFlashLite(model: Model<Api>) {
+  return model.provider === "google" && model.api === "google-generative-ai" && model.id === "gemini-3.5-flash-lite";
+}
+
+/**
+ * Resolves an explicit evaluation generation request before it reaches Agent.
+ * Gemini 3.5 Flash-Lite cannot disable thinking: sending `off` makes the SDK
+ * substitute MINIMAL, which would misstate the requested configuration.
+ */
+export function resolveQuoteAIGeneration(model: Model<Api>, requested?: QuoteAIGenerationOptions, requireExplicitWhenOffUnsupported = false): QuoteAIGeneration {
+  // Do not change production's established defaults through evaluation-only validation.
+  if (!requested && !requireExplicitWhenOffUnsupported) return { ...productGeneration };
+  if (!requested && requireExplicitWhenOffUnsupported && isGeminiFlashLite(model)) {
+    throw new Error("Gemini 3.5 Flash-Lite requires an explicit supported evaluation reasoning setting; off is not supported.");
+  }
+  const reasoning = requested?.reasoning ?? productGeneration.reasoning;
+  const maxOutputTokens = requested?.maxOutputTokens ?? productGeneration.maxOutputTokens;
+  if (!thinkingLevels.has(reasoning as ThinkingLevel)) throw new Error("Unsupported reasoning setting.");
+  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > model.maxTokens) {
+    throw new Error(`maxOutputTokens must be an integer from 1 through ${model.maxTokens}.`);
+  }
+  const generation: QuoteAIGeneration = { reasoning: reasoning as ThinkingLevel, maxOutputTokens };
+  if (isGeminiFlashLite(model) && !geminiFlashLiteReasoning.has(generation.reasoning)) {
+    throw new Error("Gemini 3.5 Flash-Lite supports evaluation reasoning minimal, low, medium, or high; off is not supported.");
+  }
+  if (generation.reasoning !== "off" && !model.reasoning) {
+    throw new Error(`Reasoning is not supported by ${model.provider}/${model.id}.`);
+  }
+  return generation;
+}
+
 /** Server-only injection at the model transport, never at the tool executor. */
-export type QuoteAIModelBoundary = { model: Model<Api>; streamFn: StreamFn; timeoutMs: number };
+export type QuoteAIModelBoundary = { model: Model<Api>; streamFn: StreamFn; timeoutMs: number; generation?: QuoteAIGenerationOptions };
 
 export class QuoteAIError extends Error {
   constructor(readonly diagnostic: QuoteAssistantDiagnostic, message = "The Quote assistant could not complete this request.") {
@@ -168,6 +215,12 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   } catch {
     throw new QuoteAIError({ phase: "model", code: "provider_configuration_invalid" }, "Quote AI configuration is invalid.");
   }
+  let generation: QuoteAIGeneration;
+  try {
+    generation = resolveQuoteAIGeneration(config.model, config.generation);
+  } catch {
+    throw new QuoteAIError({ phase: "validation", code: "invalid_generation_settings" }, "Quote AI generation settings are invalid.");
+  }
   let failed = false;
   let rounds = 0;
   let toolCalls = 0;
@@ -192,7 +245,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     ...(modelRequests.length ? { llmRequests: [...modelRequests] } : {}),
   });
   const agent = new Agent({
-    initialState: { model: config.model, systemPrompt: systemPrompt(input.locale), tools: staged.tools, thinkingLevel: "off" },
+    initialState: { model: config.model, systemPrompt: systemPrompt(input.locale), tools: staged.tools, thinkingLevel: generation.reasoning },
     toolExecution: "sequential",
     streamFn: (model, context, options) => {
       const contextBytes = Buffer.byteLength(JSON.stringify(context));
@@ -216,7 +269,8 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
           parameters: tool.parameters,
         })),
         options: {
-          maxTokens: 4096,
+          maxTokens: generation.maxOutputTokens,
+          reasoning: generation.reasoning === "off" ? undefined : generation.reasoning,
           maxRetries: 0,
           cacheRetention: "none",
           timeoutMs: config.timeoutMs,
@@ -224,7 +278,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
       };
       modelRequests.push(lastModelRequest);
       return config.streamFn(model, context, {
-        ...options, maxTokens: 4096, maxRetries: 0, cacheRetention: "none", timeoutMs: config.timeoutMs,
+        ...options, maxTokens: generation.maxOutputTokens, reasoning: generation.reasoning === "off" ? undefined : generation.reasoning, maxRetries: 0, cacheRetention: "none", timeoutMs: config.timeoutMs,
         onPayload: (payload) => {
           if (Buffer.byteLength(JSON.stringify(payload)) > 600_000) {
             diagnostic = { phase: "model", code: "provider_payload_limit_exceeded", outcome: "later_budget_exhausted" };

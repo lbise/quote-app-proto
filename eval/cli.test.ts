@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { listEvaluationSessions, reconcileEvaluationSessions } from "./sessions";
+import { listRuns } from "./artifacts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -83,6 +85,43 @@ it("rejects live bounds that exceed the CLI safety ceiling", async () => {
     .rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("--max-elapsed-ms") });
   await expect(command("--live", "--scenario", "joinery-full-reconstruction", "--approve-provider-data-review", "--database-url", "invalid", "--max-calls", "1", "--max-elapsed-ms", "1", "--max-spend-usd", "1000000.000000001"))
     .rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("--max-spend-usd") });
+});
+
+it("rejects an unsupported reasoning claim and output bound before credentials or requests", async () => {
+  const flags = ["--live", "--scenario", "joinery-full-reconstruction", "--approve-provider-data-review", "--database-url", "invalid", "--max-calls", "1", "--max-elapsed-ms", "1000", "--max-spend-usd", "1"];
+  await expect(command(...flags, "--reasoning", "off")).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("off is unsupported") });
+  await expect(command(...flags, "--reasoning", "low", "--max-output-tokens", "4097")).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("--max-output-tokens") });
+});
+
+it("records failed-to-start work from a CLI subprocess and keeps it interrupted only when unfinished", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eval-cli-session-"));
+  try {
+    const env = { ...process.env, QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "local-fake-key", QUOTE_AI_TIMEOUT_MS: "1000" };
+    await expect(exec(process.execPath, ["--import", "tsx", "scripts/evaluate.ts", "--live", "--scenario", "joinery-full-reconstruction", "--approve-provider-data-review", "--database-url", "invalid", "--max-calls", "1", "--max-elapsed-ms", "10000", "--max-spend-usd", "1", "--reasoning", "low", "--artifacts", directory], { env, timeout: 10000 }))
+      .rejects.toMatchObject({ code: 2 });
+    const [record] = listEvaluationSessions(directory);
+    expect(record.plan.work).toHaveLength(1);
+    expect(record.plan.model.effective).toMatchObject({ reasoning: "low" });
+    expect(record.state.status).toBe("failed-to-start");
+    expect(record.state.work[0].status).toBe("interrupted");
+    expect(record.state.calls).toBe(0);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it.skipIf(!process.env.EVAL_DATABASE_URL)("retains each repetition and its run reference through CLI exit and reopening", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eval-cli-smoke-"));
+  try {
+    const result = await command("--offline-smoke", "--scenario", "joinery-full-reconstruction", "--database-url", process.env.EVAL_DATABASE_URL!, "--repetitions", "2", "--artifacts", directory);
+    expect(result.stdout).toContain("Offline smoke session");
+    const [record] = reconcileEvaluationSessions(directory);
+    expect(record.plan.work.map(item => item.repetition)).toEqual([1, 2]);
+    expect(record.state.status).toBe("completed");
+    expect(record.state.work.map(item => item.status)).toEqual(["completed", "completed"]);
+    const runs = await listRuns(directory);
+    expect(runs.map(run => run.sessionId)).toEqual([record.plan.id, record.plan.id]);
+    expect(runs.map(run => run.id).sort()).toEqual(record.state.work.map(item => item.runId).sort());
+    expect(runs.every(run => run.automated === "failed")).toBe(true);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 it("documents suite selection in help", async () => {

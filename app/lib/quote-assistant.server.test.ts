@@ -4,7 +4,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCal
 import proposedTools from "../../docs/assistant-contract/proposed-tools.json";
 import { editQuoteLinesDescription } from "../../docs/assistant-contract/edit-quote-lines";
 import { calculateQuote, emptyQuote } from "./quote";
-import { generateQuoteChange, type QuoteAIModelBoundary } from "./quote-assistant.server";
+import { generateQuoteChange, resolveQuoteAIGeneration, type QuoteAIModelBoundary } from "./quote-assistant.server";
 
 function modelBoundary(responses: ReturnType<typeof fauxAssistantMessage>[]) {
   const fake = fauxProvider();
@@ -25,6 +25,33 @@ function modelBoundary(responses: ReturnType<typeof fauxAssistantMessage>[]) {
 const input = () => ({ quote: emptyQuote("Q-1"), capturedLineIds: [], messages: [], text: "Paint the walls. Measurements and prices are unknown.", locale: "en" as const });
 
 describe("pi Quote assistant model boundary", () => {
+  it("passes explicit evaluation generation into the Agent transport", async () => {
+    const { boundary, fake } = modelBoundary([fauxAssistantMessage([fauxText("No changes needed.")])]);
+    const options: { maxTokens?: number; reasoning?: string }[] = [];
+    const evaluationBoundary: QuoteAIModelBoundary = {
+      ...boundary,
+      model: { ...boundary.model, reasoning: true },
+      generation: { reasoning: "high", maxOutputTokens: 1024 },
+      streamFn: (model, context, streamOptions) => {
+        options.push({ maxTokens: streamOptions?.maxTokens, reasoning: streamOptions?.reasoning });
+        return boundary.streamFn(model, context, streamOptions);
+      },
+    };
+    const result = await generateQuoteChange(input(), evaluationBoundary);
+    expect(result.quote).toBeNull();
+    expect(options).toEqual([{ maxTokens: 1024, reasoning: "high" }]);
+    expect(fake.getPendingResponseCount()).toBe(0);
+  });
+
+  it("rejects off and unsupported output limits for Gemini 3.5 Flash-Lite", () => {
+    const { boundary } = modelBoundary([]);
+    const gemini = { ...boundary.model, provider: "google", api: "google-generative-ai", id: "gemini-3.5-flash-lite", reasoning: true, maxTokens: 65_536 };
+    expect(resolveQuoteAIGeneration(gemini)).toEqual({ reasoning: "off", maxOutputTokens: 4096 }); // Production remains unchanged.
+    expect(() => resolveQuoteAIGeneration(gemini, { reasoning: "off", maxOutputTokens: 1024 })).toThrow("off is not supported");
+    expect(() => resolveQuoteAIGeneration(gemini, { reasoning: "minimal", maxOutputTokens: 65_537 })).toThrow("1 through 65536");
+    expect(resolveQuoteAIGeneration(gemini, { reasoning: "medium", maxOutputTokens: 1024 })).toEqual({ reasoning: "medium", maxOutputTokens: 1024 });
+  });
+
   it("advertises only evidence-free commercial and structural tools", async () => {
     const { boundary, contexts } = modelBoundary([fauxAssistantMessage([fauxText("What room should I paint?")])]);
     await generateQuoteChange(input(), boundary);

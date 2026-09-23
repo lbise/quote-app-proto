@@ -95,9 +95,34 @@ export type LiveEvidence = {
   sessionReservedUsd: number;
   stopReason?: string;
 };
+export type EvaluationSessionPlan = {
+  format: "quote-evaluation-session/v1";
+  id: string;
+  createdAt: string;
+  mode: "live" | "offline-smoke";
+  selection: { scenarioIds: string[]; repetitions: number };
+  model: { provider: string; id: string; requested: Record<string, unknown>; effective: Record<string, unknown> };
+  authorization: { method: "explicit-cli-launch" | "browser-start"; at: string; scenarioHashes: string[] };
+  limits: { maxCalls: number; maxElapsedMs: number; maxSpendUsd: number } | null;
+  pricing: (LiveEvidence["pricing"] & { units: string; assumptions: string }) | null;
+  work: { id: string; scenarioId: string; scenarioHash: string; repetition: number }[];
+};
+export type EvaluationSessionState = {
+  status: "starting" | "running" | "completed" | "failed-to-start" | "stopped" | "interrupted";
+  startedAt: string | null;
+  finishedAt: string | null;
+  reason?: string;
+  activeWorkId?: string;
+  work: { id: string; status: "missing" | "running" | "completed" | "interrupted" | "skipped"; runId?: string }[];
+  calls: number;
+  reservedUsd: number;
+};
+export type EvaluationSessionRecord = { plan: EvaluationSessionPlan; state: EvaluationSessionState };
 export type EvaluationRun = {
   format: "quote-evaluation/v1";
   id: string;
+  /** Older runs predate durable sessions. */
+  sessionId?: string;
   scenario: Scenario;
   scenarioHash: string;
   startedAt: string;

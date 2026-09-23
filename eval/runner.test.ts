@@ -27,7 +27,7 @@ const liveModelId = "gemini-3.5-flash-lite";
 const liveReservationUsd = 0.58466304;
 
 function providerPayload() {
-  return { model: liveModelId, contents: [{ role: "user", parts: [{ text: "controlled input" }] }], config: { maxOutputTokens: 4096 } };
+  return { model: liveModelId, contents: [{ role: "user", parts: [{ text: "controlled input" }] }], config: { maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "MINIMAL", includeThoughts: true } } };
 }
 
 function controlledGoogle(responses: FauxResponseStep[], payload: unknown = providerPayload()) {
@@ -81,7 +81,7 @@ function done(message: AssistantMessage) {
 
 function liveSession(boundary: QuoteAIModelBoundary, examples: Scenario[], limits: Partial<Pick<Parameters<typeof createLiveSession>[0], "maxCalls" | "maxElapsedMs" | "maxSpendUsd">> = {}) {
   return createLiveSession({ modelBoundary: boundary, scenarios: examples, approvedProviderDataReview: true, artifactRoot,
-    maxCalls: 10, maxElapsedMs: 10_000, maxSpendUsd: 2, ...limits });
+    maxCalls: 10, maxElapsedMs: 10_000, maxSpendUsd: 2, generation: { reasoning: "minimal" }, ...limits });
 }
 
 function scenario(step: Scenario["steps"][number], start = emptyQuote("Q-EVAL")): Scenario {

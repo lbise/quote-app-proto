@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import type { QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
+import { resolveQuoteAIGeneration, type QuoteAIGeneration, type QuoteAIGenerationOptions, type QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
 import { scenarioHash } from "./scenario-hash";
 import type { LiveCall, LiveEvidence, Scenario } from "./types";
 
@@ -16,8 +16,13 @@ const pricing: LiveEvidence["pricing"] = Object.freeze({
   source: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite",
   inputNanoUsd: 540, outputNanoUsd: 4500, maxInputTokens: 1_048_576, maxOutputTokens: 4096,
 });
-const reservation = pricing.maxInputTokens * pricing.inputNanoUsd + pricing.maxOutputTokens * pricing.outputNanoUsd;
 const usd = (nano: number) => nano / 1_000_000_000;
+const googleThinkingLevel: Record<Exclude<QuoteAIGeneration["reasoning"], "off" | "xhigh" | "max">, string> = {
+  minimal: "MINIMAL", low: "LOW", medium: "MEDIUM", high: "HIGH",
+};
+function reservationFor(generation: QuoteAIGeneration) {
+  return pricing.maxInputTokens * pricing.inputNanoUsd + generation.maxOutputTokens * pricing.outputNanoUsd;
+}
 
 function syncDirectoryTree(directory: string) {
   // A flushed file alone does not make its newly created directory entry durable.
@@ -29,7 +34,7 @@ function syncDirectoryTree(directory: string) {
   }
 }
 
-type Options = {
+export type CreateLiveSessionOptions = {
   modelBoundary: QuoteAIModelBoundary;
   scenarios: Scenario[];
   approvedProviderDataReview: true;
@@ -37,6 +42,8 @@ type Options = {
   maxElapsedMs: number;
   maxSpendUsd: number;
   artifactRoot: string;
+  /** Required for models that cannot genuinely disable reasoning. */
+  generation?: QuoteAIGenerationOptions;
 };
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Unsupported live provider payload.");
@@ -45,19 +52,21 @@ function record(value: unknown): Record<string, unknown> {
 function keys(value: Record<string, unknown>, allowed: string[]) {
   if (Object.keys(value).some(key => !allowed.includes(key))) throw new Error("Unsupported live provider payload field.");
 }
-function validatePayload(value: unknown, modelId: string) {
+function validatePayload(value: unknown, modelId: string, generation: QuoteAIGeneration) {
   const payload = record(value);
   keys(payload, ["model", "contents", "config"]);
   if (payload.model !== modelId || !Array.isArray(payload.contents)) throw new Error("Unsupported live provider request.");
   const config = record(payload.config);
   keys(config, ["maxOutputTokens", "temperature", "systemInstruction", "tools", "toolConfig", "thinkingConfig", "abortSignal", "candidateCount"]);
-  if (config.maxOutputTokens !== 4096 || config.candidateCount !== undefined && config.candidateCount !== 1
+  if (config.maxOutputTokens !== generation.maxOutputTokens || config.candidateCount !== undefined && config.candidateCount !== 1
     || config.systemInstruction !== undefined && typeof config.systemInstruction !== "string") throw new Error("Unsupported live generation settings.");
   config.candidateCount = 1;
-  if (config.thinkingConfig !== undefined) {
-    const thinking = record(config.thinkingConfig);
-    keys(thinking, ["thinkingLevel", "includeThoughts"]);
-    if (thinking.thinkingLevel !== "MINIMAL") throw new Error("Live evaluation requires minimal Gemini thinking.");
+  const expectedThinkingLevel = googleThinkingLevel[generation.reasoning as keyof typeof googleThinkingLevel];
+  if (!expectedThinkingLevel || config.thinkingConfig === undefined) throw new Error("Live evaluation requires explicit supported Gemini reasoning.");
+  const thinking = record(config.thinkingConfig);
+  keys(thinking, ["thinkingLevel", "includeThoughts"]);
+  if (thinking.thinkingLevel !== expectedThinkingLevel || thinking.includeThoughts !== true) {
+    throw new Error("Live generation reasoning did not reach Google as requested.");
   }
   if (config.tools !== undefined) {
     if (!Array.isArray(config.tools)) throw new Error("Unsupported live tools.");
@@ -85,13 +94,13 @@ function preserveTerminalReason(call: LiveCall, message: AssistantMessage) {
   if (sdkTerminalStopReasons.has(message.stopReason)) call.stopReason = message.stopReason;
   if (typeof message.rawStopReason === "string" && googleFinishReason.test(message.rawStopReason)) call.rawStopReason = message.rawStopReason;
 }
-function finalUsage(message: AssistantMessage): LiveCall["usage"] | undefined {
+function finalUsage(message: AssistantMessage, outputLimit: number): LiveCall["usage"] | undefined {
   const usage = message.usage;
   if (!["stop", "toolUse", "length"].includes(message.stopReason) || !usage) return;
   const counts = [usage.input, usage.output, usage.cacheRead, usage.cacheWrite, usage.totalTokens];
   if (!counts.every(value => Number.isSafeInteger(value) && value >= 0) || usage.cacheWrite !== 0) return;
   const input = usage.input + usage.cacheRead;
-  if (input <= 0 || input > pricing.maxInputTokens || usage.output > pricing.maxOutputTokens
+  if (input <= 0 || input > pricing.maxInputTokens || usage.output > outputLimit
     || usage.totalTokens !== input + usage.output) return;
   return { input, output: usage.output, cacheRead: usage.cacheRead };
 }
@@ -103,16 +112,19 @@ export class LiveSession {
   private readonly approvedAt = new Date().toISOString();
   private readonly approved: Set<string>;
   private readonly modelSignature: string;
-  private readonly calls: LiveCall[] = [];
+  private readonly _calls: LiveCall[] = [];
+  private readonly generation: QuoteAIGeneration;
+  private readonly reservation: number;
   private readonly controller = new AbortController();
   private readonly timer: ReturnType<typeof setTimeout>;
   private readonly ledger: string;
   private reserved = 0;
+  private progressListener?: (calls: number, reservedUsd: number) => void;
   private reason: string | undefined;
   private closed = false;
-  private readonly limits: LiveEvidence["limits"];
+  private readonly _limits: LiveEvidence["limits"];
 
-  constructor(private readonly options: Options) {
+  constructor(private readonly options: CreateLiveSessionOptions) {
     const { modelBoundary: { model }, maxCalls, maxElapsedMs, maxSpendUsd } = options;
     if (options.approvedProviderDataReview !== true || !options.scenarios.length) throw new Error("Explicit provider-data approval for selected scenarios is required.");
     if (options.scenarios.some(scenario => scenario.execution === "controlled-only")) throw new Error("Fault-injection scenarios are controlled-only.");
@@ -127,19 +139,31 @@ export class LiveSession {
       throw new Error("Live limits require 1–10000 calls, 1–3600000 ms, and positive USD with at most nine decimals, at most 1000000.");
     }
     this.assertPricing();
-    this.limits = { maxCalls, maxElapsedMs, maxSpendUsd };
+    this.generation = resolveQuoteAIGeneration(model, options.generation ?? options.modelBoundary.generation, true);
+    if (this.generation.maxOutputTokens > pricing.maxOutputTokens) {
+      throw new Error(`Live pricing supports at most ${pricing.maxOutputTokens} output tokens per Google call.`);
+    }
+    this.reservation = reservationFor(this.generation);
+    this._limits = { maxCalls, maxElapsedMs, maxSpendUsd };
     this.modelSignature = JSON.stringify(model);
     this.approved = new Set(options.scenarios.map(scenarioHash));
     const directory = join(options.artifactRoot, "live-sessions");
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.ledger = join(directory, `${this.id}.jsonl`);
     writeFileSync(this.ledger, JSON.stringify({ sessionId: this.id, approvedAt: this.approvedAt, scenarioHashes: [...this.approved],
-      provider: model.provider, model: model.id, pricing, limits: this.limits, perCallReservationUsd: usd(reservation) }) + "\n", { flag: "wx", mode: 0o600, flush: true });
+      provider: model.provider, model: model.id, generation: this.generation, pricing, limits: this._limits, perCallReservationUsd: usd(this.reservation) }) + "\n", { flag: "wx", mode: 0o600, flush: true });
     syncDirectoryTree(directory);
     this.timer = setTimeout(() => this.stop("elapsed_limit"), maxElapsedMs);
     this.timer.unref();
   }
+  /** Settings that Agent and Google will receive for every evaluation call. */
+  get effectiveGeneration(): Readonly<QuoteAIGeneration> { return { ...this.generation }; }
+  get pricing(): Readonly<LiveEvidence["pricing"]> { return { ...pricing }; }
+  get limits(): Readonly<LiveEvidence["limits"]> { return { ...this._limits }; }
+  get calls(): readonly LiveCall[] { return structuredClone(this._calls); }
+  get stopReason() { return this.reason; }
   get stopped() { return this.reason; }
+  onProgress(listener: (calls: number, reservedUsd: number) => void) { this.progressListener = listener; }
   private assertPricing() {
     if (Date.now() < Date.parse(pricing.checkedAt) || Date.now() >= Date.parse(pricing.expiresAt)) throw new Error("Live pricing review has expired or is not yet valid. Recheck the documented Google rates and bounds.");
   }
@@ -150,37 +174,44 @@ export class LiveSession {
     this.reason ??= reason;
     this.controller.abort(this.reason);
   }
+  cancel(reason = "cancelled") {
+    if (typeof reason !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(reason)) throw new Error("Live cancellation reason must be a bounded lowercase code.");
+    this.stop(reason);
+  }
   close() {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.timer);
     this.controller.abort("session_closed");
-    this.log({ closedAt: new Date().toISOString(), stopReason: this.reason, calls: this.calls.length, reservedUsd: usd(this.reserved) });
+    this.log({ closedAt: new Date().toISOString(), stopReason: this.reason, calls: this._calls.length, reservedUsd: usd(this.reserved) });
   }
   forRun(scenario: Scenario, boundary: QuoteAIModelBoundary) {
     if (this.closed) throw new Error("Live session is closed.");
     const hash = scenarioHash(scenario);
     if (!this.approved.has(hash)) throw new Error("Provider-data approval does not cover this exact scenario version/hash.");
     if (JSON.stringify(boundary.model) !== this.modelSignature) throw new Error("The approved provider/model changed.");
-    const first = this.calls.length;
+    const first = this._calls.length;
     const evidence = (): LiveEvidence => ({ sessionId: this.id, approvedScenarioHashes: [...this.approved],
       approval: { at: this.approvedAt, scenarioHash: hash, provider: boundary.model.provider, model: boundary.model.id, method: "explicit-launch" },
-      limits: { ...this.limits }, pricing: { ...pricing }, calls: structuredClone(this.calls.slice(first)),
-      sessionCalls: this.calls.length, sessionReservedUsd: usd(this.reserved), ...(this.reason ? { stopReason: this.reason } : {}),
+      limits: { ...this._limits }, pricing: { ...pricing }, calls: structuredClone(this._calls.slice(first)),
+      sessionCalls: this._calls.length, sessionReservedUsd: usd(this.reserved), ...(this.reason ? { stopReason: this.reason } : {}),
     });
-    const wrapped: QuoteAIModelBoundary = { ...boundary, streamFn: (model, context, options) => {
+    const wrapped: QuoteAIModelBoundary = { ...boundary, generation: this.generation, streamFn: (model, context, options) => {
       if (this.closed || this.reason) throw new Error("Live session stopped.");
       if (JSON.stringify(model) !== this.modelSignature) { this.stop("model_changed"); throw new Error("The approved provider/model changed."); }
       try { this.assertPricing(); } catch (error) { this.stop("pricing_expired"); throw error; }
-      if (performance.now() - this.started >= this.limits.maxElapsedMs) this.stop("elapsed_limit");
-      if (this.calls.length >= this.limits.maxCalls) this.stop("call_limit");
-      if (this.reserved + reservation > this.limits.maxSpendUsd * 1_000_000_000) this.stop("spend_limit");
+      if (performance.now() - this.started >= this._limits.maxElapsedMs) this.stop("elapsed_limit");
+      if (this._calls.length >= this._limits.maxCalls) this.stop("call_limit");
+      if (this.reserved + this.reservation > this._limits.maxSpendUsd * 1_000_000_000) this.stop("spend_limit");
       if (this.reason) throw new Error(`Live session stopped: ${this.reason}.`);
       // Reserve and fsync before invoking a transport, including retries of logical Artisan turns.
-      const call: LiveCall = { number: this.calls.length + 1, reservedUsd: usd(reservation), status: "reserved", estimatedUsd: null };
-      this.calls.push(call);
-      this.reserved += reservation;
-      try { this.log({ scenarioHash: hash, call }); } catch (error) { this.stop("ledger_write_failed"); throw error; }
+      const call: LiveCall = { number: this._calls.length + 1, reservedUsd: usd(this.reservation), status: "reserved", estimatedUsd: null };
+      this._calls.push(call);
+      this.reserved += this.reservation;
+      try {
+        this.log({ scenarioHash: hash, call });
+        this.progressListener?.(this._calls.length, usd(this.reserved));
+      } catch (error) { this.stop("ledger_write_failed"); throw error; }
       const stream = createAssistantMessageEventStream();
       const signal = AbortSignal.any([this.controller.signal, ...(options?.signal ? [options.signal] : [])]);
       let settled = false;
@@ -202,9 +233,9 @@ export class LiveSession {
       void (async () => {
         try {
           if (signal.aborted) { aborted(); return; }
-          const upstream = await boundary.streamFn(model, context, { ...options, signal, maxTokens: 4096, maxRetries: 0, cacheRetention: "none", reasoning: undefined,
+          const upstream = await boundary.streamFn(model, context, { ...options, signal, maxTokens: this.generation.maxOutputTokens, maxRetries: 0, cacheRetention: "none", reasoning: this.generation.reasoning === "off" ? undefined : this.generation.reasoning,
             onPayload: async (payload, requestModel) => {
-              validatePayload(payload, model.id);
+              validatePayload(payload, model.id, this.generation);
               // Preserve the production size guard, but allow inspection only.
               const before = JSON.stringify(payload);
               const payloadSignal = record(record(payload).config).abortSignal;
@@ -214,7 +245,7 @@ export class LiveSession {
               }
               try { this.assertPricing(); } catch (error) { this.stop("pricing_expired"); throw error; }
               // SDK loading and synchronous ledger writes also consume the deadline.
-              if (performance.now() - this.started >= this.limits.maxElapsedMs) this.stop("elapsed_limit");
+              if (performance.now() - this.started >= this._limits.maxElapsedMs) this.stop("elapsed_limit");
               if (signal.aborted) throw new Error("Live request aborted before submission.");
             },
           });
@@ -227,7 +258,7 @@ export class LiveSession {
             }
             if (event.type === "done") {
               preserveTerminalReason(call, event.message);
-              const usage = finalUsage(event.message);
+              const usage = finalUsage(event.message, this.generation.maxOutputTokens);
               if (!usage) { failed("usage_unavailable"); break; }
               call.usage = usage;
               call.estimatedUsd = usd(usage.input * pricing.inputNanoUsd + usage.output * pricing.outputNanoUsd);
@@ -247,4 +278,4 @@ export class LiveSession {
     return { boundary: wrapped, evidence };
   }
 }
-export function createLiveSession(options: Options): LiveSession { return new LiveSession(options); }
+export function createLiveSession(options: CreateLiveSessionOptions): LiveSession { return new LiveSession(options); }

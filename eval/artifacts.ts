@@ -18,7 +18,7 @@ async function names(path: string): Promise<string[]> {
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
 }
 /** Defense in depth for provider metadata. Commercial text is intentionally retained locally. */
-function withoutCredentials(key: string, value: unknown): unknown {
+export function withoutCredentials(key: string, value: unknown): unknown {
   if (/^(api[-_]?key|authorization|cookie|set-cookie|password|secret|access[-_]?token|refresh[-_]?token|credential[s]?)$/i.test(key)) return "[redacted]";
   if (typeof value !== "string") return value;
   return value

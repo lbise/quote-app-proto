@@ -17,6 +17,8 @@ export type RunScenarioOptions = {
   /** A test-controlled transport. Tools, prompts, HTTP and PostgreSQL stay real. */
   modelBoundary: QuoteAIModelBoundary;
   repetition?: number;
+  sessionId?: string;
+  runId?: string;
   modelSettings?: Record<string, unknown>;
   live?: LiveSession;
 };
@@ -101,11 +103,11 @@ function recordedModelSettings(options: RunScenarioOptions): Record<string, unkn
   return {
     ...(redact(options.modelSettings ?? (options.live ? { transport: "live", providerCalls: true } : { transport: "controlled" })) as Record<string, unknown>),
     generation: {
-      maxTokens: 4096,
+      maxTokens: options.live?.effectiveGeneration.maxOutputTokens ?? options.modelBoundary.generation?.maxOutputTokens ?? 4096,
       maxRetries: 0,
       cacheRetention: "none",
-      thinkingLevel: "off",
-      ...(options.live ? { candidateCount: 1, providerThinking: "MINIMAL; Gemini 3 cannot fully disable thinking. Included in maxTokens." } : {}),
+      thinkingLevel: options.live?.effectiveGeneration.reasoning ?? options.modelBoundary.generation?.reasoning ?? "off",
+      ...(options.live ? { candidateCount: 1, providerThinking: options.live.effectiveGeneration.reasoning.toUpperCase(), effectiveStatus: "validated-request; provider-internal behavior unknown" } : {}),
       timeoutMs: options.modelBoundary.timeoutMs,
     },
   };
@@ -115,7 +117,8 @@ function invalidRun(scenario: Scenario, options: RunScenarioOptions, reason: str
   const startedAt = new Date().toISOString();
   return {
     format: "quote-evaluation/v1",
-    id: randomUUID(),
+    id: options.runId ?? randomUUID(),
+    ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     scenario,
     scenarioHash: scenarioHash(scenario),
     startedAt,
@@ -359,7 +362,8 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
     const liveUsage = liveUsageComplete ? live.calls.reduce((sum, call) => ({ input: sum.input + call.usage!.input, output: sum.output + call.usage!.output }), { input: 0, output: 0 }) : undefined;
     return {
       format: "quote-evaluation/v1",
-      id: randomUUID(),
+      id: options.runId ?? randomUUID(),
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       scenario,
       scenarioHash: scenarioHash(scenario),
       startedAt,
@@ -371,8 +375,8 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
         : usageReports ? { input: usage.input, output: usage.output, total: usage.input + usage.output } : null,
       cost: live ? {
         estimatedUsd: liveUsage ? (liveUsage.input * live.pricing.inputNanoUsd + liveUsage.output * live.pricing.outputNanoUsd) / 1_000_000_000 : null,
-        reservedUsd: live.calls.length * (live.pricing.maxInputTokens * live.pricing.inputNanoUsd + live.pricing.maxOutputTokens * live.pricing.outputNanoUsd) / 1_000_000_000,
-        assumptions: "Each attempted generation reserves the full model input limit plus 4096 output/thinking tokens at the recorded highest published text rates. Reservations are never released, including errors and aborts. Reported usage estimates price cached input as uncached. This bounds this invocation under the recorded rates, not the provider invoice, taxes, account-wide spending or other commands.",
+        reservedUsd: live.calls.reduce((sum, call) => sum + call.reservedUsd, 0),
+        assumptions: `Each attempted generation reserves the full model input limit plus ${options.live?.effectiveGeneration.maxOutputTokens ?? 4096} output/thinking tokens at the recorded highest published text rates. Reservations are never released, including errors and aborts. Reported usage estimates price cached input as uncached. This bounds this invocation under the recorded rates, not the provider invoice, taxes, account-wide spending or other commands.`,
         ceilingEnforceable: true,
       } : { estimatedUsd: null, assumptions: usageReports ? `Usage was reported by ${usageReports} of ${modelCalls} model calls; no provider price schedule is configured.` : "No model call reported token usage or a provider price schedule.", ceilingEnforceable: false },
       modelCalls: live?.calls.length ?? modelCalls,
