@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-23T13:04:50Z",
+  "title": "Design System: Easy Quote evaluation workspace",
+  "extensions": {
+    "colorMeta": {
+      "paper": {"displayName":"Light pane","role":"neutral","tonalRamp":["oklch(15% 0.0000 0.0)","oklch(26% 0.0000 0.0)","oklch(38% 0.0000 0.0)","oklch(49% 0.0000 0.0)","oklch(61% 0.0000 0.0)","oklch(72% 0.0000 0.0)","oklch(84% 0.0000 0.0)","oklch(95% 0.0000 0.0)"]},
+      "canvas": {"displayName":"Light canvas","role":"neutral","tonalRamp":["oklch(15% 0.0045 258.3)","oklch(26% 0.0045 258.3)","oklch(38% 0.0045 258.3)","oklch(49% 0.0045 258.3)","oklch(61% 0.0045 258.3)","oklch(72% 0.0045 258.3)","oklch(84% 0.0045 258.3)","oklch(95% 0.0045 258.3)"]},
+      "hover": {"displayName":"Light hover","role":"neutral","tonalRamp":["oklch(15% 0.0092 258.3)","oklch(26% 0.0092 258.3)","oklch(38% 0.0092 258.3)","oklch(49% 0.0092 258.3)","oklch(61% 0.0092 258.3)","oklch(72% 0.0092 258.3)","oklch(84% 0.0092 258.3)","oklch(95% 0.0092 258.3)"]},
+      "selected": {"displayName":"Light selection","role":"primary","tonalRamp":["oklch(15% 0.0203 264.5)","oklch(26% 0.0203 264.5)","oklch(38% 0.0203 264.5)","oklch(49% 0.0203 264.5)","oklch(61% 0.0203 264.5)","oklch(72% 0.0203 264.5)","oklch(84% 0.0203 264.5)","oklch(95% 0.0203 264.5)"]},
+      "ink": {"displayName":"Light text","role":"neutral","tonalRamp":["oklch(15% 0.0246 261.1)","oklch(26% 0.0246 261.1)","oklch(38% 0.0246 261.1)","oklch(49% 0.0246 261.1)","oklch(61% 0.0246 261.1)","oklch(72% 0.0246 261.1)","oklch(84% 0.0246 261.1)","oklch(95% 0.0246 261.1)"]},
+      "muted": {"displayName":"Light supporting text","role":"neutral","tonalRamp":["oklch(15% 0.0311 257.1)","oklch(26% 0.0311 257.1)","oklch(38% 0.0311 257.1)","oklch(49% 0.0311 257.1)","oklch(61% 0.0311 257.1)","oklch(72% 0.0311 257.1)","oklch(84% 0.0311 257.1)","oklch(95% 0.0311 257.1)"]},
+      "rule": {"displayName":"Light divider","role":"neutral","tonalRamp":["oklch(15% 0.0140 258.3)","oklch(26% 0.0140 258.3)","oklch(38% 0.0140 258.3)","oklch(49% 0.0140 258.3)","oklch(61% 0.0140 258.3)","oklch(72% 0.0140 258.3)","oklch(84% 0.0140 258.3)","oklch(95% 0.0140 258.3)"]},
+      "control": {"displayName":"Light field boundary","role":"neutral","tonalRamp":["oklch(15% 0.0274 255.6)","oklch(26% 0.0274 255.6)","oklch(38% 0.0274 255.6)","oklch(49% 0.0274 255.6)","oklch(61% 0.0274 255.6)","oklch(72% 0.0274 255.6)","oklch(84% 0.0274 255.6)","oklch(95% 0.0274 255.6)"]},
+      "accent": {"displayName":"Light action blue","role":"primary","tonalRamp":["oklch(15% 0.1543 259.9)","oklch(26% 0.1543 259.9)","oklch(38% 0.1543 259.9)","oklch(49% 0.1543 259.9)","oklch(61% 0.1543 259.9)","oklch(72% 0.1543 259.9)","oklch(84% 0.1543 259.9)","oklch(95% 0.1543 259.9)"]},
+      "on-accent": {"displayName":"Light action text","role":"neutral","tonalRamp":["oklch(15% 0.0000 0.0)","oklch(26% 0.0000 0.0)","oklch(38% 0.0000 0.0)","oklch(49% 0.0000 0.0)","oklch(61% 0.0000 0.0)","oklch(72% 0.0000 0.0)","oklch(84% 0.0000 0.0)","oklch(95% 0.0000 0.0)"]},
+      "focus": {"displayName":"Light keyboard focus","role":"primary","tonalRamp":["oklch(15% 0.1543 259.9)","oklch(26% 0.1543 259.9)","oklch(38% 0.1543 259.9)","oklch(49% 0.1543 259.9)","oklch(61% 0.1543 259.9)","oklch(72% 0.1543 259.9)","oklch(84% 0.1543 259.9)","oklch(95% 0.1543 259.9)"]},
+      "error": {"displayName":"Light failure text","tonalRamp":["oklch(15% 0.1648 21.6)","oklch(26% 0.1648 21.6)","oklch(38% 0.1648 21.6)","oklch(49% 0.1648 21.6)","oklch(61% 0.1648 21.6)","oklch(72% 0.1648 21.6)","oklch(84% 0.1648 21.6)","oklch(95% 0.1648 21.6)"]},
+      "error-bg": {"displayName":"Light failure background","tonalRamp":["oklch(15% 0.0152 12.4)","oklch(26% 0.0152 12.4)","oklch(38% 0.0152 12.4)","oklch(49% 0.0152 12.4)","oklch(61% 0.0152 12.4)","oklch(72% 0.0152 12.4)","oklch(84% 0.0152 12.4)","oklch(95% 0.0152 12.4)"]},
+      "success": {"displayName":"Light passed text","tonalRamp":["oklch(15% 0.0935 157.2)","oklch(26% 0.0935 157.2)","oklch(38% 0.0935 157.2)","oklch(49% 0.0935 157.2)","oklch(61% 0.0935 157.2)","oklch(72% 0.0935 157.2)","oklch(84% 0.0935 157.2)","oklch(95% 0.0935 157.2)"]},
+      "success-bg": {"displayName":"Light passed background","tonalRamp":["oklch(15% 0.0157 160.6)","oklch(26% 0.0157 160.6)","oklch(38% 0.0157 160.6)","oklch(49% 0.0157 160.6)","oklch(61% 0.0157 160.6)","oklch(72% 0.0157 160.6)","oklch(84% 0.0157 160.6)","oklch(95% 0.0157 160.6)"]},
+      "dark-paper": {"displayName":"Dark pane","role":"neutral","tonalRamp":["oklch(15% 0.0170 259.8)","oklch(26% 0.0170 259.8)","oklch(38% 0.0170 259.8)","oklch(49% 0.0170 259.8)","oklch(61% 0.0170 259.8)","oklch(72% 0.0170 259.8)","oklch(84% 0.0170 259.8)","oklch(95% 0.0170 259.8)"]},
+      "dark-canvas": {"displayName":"Dark canvas","role":"neutral","tonalRamp":["oklch(15% 0.0153 261.6)","oklch(26% 0.0153 261.6)","oklch(38% 0.0153 261.6)","oklch(49% 0.0153 261.6)","oklch(61% 0.0153 261.6)","oklch(72% 0.0153 261.6)","oklch(84% 0.0153 261.6)","oklch(95% 0.0153 261.6)"]},
+      "dark-hover": {"displayName":"Dark hover","role":"neutral","tonalRamp":["oklch(15% 0.0241 258.4)","oklch(26% 0.0241 258.4)","oklch(38% 0.0241 258.4)","oklch(49% 0.0241 258.4)","oklch(61% 0.0241 258.4)","oklch(72% 0.0241 258.4)","oklch(84% 0.0241 258.4)","oklch(95% 0.0241 258.4)"]},
+      "dark-selected": {"displayName":"Dark selection","role":"primary","tonalRamp":["oklch(15% 0.0515 258.7)","oklch(26% 0.0515 258.7)","oklch(38% 0.0515 258.7)","oklch(49% 0.0515 258.7)","oklch(61% 0.0515 258.7)","oklch(72% 0.0515 258.7)","oklch(84% 0.0515 258.7)","oklch(95% 0.0515 258.7)"]},
+      "dark-ink": {"displayName":"Dark text","role":"neutral","tonalRamp":["oklch(15% 0.0109 256.7)","oklch(26% 0.0109 256.7)","oklch(38% 0.0109 256.7)","oklch(49% 0.0109 256.7)","oklch(61% 0.0109 256.7)","oklch(72% 0.0109 256.7)","oklch(84% 0.0109 256.7)","oklch(95% 0.0109 256.7)"]},
+      "dark-muted": {"displayName":"Dark supporting text","role":"neutral","tonalRamp":["oklch(15% 0.0260 257.7)","oklch(26% 0.0260 257.7)","oklch(38% 0.0260 257.7)","oklch(49% 0.0260 257.7)","oklch(61% 0.0260 257.7)","oklch(72% 0.0260 257.7)","oklch(84% 0.0260 257.7)","oklch(95% 0.0260 257.7)"]},
+      "dark-rule": {"displayName":"Dark divider","role":"neutral","tonalRamp":["oklch(15% 0.0290 258.4)","oklch(26% 0.0290 258.4)","oklch(38% 0.0290 258.4)","oklch(49% 0.0290 258.4)","oklch(61% 0.0290 258.4)","oklch(72% 0.0290 258.4)","oklch(84% 0.0290 258.4)","oklch(95% 0.0290 258.4)"]},
+      "dark-control": {"displayName":"Dark field boundary","role":"neutral","tonalRamp":["oklch(15% 0.0387 257.9)","oklch(26% 0.0387 257.9)","oklch(38% 0.0387 257.9)","oklch(49% 0.0387 257.9)","oklch(61% 0.0387 257.9)","oklch(72% 0.0387 257.9)","oklch(84% 0.0387 257.9)","oklch(95% 0.0387 257.9)"]},
+      "dark-accent": {"displayName":"Dark action blue","role":"primary","tonalRamp":["oklch(15% 0.0998 261.1)","oklch(26% 0.0998 261.1)","oklch(38% 0.0998 261.1)","oklch(49% 0.0998 261.1)","oklch(61% 0.0998 261.1)","oklch(72% 0.0998 261.1)","oklch(84% 0.0998 261.1)","oklch(95% 0.0998 261.1)"]},
+      "dark-on-accent": {"displayName":"Dark action text","role":"neutral","tonalRamp":["oklch(15% 0.0478 259.9)","oklch(26% 0.0478 259.9)","oklch(38% 0.0478 259.9)","oklch(49% 0.0478 259.9)","oklch(61% 0.0478 259.9)","oklch(72% 0.0478 259.9)","oklch(84% 0.0478 259.9)","oklch(95% 0.0478 259.9)"]},
+      "dark-focus": {"displayName":"Dark keyboard focus","role":"primary","tonalRamp":["oklch(15% 0.0998 261.1)","oklch(26% 0.0998 261.1)","oklch(38% 0.0998 261.1)","oklch(49% 0.0998 261.1)","oklch(61% 0.0998 261.1)","oklch(72% 0.0998 261.1)","oklch(84% 0.0998 261.1)","oklch(95% 0.0998 261.1)"]},
+      "dark-error": {"displayName":"Dark failure text","tonalRamp":["oklch(15% 0.1173 14.1)","oklch(26% 0.1173 14.1)","oklch(38% 0.1173 14.1)","oklch(49% 0.1173 14.1)","oklch(61% 0.1173 14.1)","oklch(72% 0.1173 14.1)","oklch(84% 0.1173 14.1)","oklch(95% 0.1173 14.1)"]},
+      "dark-error-bg": {"displayName":"Dark failure background","tonalRamp":["oklch(15% 0.0295 354.0)","oklch(26% 0.0295 354.0)","oklch(38% 0.0295 354.0)","oklch(49% 0.0295 354.0)","oklch(61% 0.0295 354.0)","oklch(72% 0.0295 354.0)","oklch(84% 0.0295 354.0)","oklch(95% 0.0295 354.0)"]},
+      "dark-success": {"displayName":"Dark passed text","tonalRamp":["oklch(15% 0.0973 159.4)","oklch(26% 0.0973 159.4)","oklch(38% 0.0973 159.4)","oklch(49% 0.0973 159.4)","oklch(61% 0.0973 159.4)","oklch(72% 0.0973 159.4)","oklch(84% 0.0973 159.4)","oklch(95% 0.0973 159.4)"]},
+      "dark-success-bg": {"displayName":"Dark passed background","tonalRamp":["oklch(15% 0.0362 163.7)","oklch(26% 0.0362 163.7)","oklch(38% 0.0362 163.7)","oklch(49% 0.0362 163.7)","oklch(61% 0.0362 163.7)","oklch(72% 0.0362 163.7)","oklch(84% 0.0362 163.7)","oklch(95% 0.0362 163.7)"]}
+    },
+    "typographyMeta": {
+      "title": {"displayName":"Page title","purpose":"Compact evaluator h1, not a display face."},
+      "headline": {"displayName":"Section heading","purpose":"Evaluator h2 and Quote titles."},
+      "section": {"displayName":"Subsection heading","purpose":"Execution steps and nested report sections."},
+      "body": {"displayName":"Report body","purpose":"System UI text throughout the evaluator."},
+      "label": {"displayName":"Field label","purpose":"Persistent control labels."},
+      "hint": {"displayName":"Supporting text","purpose":"Field hints, session metadata and explanatory copy."},
+      "status": {"displayName":"Status label","purpose":"Compact text-labelled execution and automated states."},
+      "code": {"displayName":"Diagnostic block","purpose":"Wrapped JSON and execution diagnostics."}
+    },
+    "shadows": [],
+    "motion": [
+      {"name":"button-press","value":"translateY(1px)","purpose":"Immediate active-button feedback; disabled buttons and prefers-reduced-motion suppress it. No timed transition."}
+    ],
+    "breakpoints": [
+      {"name":"compact-workspace","value":"1100px"},
+      {"name":"single-column","value":"760px"}
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Filled Start or Save action; this preview has no execution handler.",
+      "html": "<button class=\"ds-primary\" type=\"button\">Start</button>",
+      "css": ".ds-primary { display:inline-flex; align-items:center; justify-content:center; min-height:2.25rem; min-width:0; max-width:100%; padding:.5rem 1rem; border:1px solid var(--color-accent,#245bb5); border-radius:.25rem; background:var(--color-accent,#245bb5); color:var(--color-on-accent,#ffffff); font:600 14px/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); cursor:pointer; white-space:nowrap; } .ds-primary:hover { filter:brightness(.93); } .ds-primary:active { transform:translateY(1px); } .ds-primary:focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } .ds-primary:disabled { color:var(--color-muted,#566273); background:var(--color-hover,#e9edf3); border-color:var(--color-rule,#d4dae3); cursor:not-allowed; filter:none; transform:none; } @media (prefers-reduced-motion:reduce) { .ds-primary:active { transform:none; } }"
+    },
+    {
+      "name": "Secondary action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Neutral Stop action; this preview has no execution handler.",
+      "html": "<button class=\"ds-secondary\" type=\"button\">Stop</button>",
+      "css": ".ds-secondary { display:inline-flex; align-items:center; justify-content:center; min-height:2.25rem; min-width:0; max-width:100%; padding:.5rem 1rem; border:1px solid var(--color-rule,#d4dae3); border-radius:.25rem; background:var(--color-paper,#ffffff); color:var(--color-ink,#202733); font:600 14px/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); cursor:pointer; white-space:nowrap; } .ds-secondary:hover { background:var(--color-hover,#e9edf3); } .ds-secondary:active { transform:translateY(1px); } .ds-secondary:focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } .ds-secondary:disabled { color:var(--color-muted,#566273); background:var(--color-hover,#e9edf3); border-color:var(--color-rule,#d4dae3); cursor:not-allowed; transform:none; } @media (prefers-reduced-motion:reduce) { .ds-secondary:active { transform:none; } }"
+    },
+    {
+      "name": "Compact selection action",
+      "kind": "button",
+      "refersTo": "button-compact",
+      "description": "Small secondary button used for Select visible and Clear.",
+      "html": "<button class=\"ds-compact\" type=\"button\">Select visible</button>",
+      "css": ".ds-compact { display:inline-flex; align-items:center; justify-content:center; min-height:1.875rem; min-width:0; max-width:100%; padding:.25rem .625rem; border:1px solid var(--color-rule,#d4dae3); border-radius:.25rem; background:var(--color-paper,#ffffff); color:var(--color-ink,#202733); font:600 .75rem/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); cursor:pointer; white-space:nowrap; } .ds-compact:hover { background:var(--color-hover,#e9edf3); } .ds-compact:active { transform:translateY(1px); } .ds-compact:focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } .ds-compact:disabled { color:var(--color-muted,#566273); background:var(--color-hover,#e9edf3); cursor:not-allowed; transform:none; } @media (prefers-reduced-motion:reduce) { .ds-compact:active { transform:none; } }"
+    },
+    {
+      "name": "Theme control",
+      "kind": "button",
+      "refersTo": "button-theme",
+      "description": "Transparent masthead control names the destination theme; preview shows styling only.",
+      "html": "<button class=\"ds-theme\" type=\"button\" aria-label=\"Switch to dark theme\">Dark mode</button>",
+      "css": ".ds-theme { display:inline-flex; align-items:center; justify-content:center; min-height:2.25rem; min-width:0; max-width:100%; padding:.5rem 1rem; border:1px solid var(--color-rule,#d4dae3); border-radius:.25rem; background:transparent; color:var(--color-muted,#566273); font:600 .8125rem/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); cursor:pointer; white-space:nowrap; } .ds-theme:hover { background:transparent; filter:none; } .ds-theme:active { transform:translateY(1px); } .ds-theme:focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } @media (prefers-reduced-motion:reduce) { .ds-theme:active { transform:none; } }"
+    },
+    {
+      "name": "Labelled search field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Persistent label and muted placeholder for scenario search.",
+      "html": "<label class=\"ds-field\">Search scenarios<input class=\"ds-search\" type=\"search\" placeholder=\"Title, trade or scenario ID\" autocomplete=\"off\"></label>",
+      "css": ".ds-field { display:flex; flex-direction:column; gap:.375rem; color:var(--color-ink,#202733); font:550 .8125rem/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); } .ds-search { min-width:0; max-width:100%; padding:.5rem .625rem; border:1px solid var(--color-control,#8c98a8); border-radius:.25rem; background:var(--color-paper,#ffffff); color:var(--color-ink,#202733); caret-color:var(--color-accent,#245bb5); font:400 .8125rem/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); } .ds-search::placeholder { color:var(--color-muted,#566273); opacity:1; font-weight:400; } .ds-search:focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } .ds-search:disabled { cursor:not-allowed; }"
+    },
+    {
+      "name": "Workspace navigation",
+      "kind": "nav",
+      "refersTo": "nav-current",
+      "description": "Text navigation with an explicit current-page state and mobile spacing.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a href=\"/?launch=1\" aria-current=\"page\">New evaluation</a><a href=\"/\">Sessions</a><a href=\"/?view=library\">Scenario library</a></nav>",
+      "css": ".ds-nav { display:flex; align-items:center; gap:.375rem; flex-wrap:wrap; background:var(--color-paper,#ffffff); font:14px/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); } .ds-nav a { color:var(--color-muted,#566273); text-decoration:none; padding:.5rem .75rem; border-radius:.25rem; font-weight:550; overflow-wrap:anywhere; } .ds-nav a:hover { background:var(--color-hover,#e9edf3); color:var(--color-ink,#202733); } .ds-nav a[aria-current=page] { background:var(--color-selected,#eaf1ff); color:var(--color-accent,#245bb5); } .ds-nav a:focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } @media (max-width:760px) { .ds-nav { flex-basis:100%; } .ds-nav a { padding:.5rem .625rem; } }"
+    },
+    {
+      "name": "Text-labelled statuses",
+      "kind": "chip",
+      "refersTo": "status-neutral",
+      "description": "Neutral execution status and separate failed or passed automated outcomes.",
+      "html": "<div class=\"ds-statuses\"><span class=\"ds-status\">Execution: completed</span> <span class=\"ds-status ds-failed\">Automated: failed</span> <span class=\"ds-status ds-passed\">Automated: passed</span></div>",
+      "css": ".ds-statuses { color:var(--color-ink,#202733); font:14px/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); } .ds-status { display:inline-block; border-radius:.25rem; background:var(--color-hover,#e9edf3); padding:.125rem .5rem; font-size:.75rem; font-weight:600; white-space:nowrap; } .ds-status.ds-failed { color:var(--color-error,#ad2c36); background:var(--color-error-bg,#fff1f2); } .ds-status.ds-passed { color:var(--color-success,#236b46); background:var(--color-success-bg,#eaf6ef); }"
+    },
+    {
+      "name": "Session card",
+      "kind": "card",
+      "refersTo": "session-card",
+      "description": "Bordered saved-session summary with model, separate outcomes and reusable settings.",
+      "html": "<article class=\"ds-session\"><div class=\"ds-session-summary\"><h2>gemini-3.5-flash-lite</h2><p>23 Sept 2026, 13:00 UTC · google · Live model</p><p>Execution: <strong>completed</strong> · Automated: 1 failed</p></div><p class=\"ds-session-meta\">1 selected scenario · 1 Scenario Run</p><p class=\"ds-session-meta\">Duration: 2400 ms · Estimated usage cost: unavailable</p><p class=\"ds-session-toolbar\"><a href=\"/?session=example\">Open progress and results</a><a href=\"/?reuse=example\">Reuse selection and settings</a></p><details><summary>Scenario Runs and session details</summary><p>Automated checks and human review belong to each Scenario Run. A completed session does not mean either passed.</p></details></article>",
+      "css": ".ds-session { border:1px solid var(--color-rule,#d4dae3); border-radius:.375rem; padding:.875rem 1.25rem; background:var(--color-paper,#ffffff); color:var(--color-ink,#202733); margin:.75rem 0; font:14px/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); } .ds-session-summary { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr); align-items:baseline; gap:1rem; } .ds-session-summary h2 { margin:0; font-size:1rem; line-height:1.25; overflow-wrap:anywhere; } .ds-session p { overflow-wrap:anywhere; } .ds-session-summary p { margin:0; font-size:.8125rem; } .ds-session-summary > p:last-child { text-align:right; } .ds-session-meta { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.25rem; margin:.375rem 0; color:var(--color-muted,#566273); font-size:.8125rem; } .ds-session-toolbar { display:flex; align-items:center; gap:.625rem; flex-wrap:wrap; margin:.5rem 0; font-size:.8125rem; } .ds-session a { color:var(--color-accent,#245bb5); text-underline-offset:.2em; overflow-wrap:anywhere; } .ds-session a:hover { text-decoration-thickness:2px; } .ds-session details { margin:0; } .ds-session summary { padding:.375rem 0; font-size:.8125rem; font-weight:600; cursor:pointer; } .ds-session summary:hover { color:var(--color-accent,#245bb5); } .ds-session :focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } @media (max-width:1100px) { .ds-session-summary { grid-template-columns:minmax(0,1fr) auto; } .ds-session-summary > :nth-child(2) { grid-column:1; } .ds-session-summary > :last-child { grid-column:2; grid-row:1 / 3; max-width:20rem; } } @media (max-width:760px) { .ds-session { padding-inline:1rem; } .ds-session-summary { display:flex; flex-direction:column; align-items:start; gap:.25rem; } .ds-session-summary > :last-child { text-align:left; max-width:none; } }"
+    },
+    {
+      "name": "Evidence disclosure",
+      "kind": "custom",
+      "refersTo": "evidence-panel",
+      "description": "Native expandable evidence pane with wrapped, scrollable diagnostic text.",
+      "html": "<details class=\"ds-evidence\"><summary>Conversation and execution</summary><p>No conversation steps were recorded.</p><pre tabindex=\"0\">{\n  \"note\": \"No model trace for this step.\"\n}</pre></details>",
+      "css": ".ds-evidence { background:var(--color-paper,#ffffff); color:var(--color-ink,#202733); border:1px solid var(--color-rule,#d4dae3); border-radius:.375rem; padding:0 1.25rem; margin:1rem 0; font:14px/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); } .ds-evidence > summary { padding:1rem 0; font-weight:600; cursor:pointer; } .ds-evidence > summary:hover { color:var(--color-accent,#245bb5); } .ds-evidence[open] { padding-bottom:1rem; } .ds-evidence p { margin:.65rem 0; overflow-wrap:anywhere; } .ds-evidence > summary + * { margin-top:.25rem; } .ds-evidence pre { padding:.875rem; background:var(--color-canvas,#f3f5f8); white-space:pre-wrap; overflow-wrap:anywhere; font:.8125rem/1.6 var(--font-code,ui-monospace,SFMono-Regular,Consolas,monospace); max-height:32rem; overflow-y:auto; scrollbar-color:var(--color-control,#8c98a8) var(--color-canvas,#f3f5f8); } .ds-evidence :focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } @media (max-width:760px) { .ds-evidence { padding-inline:1rem; } }"
+    },
+    {
+      "name": "Failed-check comparison",
+      "kind": "custom",
+      "refersTo": "failure-table",
+      "description": "Expected/actual evidence table; mobile stacks cells while preserving caption and header associations.",
+      "html": "<table class=\"ds-failure-table\"><caption>1 failed check</caption><thead><tr><th scope=\"col\">Check</th><th scope=\"col\" id=\"ds-failure-expected\">Expected</th><th scope=\"col\" id=\"ds-failure-actual\">Actual</th><th scope=\"col\" id=\"ds-failure-evidence\">Evidence</th></tr></thead><tbody><tr><th scope=\"row\" id=\"ds-failed-check\"><strong>Quote title</strong><code>title</code></th><td headers=\"ds-failed-check ds-failure-expected\"><span class=\"ds-cell-label\" aria-hidden=\"true\">Expected</span><pre>\"Peinture\"</pre></td><td headers=\"ds-failed-check ds-failure-actual\"><span class=\"ds-cell-label\" aria-hidden=\"true\">Actual</span><pre>\"\"</pre></td><td headers=\"ds-failed-check ds-failure-evidence\"><a href=\"#turn-0\">Inspect step 1</a></td></tr></tbody></table>",
+      "css": ".ds-failure-table { width:100%; table-layout:fixed; border-collapse:collapse; background:var(--color-paper,#ffffff); color:var(--color-ink,#202733); border:1px solid var(--color-rule,#d4dae3); text-align:left; font:14px/1.5 var(--font-body,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif); font-variant-numeric:tabular-nums; } .ds-failure-table caption { text-align:left; padding:.75rem 0; color:var(--color-muted,#566273); font-size:.8125rem; } .ds-failure-table th,.ds-failure-table td { padding:.625rem .875rem; border-bottom:1px solid var(--color-rule,#d4dae3); vertical-align:top; } .ds-failure-table thead { color:var(--color-muted,#566273); background:var(--color-canvas,#f3f5f8); font-size:.75rem; } .ds-failure-table th:first-child { width:34%; } .ds-failure-table th:last-child { width:15%; } .ds-failure-table tbody th { font-weight:400; } .ds-failure-table code { display:block; color:var(--color-muted,#566273); margin-top:.125rem; font-family:var(--font-code,ui-monospace,SFMono-Regular,Consolas,monospace); font-size:.75rem; overflow-wrap:anywhere; } .ds-failure-table pre { margin:0; padding:0; background:transparent; white-space:pre-wrap; overflow-wrap:anywhere; font:.8125rem/1.6 var(--font-code,ui-monospace,SFMono-Regular,Consolas,monospace); max-height:8rem; overflow-y:auto; scrollbar-color:var(--color-control,#8c98a8) var(--color-canvas,#f3f5f8); } .ds-failure-table a { color:var(--color-accent,#245bb5); text-underline-offset:.2em; font-size:.8125rem; overflow-wrap:anywhere; } .ds-failure-table a:hover { text-decoration-thickness:2px; } .ds-failure-table a:focus-visible { outline:2px solid var(--color-focus,#245bb5); outline-offset:3px; } .ds-cell-label { display:none; } @media (max-width:760px) { .ds-failure-table,.ds-failure-table tbody,.ds-failure-table tr,.ds-failure-table td,.ds-failure-table th { display:block; width:100% !important; } .ds-failure-table thead { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; } .ds-failure-table caption { display:block; width:100%; padding-inline:.875rem; } .ds-failure-table tr { border-bottom:1px solid var(--color-rule,#d4dae3); padding:.5rem 0; } .ds-failure-table th,.ds-failure-table td { border:0; padding:.375rem .875rem; } .ds-cell-label { display:block; font-size:.75rem; color:var(--color-muted,#566273); margin-bottom:.125rem; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Debugger workspace",
+    "overview": "This system applies only to the standalone local evaluator under `eval/`, launched with `npm run eval:start`. It does not define or replace the customer-facing Easy Quote application's design. Preserve the product app outside `eval/`.\n\nNeutral divided panes, compact labelled controls and a blue action accent support scenario selection and failure inspection. Light and dark themes retain the same hierarchy. Evidence stays available through disclosures and links rather than a permanent reference sidebar.",
+    "keyCharacteristics": [
+      "Compact system typography and bordered work panes.",
+      "Semantic outcomes with explicit text labels.",
+      "Light and dark themes with matching structure."
+    ],
+    "rules": [],
+    "dos": [
+      "Do apply these tokens only to the standalone evaluator under `eval/`.",
+      "Do keep execution status, automated outcomes and human review separately labelled.",
+      "Do preserve mobile table captions, accessible headers and visible Expected/Actual labels.",
+      "Do retain keyboard focus feedback and evidence disclosure links in both themes."
+    ],
+    "donts": [
+      "Don't restyle the customer-facing application from this evaluator document.",
+      "Don't imply a completed session passed its automated checks or human review.",
+      "Don't describe ended execution as still running.",
+      "Don't introduce decorative raster assets, web fonts or shadows into this documented workspace."
+    ]
+  }
+}
