@@ -63,6 +63,8 @@ export type CreateLiveSessionOptions = {
   scenarios: Scenario[];
   approvedProviderDataReview: true;
   maxCalls: number;
+  /** Browser-only per-Scenario-Run cap; CLI sessions retain their whole-session cap. */
+  callsPerRun?: number;
   maxElapsedMs: number;
   maxSpendUsd: number;
   artifactRoot: string;
@@ -171,6 +173,7 @@ export class LiveSession {
       this.price = pricing;
     }
     if (!Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 10_000
+      || options.callsPerRun !== undefined && (!Number.isSafeInteger(options.callsPerRun) || options.callsPerRun < 1 || options.callsPerRun > 100 || options.callsPerRun > maxCalls)
       || !Number.isSafeInteger(maxElapsedMs) || maxElapsedMs < 1 || maxElapsedMs > 3_600_000) {
       throw new Error("Live limits require 1–10000 calls, 1–3600000 ms, and positive USD with at most nine decimals, at most 1000000.");
     }
@@ -194,7 +197,7 @@ export class LiveSession {
       throw new Error(`Live pricing supports at most ${this.price.maxOutputTokens} output tokens per call.`);
     }
     this.reservation = reservationFor(this.generation, this.price);
-    this._limits = { maxCalls, maxElapsedMs, maxSpendUsd };
+    this._limits = { maxCalls, ...(options.callsPerRun !== undefined ? { callsPerRun: options.callsPerRun } : {}), maxElapsedMs, maxSpendUsd };
     this.modelSignature = JSON.stringify(model);
     this.approved = new Set(options.scenarios.map(scenarioHash));
     const directory = join(options.artifactRoot, "live-sessions");
@@ -246,16 +249,25 @@ export class LiveSession {
     if (!this.approved.has(hash)) throw new Error("Provider-data approval does not cover this exact scenario version/hash.");
     if (JSON.stringify(boundary.model) !== this.modelSignature) throw new Error("The approved provider/model changed.");
     const first = this._calls.length;
+    let runStopReason: string | undefined;
     const evidence = (): LiveEvidence => ({ sessionId: this.id, approvedScenarioHashes: [...this.approved],
       approval: { at: this.approvedAt, scenarioHash: hash, provider: boundary.model.provider, model: boundary.model.id, method: "explicit-launch" },
       limits: { ...this._limits }, pricing: this.pricing, calls: structuredClone(this._calls.slice(first)),
-      sessionCalls: this._calls.length, sessionReservedUsd: usd(this.reserved), ...(this.reason ? { stopReason: this.reason } : {}),
+      sessionCalls: this._calls.length, sessionReservedUsd: usd(this.reserved), ...(this.reason || runStopReason ? { stopReason: this.reason ?? runStopReason } : {}),
     });
     const wrapped: QuoteAIModelBoundary = { ...boundary, generation: this.generation, streamFn: (model, context, options) => {
       if (this.closed || this.reason) throw new Error("Live session stopped.");
+      if (runStopReason) throw new Error(`Scenario Run stopped: ${runStopReason}.`);
       if (JSON.stringify(model) !== this.modelSignature) { this.stop("model_changed"); throw new Error("The approved provider/model changed."); }
       try { this.assertPricing(); } catch (error) { this.stop("pricing_expired"); throw error; }
       if (performance.now() - this.started >= this._limits.maxElapsedMs) this.stop("elapsed_limit");
+      if (this.reason) throw new Error(`Live session stopped: ${this.reason}.`);
+      if (this._limits.callsPerRun !== undefined && this._calls.length - first >= this._limits.callsPerRun) {
+        // A rejected follow-up belongs to this run, not the shared session.
+        // Already reserved calls remain in the ledger; later runs may use their own allowance.
+        runStopReason = "run_call_limit";
+        throw new Error(`Scenario Run stopped: ${runStopReason}.`);
+      }
       if (this._calls.length >= this._limits.maxCalls) this.stop("call_limit");
       if (this.reserved + this.reservation > this.maxSpendNanoUsd) this.stop("spend_limit");
       if (this.reason) throw new Error(`Live session stopped: ${this.reason}.`);

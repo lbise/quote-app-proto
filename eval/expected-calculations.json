@@ -272,6 +272,25 @@
     "missing": [],
     "errors": []
   },
+  "ambiguous-panel-correction": {
+    "lines": [
+      {
+        "amount": 2000
+      },
+      {
+        "amount": 4000
+      }
+    ],
+    "sections": [],
+    "subtotal": 6000,
+    "discount": 0,
+    "net": 6000,
+    "vat": null,
+    "total": 6000,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
   "joinery-panel-correction": {
     "lines": [
       {
@@ -982,6 +1001,52 @@
     "total": 8670,
     "complete": true,
     "missing": [],
+    "errors": []
+  },
+  "contract-targeted-correction": {
+    "lines": [
+      {
+        "amount": 27400
+      },
+      {
+        "amount": 6320
+      }
+    ],
+    "sections": [],
+    "subtotal": 33720,
+    "discount": 0,
+    "net": 33720,
+    "vat": null,
+    "total": 33720,
+    "complete": true,
+    "missing": [],
+    "errors": []
+  },
+  "contract-copy-unknown-quantity": {
+    "lines": [
+      {
+        "amount": 11800
+      },
+      {
+        "amount": null
+      },
+      {
+        "amount": 4100
+      }
+    ],
+    "sections": [],
+    "subtotal": 15900,
+    "discount": null,
+    "net": null,
+    "vat": null,
+    "total": null,
+    "complete": false,
+    "missing": [
+      {
+        "path": "lines[1].quantity",
+        "code": "required"
+      }
+    ],
     "errors": []
   },
   "contract-mixed-batches": {

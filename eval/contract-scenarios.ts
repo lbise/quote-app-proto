@@ -113,6 +113,18 @@ const sectionLine = line("expected-section-line", expectedSectionId, "Protection
 const factsStart = header("CT-FAITS-001");
 const factsLine = line("expected-facts", "", "Pose de ruban d’étanchéité", "quantity", "12.75", "m", "6.80", "");
 
+const correctionStart = quote("CT-CORRECTION-001", [], [
+  line("existing-hinges", "", "Remplacement de charnières de l’orangerie", "quantity", "5", "pièce", "34.25", ""),
+  line("existing-glazing", "", "Protection des vitrages", "fixed", "", "", "", "63.20"),
+]);
+const correctedLine = { ...correctionStart.lines[0]!, quantity: "8" };
+
+const copyStart = quote("CT-COPIE-001", [], [
+  line("existing-seals", "", "Pose de joints souples sur les ouvrants", "quantity", "4", "m", "29.50", ""),
+  line("existing-cover", "", "Protection du mobilier", "fixed", "", "", "", "41.00"),
+]);
+const copiedLine = { ...copyStart.lines[0]!, id: "expected-seals-copy", quantity: "" };
+
 const mixedStart = header("CT-LOTS-001");
 const mixedSections = [{ id: "expected-atelier", title: "Atelier" }, { id: "expected-reserve", title: "Réserve" }];
 const mixedLines = [
@@ -177,6 +189,57 @@ export const contractScenarios: Scenario[] = [
     "Pour l’orangerie fictive, note une ligne de pose de ruban d’étanchéité. La longueur mesurée est de 12,75 m.\n\nLe tarif convenu pour cette pose est de 6,80 CHF par mètre. Ne modifie rien d’autre.",
     commercialLineAssertions(factsLine, -1, ["m", "mètre", "mètres"]),
     ["Vérifier que la prose française relie fidèlement la pose, la longueur et le tarif fournis dans des paragraphes distincts."],
+  ),
+  contractScenario(
+    "contract-targeted-correction",
+    "Correction ciblée d’une quantité fictive",
+    correctionStart,
+    quote(correctionStart.reference, [], [correctedLine, correctionStart.lines[1]!]),
+    "Sur la ligne de remplacement des charnières de l’orangerie, corrige seulement la quantité : 8 pièces au lieu de 5. Le prix reste à 34,25 CHF par pièce. Ne touche pas à la protection des vitrages ni aux autres champs du devis.",
+    [
+      equals("no extra sections", "quote.sections.length", 0),
+      equals("both lines retained", "quote.lines.length", 2),
+      equals("corrected quantity", "quote.lines[0].quantity", "8"),
+      equals("corrected pricing mode", "quote.lines[0].mode", "quantity"),
+      oneOf("corrected unit", "quote.lines[0].unit", ["pièce", "pièces", "pce", "unité", "unités"]),
+      equals("unit price retained", "quote.lines[0].unitPrice", "34.25"),
+      equals("no fixed amount on quantity line", "quote.lines[0].amount", ""),
+      equals("corrected line stays unsectioned", "quote.lines[0].sectionId", -1),
+      equals("corrected line amount", "calculation.lines[0].amount", 27400),
+      equals("independent total", "calculation.total", 33720),
+      unchanged("quote.lines[1]"),
+      ...protectedHeaders.map(unchanged),
+    ],
+    ["Vérifier que le descriptif français des charnières reste fidèle et que la protection des vitrages est intacte."],
+  ),
+  contractScenario(
+    "contract-copy-unknown-quantity",
+    "Copie fictive avec nouvelle quantité inconnue",
+    copyStart,
+    quote(copyStart.reference, [], [copyStart.lines[0]!, copiedLine, copyStart.lines[1]!]),
+    "Copie la ligne de pose de joints souples sur les ouvrants juste après l’originale. Pour cette nouvelle intervention, la longueur n’est pas encore mesurée : laisse sa quantité inconnue, mais conserve le tarif de 29,50 CHF par mètre. Garde l’originale et la protection du mobilier inchangés.",
+    [
+      equals("no sections added", "quote.sections.length", 0),
+      equals("one copy, no extra work", "quote.lines.length", 3),
+      unchanged("quote.lines[0]"),
+      equals("copy stays unsectioned", "quote.lines[1].sectionId", -1),
+      equals("copy uses unit pricing", "quote.lines[1].mode", "quantity"),
+      equals("new quantity unknown", "quote.lines[1].quantity", ""),
+      oneOf("copy unit retained", "quote.lines[1].unit", ["m", "mètre", "mètres"]),
+      equals("copy unit price retained", "quote.lines[1].unitPrice", "29.50"),
+      equals("copy has no fixed amount", "quote.lines[1].amount", ""),
+      equals("copy cannot be priced yet", "calculation.lines[1].amount", null),
+      equals("known work subtotal", "calculation.subtotal", 15900),
+      equals("total waits for the new measurement", "calculation.total", null),
+      equals("quantity remains required", "calculation.missing", [{ path: "lines[1].quantity", code: "required" }]),
+      equals("draft remains incomplete", "calculation.complete", false),
+      equals("unrelated line preserved after copy", "quote.lines[2]", {
+        sectionId: -1, description: "Protection du mobilier", mode: "fixed",
+        quantity: "", unit: "", unitPrice: "", amount: "41",
+      }),
+      ...protectedHeaders.map(unchanged),
+    ],
+    ["Vérifier que la description française de la copie reste fidèle à la pose de joints, sans longueur inventée."],
   ),
   contractScenario(
     "contract-mixed-batches",

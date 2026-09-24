@@ -30,9 +30,10 @@ export function evaluateAssertions(
   after: QuoteData,
   outcome: string,
   failedCalls: number,
+  message = "",
 ): AssertionResult[] {
-  const current = { quote: projectQuote(after), calculation: calculateQuote(after), outcome, failedCalls };
-  const previous = { quote: projectQuote(before), calculation: calculateQuote(before), outcome, failedCalls };
+  const current = { quote: projectQuote(after), calculation: calculateQuote(after), outcome, failedCalls, message };
+  const previous = { quote: projectQuote(before), calculation: calculateQuote(before), outcome, failedCalls, message };
 
   return assertions.map((assertion) => {
     const actual = readPath(current, assertion.path);

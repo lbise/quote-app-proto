@@ -1,3 +1,4 @@
+import { caseGroups, groupsFor } from "./case-groups";
 import { escapeHtml as h } from "./html";
 import type { EvaluationRun, EvaluationSessionRecord, Scenario } from "./types";
 import type { OpenRouterListing } from "./openrouter-models";
@@ -18,10 +19,11 @@ export function launchForm(input: ExecutionView & { scenarios: Scenario[]; scena
   const prior = input.reuseSession?.plan;
   const selected = prior?.selection.scenarioIds ?? (input.scenarioId ? [input.scenarioId] : []);
   const settings = prior?.model.requested;
+  const sessionMinutes = Math.min(60, Math.max(1, Math.ceil((prior?.limits?.maxElapsedMs ?? 120000) / 60000)));
   const number = (name: string, label: string, value: unknown, max: number, step = "1", accessibleLabel = label) => `<label>${h(label)}<input type="number" name="${name}" aria-label="${h(accessibleLabel)}" value="${h(value)}" min="${step}" max="${max}" step="${step}" required></label>`;
   const missing = selected.filter(id => !input.scenarios.some(scenario => scenario.id === id));
   const choices = [...input.scenarios].sort((a, b) => Number(selected.includes(b.id)) - Number(selected.includes(a.id)) || Number(b.suite === "contract") - Number(a.suite === "contract"));
-  return `<section class="launch"><div class="page-heading"><div><h1>Start an evaluation</h1><p class="muted">Select scenarios and configure a model.</p></div><a href="/">All sessions</a></div>
+  return `<section class="launch"><div class="page-heading"><div><h1>Start an evaluation</h1></div><a href="/">All sessions</a></div>
     ${prior ? `<p class="notice">Settings reused. Start creates a new session with current scenario versions and a fresh budget. <a href="/?session=${encodeURIComponent(prior.id)}">Source session</a></p>` : ""}
     ${missing.length ? `<p class="failure">Unavailable scenarios: ${h(missing.join(", "))}. Choose a current selection.</p>` : ""}
     ${prior?.model.provider === "openrouter" && !input.modelChoices ? `<p class="notice">The earlier OpenRouter model is unavailable until server credentials and metadata are configured. No substitute was selected.</p>` : ""}
@@ -29,10 +31,10 @@ export function launchForm(input: ExecutionView & { scenarios: Scenario[]; scena
     <form id="launch-form" class="launch-layout" method="post" action="/sessions" data-unavailable="${Boolean(input.providerProblem)}">
     <input type="hidden" name="requestId" value="${h(input.launchRequestId)}">
     <fieldset class="selection-pane"><legend>Scenarios</legend>
-      <div class="selection-tools"><label for="scenario-search">Search scenarios<input id="scenario-search" type="search" placeholder="Title, trade or scenario ID" autocomplete="off"></label>
-      <label for="selection-suite">Selection<select id="selection-suite" name="suite"><option value="">Custom selection</option><option value="contract">Contract suite</option><option value="scenario">Scenario suite</option></select></label></div>
-      <div class="selection-actions"><span id="visible-count" class="muted">${choices.length} scenarios</span><div class="toolbar"><button type="button" class="secondary compact" id="select-visible">Select visible</button><button type="button" class="secondary compact" id="clear-selection">Clear</button></div></div>
-      <div class="scenario-selection">${choices.map(scenario => `<div class="scenario-choice" data-search="${h(`${scenario.title} ${scenario.id} ${scenario.profession}`.toLowerCase())}"><label><input type="checkbox" name="scenario" value="${h(scenario.id)}" data-suite="${scenario.suite === "contract" ? "contract" : "scenario"}" data-controlled="${scenario.execution === "controlled-only"}"${selected.includes(scenario.id) && scenario.execution !== "controlled-only" ? " checked" : ""}${scenario.execution === "controlled-only" ? " disabled" : ""}><span>${h(scenario.title)}</span></label><div class="scenario-choice-meta"><span>${scenario.suite === "contract" ? "Contract" : h(scenario.profession)}${scenario.execution === "controlled-only" ? " · Offline only" : ""}</span><a href="/?scenario=${encodeURIComponent(scenario.id)}" target="_blank" rel="noopener">Preview<span class="sr-only"> inputs and expectations for ${h(scenario.title)} (new tab)</span></a></div></div>`).join("")}</div>
+      <div class="selection-tools"><label for="scenario-search">Search scenarios and tool tests<input id="scenario-search" type="search" placeholder="Title, trade or ID" autocomplete="off"></label><label for="behavior-filter">Behavior<select id="behavior-filter"><option value="">All behaviors</option>${caseGroups.map(group => `<option value="${group.id}">${h(group.label)}</option>`).join("")}</select></label></div>
+      <div class="selection-actions"><span id="visible-count" class="muted">${choices.length} items</span><div class="toolbar"><button type="button" class="secondary compact" id="select-visible">Select visible</button><button type="button" class="secondary compact" id="select-scenarios">All scenarios</button><button type="button" class="secondary compact" id="select-tool-tests">All tool tests</button><button type="button" class="secondary compact" id="clear-selection">Clear</button></div></div>
+      <div class="selected-list"><h2>Selected to run</h2><p id="selection-empty" class="muted" hidden>No items selected.</p><ul id="selected-scenarios" aria-label="Selected scenarios"></ul></div>
+      <div class="scenario-selection">${choices.map(scenario => `<div class="scenario-choice" data-search="${h(`${scenario.title} ${scenario.id} ${scenario.profession} ${scenario.suite === "contract" ? "tool test" : "scenario"}`.toLowerCase())}" data-groups="${h(groupsFor(scenario).join(" "))}"><label><input type="checkbox" name="scenario" value="${h(scenario.id)}" data-suite="${scenario.suite === "contract" ? "contract" : "scenario"}" data-controlled="${scenario.execution === "controlled-only"}"${selected.includes(scenario.id) && scenario.execution !== "controlled-only" ? " checked" : ""}${scenario.execution === "controlled-only" ? " disabled" : ""}><span>${h(scenario.title)}</span></label><div class="scenario-choice-meta"><span class="scenario-kind">${scenario.suite === "contract" ? "Tool validation test" : "Scenario"}</span><span>${h(scenario.profession)}${scenario.execution === "controlled-only" ? " · Offline only" : ""}</span><a href="/?scenario=${encodeURIComponent(scenario.id)}" target="_blank" rel="noopener">Preview<span class="sr-only"> inputs and expectations for ${h(scenario.title)} (new tab)</span></a></div></div>`).join("")}</div>
       <p id="no-scenarios" class="muted" hidden>No matching scenarios. Try another search.</p>
       <p id="selection-warning" class="failure" role="status"></p>
     </fieldset>
@@ -48,15 +50,11 @@ export function launchForm(input: ExecutionView & { scenarios: Scenario[]; scena
       <details class="help-details"><summary>Advanced settings</summary>${number("maxOutputTokens", "Output-token limit", settings?.maxOutputTokens ?? 4096, input.modelChoices ? 65536 : 4096)}<p class="field-hint">Combined output and thinking tokens.</p></details>
     </fieldset>
     <fieldset><legend>Session limits</legend>
-      <div class="limits-fields">${number("maxCalls", "Provider calls", prior?.limits?.maxCalls ?? 9, 10000, "1", "Maximum provider calls")}${number("maxElapsedMs", "Time · ms", prior?.limits?.maxElapsedMs ?? 120000, 3600000, "1", "Maximum elapsed time in milliseconds")}${number("maxSpendUsd", "Budget · USD", (prior?.limits?.maxSpendUsd ?? 6).toFixed(9).replace(/\.?0+$/, ""), 1000000, "0.000000001", "Maximum spend in USD")}</div>
-      <p class="field-hint">Shared by every scenario and repetition.</p>
-      <details class="help-details"><summary>How limits work</summary><p>All selected scenarios and repetitions share these limits and one deadline. Reservations are retained, not refunded after a call. USD limits use conservative documented token rates, not a provider invoice guarantee.</p></details>
+      <div class="limits-fields">${number("callsPerRun", "Provider calls per Scenario Run", prior?.limits?.callsPerRun ?? 50, 100, "1")}${number("sessionMinutes", "Session time · minutes", sessionMinutes, 60)}<input type="hidden" name="maxElapsedMs" value="${sessionMinutes * 60000}">${number("maxSpendUsd", "Session budget · USD", (prior?.limits?.maxSpendUsd ?? 6).toFixed(9).replace(/\.?0+$/, ""), 1000000, "0.000000001")}</div>
+      <p class="field-hint">The call limit applies to each run. Time and budget cover the whole session, including repetitions. Budget reservations are not refunded.</p>
     </fieldset>
     <div class="launch-submit">
       <p data-testid="selection-summary" id="selection-summary" role="status"></p>
-      <details class="help-details"><summary>Selected scenarios</summary><ul id="selected-scenarios" aria-label="Selected scenarios"></ul></details>
-      <p class="field-hint">Start sends the selected scenario inputs to the chosen provider.</p>
-      <details class="help-details"><summary>Authorization details</summary><p>Start authorizes sending only the selected adapted scenario inputs to the selected provider and model with these settings and limits. It does not change scenario review flags, copy human approvals or authorize sending original source documents.</p></details>
       <p id="launch-error" class="failure" role="alert"></p><button type="submit"${input.providerProblem ? " disabled" : ""}>Start</button>
     </div>
     <noscript><p>Enable JavaScript to start and monitor an evaluation. Browsing and human reviews still work without it.</p></noscript>
@@ -85,8 +83,7 @@ export function sessionProgress(session: EvaluationSessionRecord, runs: Evaluati
     }).join("")}</ol>
     <details class="evidence-panel"><summary>Settings and usage</summary><p>Reasoning: ${h(plan.model.effective.reasoning ?? "not recorded")} · Output-token limit: ${h(plan.model.effective.maxOutputTokens ?? "not recorded")}</p>
     <p id="session-usage">${state.calls} provider calls · USD ${h(state.reservedUsd)} reserved · Estimated usage cost: USD ${h(cost.estimatedUsageUsd)}${cost.estimateComplete ? "" : " (incomplete)"}</p>
-    <p>Session limits: ${h(plan.limits?.maxCalls ?? "unavailable")} calls · ${h(plan.limits?.maxElapsedMs ?? "unavailable")} ms · USD ${h(plan.limits?.maxSpendUsd ?? "unavailable")}</p><p class="muted">Session ID: <code>${h(plan.id)}</code></p></details>
+    <p>Session limits: ${plan.limits?.callsPerRun ? `${h(plan.limits.callsPerRun)} calls per Scenario Run` : `${h(plan.limits?.maxCalls ?? "unavailable")} calls total`} · ${h(plan.limits?.maxElapsedMs ?? "unavailable")} ms · USD ${h(plan.limits?.maxSpendUsd ?? "unavailable")}</p><p class="muted">Session ID: <code>${h(plan.id)}</code></p></details>
     <p id="execution-guidance" class="field-hint">${running ? "Execution continues if you leave this page. Reopen this session to see progress." : "Execution has ended. Saved results remain available in this session."}</p>
-    <details class="help-details"><summary>Stopping and recovery</summary><p>Stop attempts to abort ongoing provider work and skips remaining work. Completed evidence and reservations stay saved. Cancellation does not guarantee the provider avoids charging.</p><p>A server restart interrupts unfinished work and never resumes provider calls.</p></details>
     </section>`;
 }

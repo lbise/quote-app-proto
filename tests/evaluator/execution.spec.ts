@@ -84,8 +84,7 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
   await expect(reopened.locator("#execution-state")).toHaveText("stopped");
   await expect(reopened.locator("#execution-guidance")).toHaveText("Execution has ended. Saved results remain available in this session.");
   await expect(reopened.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
-  await reopened.getByText("Stopping and recovery", { exact: true }).click();
-  await expect(reopened.getByText(/Cancellation does not guarantee the provider avoids charging/)).toBeVisible();
+  await expect(reopened.getByText("Stopping and recovery", { exact: true })).toHaveCount(0);
   await expect(reopened.locator("#progress-work")).toContainText("interrupted");
   await expect(reopened.getByRole("link", { name: "View result" }).first()).toBeVisible();
   await reopened.reload();
@@ -93,6 +92,8 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
 
   await reopened.getByRole("link", { name: "Reuse selection and settings" }).click();
   await expect(reopened.getByLabel("Repetitions")).toHaveValue("2");
+  await expect(reopened.getByLabel("Provider calls per Scenario Run")).toHaveValue("50");
+  await expect(reopened.getByLabel("Session time · minutes")).toHaveValue("2");
   await expect(reopened.getByRole("combobox", { name: "Reasoning", exact: true })).toHaveValue("high");
   await expect(reopened.getByLabel("Output-token limit")).toHaveValue("1024");
   await expect(reopened.locator('input[name="scenario"]:checked')).toHaveCount(1);
@@ -112,12 +113,12 @@ test("Start survives navigation and tab closure, rejects competing tabs, stops, 
 test("reuse preserves a nine-decimal USD limit without scientific notation or provider calls", async ({ page }) => {
   const before = calls;
   await page.goto(`${url}/?launch=1&scenario=contract-fixed-line`);
-  await page.getByLabel("Maximum spend in USD").fill("0.000000001");
+  await page.getByLabel("Session budget · USD").fill("0.000000001");
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.locator("#execution-state")).toHaveText("stopped");
   const previous = page.url();
   await page.getByRole("link", { name: "Reuse selection and settings" }).click();
-  await expect(page.getByLabel("Maximum spend in USD")).toHaveValue("0.000000001");
+  await expect(page.getByLabel("Session budget · USD")).toHaveValue("0.000000001");
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.locator("#execution-state")).toHaveText("stopped");
   expect(page.url()).not.toBe(previous);

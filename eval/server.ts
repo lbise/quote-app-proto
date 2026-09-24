@@ -45,7 +45,7 @@ class FormProblem extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 function browserSelection(form: URLSearchParams) {
-  const allowed = ["requestId", "scenario", "suite", "repetitions", "provider", "model", "reasoning", "maxOutputTokens", "maxCalls", "maxElapsedMs", "maxSpendUsd"];
+  const allowed = ["requestId", "scenario", "suite", "repetitions", "provider", "model", "reasoning", "maxOutputTokens", "callsPerRun", "maxElapsedMs", "maxSpendUsd"];
   for (const key of form.keys()) {
     if (!allowed.includes(key)) throw new FormProblem("Unsupported launch field. Credentials and configuration belong on the server.");
     if (key !== "scenario" && form.getAll(key).length !== 1) throw new FormProblem("Launch settings must not be repeated.");
@@ -76,7 +76,10 @@ function browserSelection(form: URLSearchParams) {
   let maxSpendUsd: number;
   try { maxSpendUsd = parseSpendUsd(form.get("maxSpendUsd") ?? "").usd; }
   catch { throw new FormProblem("maxSpendUsd must be positive, at most 1000000, with at most nine decimals."); }
-  const limits = { maxCalls: integer("maxCalls", 10_000), maxElapsedMs: integer("maxElapsedMs", 3_600_000), maxSpendUsd };
+  const callsPerRun = integer("callsPerRun", 100);
+  const maxCalls = callsPerRun * selected.length * repetitions;
+  if (maxCalls > 10_000) throw new FormProblem("callsPerRun × selected scenarios × repetitions must not exceed 10000 calls.");
+  const limits = { callsPerRun, maxCalls, maxElapsedMs: integer("maxElapsedMs", 3_600_000), maxSpendUsd };
   const fingerprint = createHash("sha256").update(JSON.stringify({ scenarios: selected.map(scenario => scenario.id), repetitions, provider, model, generation, limits })).digest("hex");
   return { selected, repetitions, provider, model, generation, limits, browserRequest: { id: requestId.toLowerCase(), fingerprint } };
 }

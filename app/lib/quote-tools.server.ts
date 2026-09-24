@@ -75,7 +75,7 @@ const editQuoteDetailsParameters = Type.Object({
 
 const editQuoteSectionsParameters = Type.Object({
   sections: Type.Array(Type.Object({
-    id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" })),
+    id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$", description: "Existing section ID from the Working Draft or a prior tool result, for renaming only. Never invent an ID for a new section; omit this field." })),
     title: Type.String({ maxLength: MAX_SECTION_TITLE }),
   }, { additionalProperties: false }), { minItems: 1, maxItems: 50 }),
 }, { additionalProperties: false });
@@ -250,7 +250,7 @@ export function createQuoteTools(input: CreateQuoteToolsInput): {
 
   const editQuoteSections: AgentTool = {
     name: "edit_quote_sections", label: "Edit Quote Sections",
-    description: "Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. An empty title leaves an incomplete section and never deletes it. Write new titles in French. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.",
+    description: "Create or rename up to 50 Quote Sections. For each new section, supply only its title and omit id. The application generates IDs for new sections and returns them in the tool result; use those returned IDs when assigning lines. Never invent section IDs. Supply id only to rename a section already present in the Working Draft or a prior accepted tool result. An empty title leaves an incomplete section and never deletes it. Write new titles in French. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.",
     parameters: editQuoteSectionsParameters, executionMode: "sequential",
     prepareArguments: prepare(editQuoteSectionsParameters, (args) => { editQuoteSectionsInput(args, staged); }),
     execute: async (_toolCallId, params, signal) => mutate(signal, () => {

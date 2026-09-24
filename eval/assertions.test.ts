@@ -65,6 +65,16 @@ describe("evaluateAssertions", () => {
     expect(evaluateAssertions([{ ...assertions[0], expected: [] }], before, before, "committed", 0)[0].passed).toBe(false);
   });
 
+  it("can check that an ambiguous request received a question without changing the Quote", () => {
+    const state = quote();
+    const checks = [
+      { label: "no guessed edit", path: "quote", operator: "unchanged" as const },
+      { label: "asks for a target", path: "message", operator: "contains" as const, expected: "?" },
+    ];
+    expect(evaluateAssertions(checks, state, state, "unchanged", 0, "Which area do you mean?").every(item => item.passed)).toBe(true);
+    expect(evaluateAssertions(checks, state, state, "unchanged", 0, "Done.")[1].passed).toBe(false);
+  });
+
   it("reports the normalized before value for unchanged assertions", () => {
     const results = evaluateAssertions([
       { label: "prior amount", path: "quote.lines[1].amount", operator: "unchanged" },

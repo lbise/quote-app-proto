@@ -54,7 +54,23 @@ function mixedBatch(scenario: Scenario, context: Context, start: number, end: nu
   return fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines })], { stopReason: "toolUse" });
 }
 
+function correctionCall(scenario: Scenario): FauxResponseStep {
+  const corrected = scenario.expectedQuote!.lines[0]!;
+  return fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: [{ id: scenario.startingQuote.lines[0]!.id,
+    description: corrected.description, mode: corrected.mode, quantity: corrected.quantity,
+    unit: corrected.unit, unitPrice: corrected.unitPrice, amount: corrected.amount,
+  }] })], { stopReason: "toolUse" });
+}
+
+function copyCall(scenario: Scenario, measurementPolicy: "unknown" | "retain" = "unknown"): FauxResponseStep {
+  return fauxAssistantMessage([fauxToolCall("copy_quote_work", {
+    source: { lineIds: [scenario.startingQuote.lines[0]!.id] }, measurementPolicy,
+  })], { stopReason: "toolUse" });
+}
+
 function acceptedResponses(scenario: Scenario): FauxResponseStep[] {
+  if (scenario.id === "contract-targeted-correction") return [correctionCall(scenario), fauxAssistantMessage("Quantité corrigée.")];
+  if (scenario.id === "contract-copy-unknown-quantity") return [copyCall(scenario), fauxAssistantMessage("Copie ajoutée sans nouvelle quantité.")];
   if (scenario.id === "contract-mixed-batches") {
     return [
       fauxAssistantMessage([fauxToolCall("edit_quote_sections", { sections: [{ title: "Atelier" }, { title: "Réserve" }] })], { stopReason: "toolUse" }),
@@ -85,16 +101,20 @@ function acceptedResponses(scenario: Scenario): FauxResponseStep[] {
 }
 
 describe("synthetic contract scenarios", () => {
-  it("contains four small fictional French checks and one combined check", () => {
-    expect(contractScenarios).toHaveLength(5);
-    expect(contractScenarios.filter((scenario) => scenario.id !== "contract-mixed-batches")).toHaveLength(4);
+  it("contains six focused fictional French checks and one combined check", () => {
+    expect(contractScenarios).toHaveLength(7);
+    expect(contractScenarios.filter((scenario) => scenario.id !== "contract-mixed-batches")).toHaveLength(6);
     expect(publishedContractScenarios.map((scenario) => scenario.id)).toEqual(contractScenarios.map((scenario) => scenario.id));
     for (const scenario of contractScenarios) {
       expect(scenario.suite).toBe("contract");
       expect(scenario.provenance).toMatchObject({ kind: "synthetic-contract", alias: "fictional-contract-fixture" });
       expect(scenario.locale).toBe("fr");
       expect(scenario.startingQuote.sections).toEqual([]);
-      expect(scenario.startingQuote.lines).toEqual([]);
+      if (["contract-targeted-correction", "contract-copy-unknown-quantity"].includes(scenario.id)) {
+        expect(scenario.startingQuote.lines).toHaveLength(2);
+      } else {
+        expect(scenario.startingQuote.lines).toEqual([]);
+      }
       expect(scenario.steps).toHaveLength(1);
       expect(scenario.humanReview.join(" ")).toMatch(/fidèle|fidèlement/i);
       expect(scenario.steps[0]!.assertions.some((assertion) => assertion.path === "quote.lines[0].description" && assertion.operator === "equals")).toBe(false);
@@ -146,6 +166,47 @@ describe.runIf(Boolean(databaseUrl))("contract checks through real HTTP, tools a
     expect(run.checks).toEqual({ contract: "passed", commercial: "failed" });
     expect(run.automated).toBe("failed");
     expect(run.turns[0].after.lines).toHaveLength(5);
+  });
+
+  it("corrects only the identified line of a two-line draft", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-targeted-correction");
+    expect(scenario).toBeDefined();
+    const run = await runScenario(scenario!, { databaseUrl: databaseUrl!, modelBoundary: controlled(acceptedResponses(scenario!)) });
+    expect(run.checks).toEqual({ contract: "passed", commercial: "passed" });
+    expect(run.turns[0].after.lines[1]).toEqual(scenario!.startingQuote.lines[1]);
+    expect(run.turns[0]).toMatchObject({ outcome: "committed", failedCalls: 0 });
+  });
+
+  it("copies a priced line without inventing the new quantity", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-copy-unknown-quantity");
+    expect(scenario).toBeDefined();
+    const run = await runScenario(scenario!, { databaseUrl: databaseUrl!, modelBoundary: controlled(acceptedResponses(scenario!)) });
+    expect(run.checks).toEqual({ contract: "passed", commercial: "passed" });
+    expect(run.turns[0].after.lines[0]).toEqual(scenario!.startingQuote.lines[0]);
+    expect(run.turns[0].after.lines[1]).toMatchObject({ quantity: "", unitPrice: "29.50" });
+    expect(run.turns[0].after.lines[2]).toEqual(scenario!.startingQuote.lines[1]);
+    expect(run.turns[0]).toMatchObject({ outcome: "committed", failedCalls: 0 });
+  });
+
+  it("rejects a correction that also changes the unrelated line", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-targeted-correction")!;
+    const { sectionId: _sectionId, ...other } = scenario.startingQuote.lines[1]!;
+    const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled([
+      correctionCall(scenario),
+      fauxAssistantMessage([fauxToolCall("edit_quote_lines", { lines: [{ ...other, amount: "64.20" }] })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Modification enregistrée."),
+    ]) });
+    expect(run.checks).toEqual({ contract: "passed", commercial: "failed" });
+    expect(run.turns[0].after.lines[1].amount).toBe("64.20");
+  });
+
+  it("rejects a copied line that reuses the old quantity", async () => {
+    const scenario = publishedContractScenarios.find(item => item.id === "contract-copy-unknown-quantity")!;
+    const run = await runScenario(scenario, { databaseUrl: databaseUrl!, modelBoundary: controlled([
+      copyCall(scenario, "retain"), fauxAssistantMessage("Copie ajoutée."),
+    ]) });
+    expect(run.checks).toEqual({ contract: "passed", commercial: "failed" });
+    expect(run.turns[0].after.lines[1].quantity).toBe("4");
   });
 
   it.each(publishedContractScenarios)("accepts $id with the real tool executor", async (scenario) => {

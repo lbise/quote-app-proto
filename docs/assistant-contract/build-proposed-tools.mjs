@@ -30,8 +30,8 @@ const tools = [
     description: approvedLineTool.description,
     parameters: approvedLineTool.parameters,
   },
-  tool("edit_quote_sections", "Create or rename up to 50 Quote Sections. Include an existing stable ID to rename it; omit the ID to create a section at the end. An empty title leaves an incomplete section and never deletes it. Write new titles in French. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.", {
-    sections: list(object({ id, title: text(4000) }, ["title"])),
+  tool("edit_quote_sections", "Create or rename up to 50 Quote Sections. For each new section, supply only its title and omit id. The application generates IDs for new sections and returns them in the tool result; use those returned IDs when assigning lines. Never invent section IDs. Supply id only to rename a section already present in the Working Draft or a prior accepted tool result. An empty title leaves an incomplete section and never deletes it. Write new titles in French. Do not add, edit, move, copy or delete Quote Lines with this tool. Do not move, copy or delete sections with this tool.", {
+    sections: list(object({ id: { ...id, description: "Existing section ID from the Working Draft or a prior tool result, for renaming only. Never invent an ID for a new section; omit this field." }, title: text(4000) }, ["title"])),
   }, ["sections"]),
   tool("copy_quote_work", "Copy up to 50 Quote Lines or one Quote Section with its lines. For line copies, optionally choose a destination section; otherwise copies follow their source lines. For a section copy, supply its title. Set measurementPolicy to retain to keep measurements, or unknown to clear quantities and remove embedded measurements. Other values are retained.", {
     source: { anyOf: [

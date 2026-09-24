@@ -18,7 +18,7 @@ const cleanup: Array<() => Promise<unknown>> = [];
 const example = scenarios.find(scenario => scenario.suite === "contract" && scenario.execution !== "controlled-only")!;
 function form(overrides: Record<string, string> = {}) {
   return new URLSearchParams({ requestId: randomUUID(), scenario: example.id, repetitions: "1", reasoning: "minimal",
-    maxOutputTokens: "1024", maxCalls: "10", maxElapsedMs: "30000", maxSpendUsd: "10", ...overrides });
+    maxOutputTokens: "1024", callsPerRun: "10", maxElapsedMs: "30000", maxSpendUsd: "10", ...overrides });
 }
 async function open(root?: string, controlUrl = databaseUrl!) {
   if (!root) { root = await mkdtemp(join(tmpdir(), "browser-execution-")); const directory = root; cleanup.push(() => rm(directory, { recursive: true, force: true })); }
@@ -47,6 +47,48 @@ function googleReply(parts: unknown[] = [{ text: "No change needed." }]) {
   return new Response(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts }, finishReason: "STOP" }],
     usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, totalTokenCount: 150 } })}\n\n`, { headers: { "content-type": "text/event-stream" } });
 }
+
+describe("browser launch validation without a provider or database", () => {
+  afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it("requires a bounded per-run cap, rejects the old field and derived totals over 10000 before starting", async () => {
+    const provider = vi.fn(async () => { throw new Error("Provider must not be called"); });
+    vi.stubGlobal("fetch", provider);
+    const app = await open(undefined, "postgres://quote_evaluation@localhost/quote_evaluation");
+    for (const body of [
+      form({ callsPerRun: "0" }), form({ callsPerRun: "101" }), form({ callsPerRun: "1.5" }),
+      form({ callsPerRun: "100", repetitions: "101" }), form({ callsPerRun: "100", repetitions: "1000" }),
+    ]) {
+      const response = await app.post("/sessions", body);
+      expect(response.status).toBe(400);
+    }
+    const multi = form({ callsPerRun: "100", repetitions: "51" });
+    multi.append("scenario", scenarios.find(scenario => scenario.id !== example.id && scenario.execution !== "controlled-only")!.id);
+    const oversized = await app.post("/sessions", multi);
+    expect(oversized.status).toBe(400);
+    expect(await oversized.json()).toMatchObject({ error: expect.stringContaining("10000") });
+    const oldField = form(); oldField.set("maxCalls", "1");
+    expect((await app.post("/sessions", oldField)).status).toBe(400);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("persists derived limits in failed starts and includes the per-run cap in idempotency", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    const provider = vi.fn(async () => { throw new Error("Provider must not be called"); });
+    vi.stubGlobal("fetch", provider);
+    const app = await open(undefined, "postgres://quote_evaluation@localhost/quote_evaluation");
+    const body = form({ callsPerRun: "2", repetitions: "3" });
+    const first = await app.post("/sessions", body);
+    expect(first.status).toBe(202);
+    const { id } = await first.json() as { id: string };
+    expect((await app.record(id)).plan.limits).toEqual({ callsPerRun: 2, maxCalls: 6, maxElapsedMs: 30000, maxSpendUsd: 10 });
+    expect((await app.record(id)).state.status).toBe("failed-to-start");
+    expect(await (await app.post("/sessions", body)).json()).toEqual({ id });
+    body.set("callsPerRun", "3");
+    expect((await app.post("/sessions", body)).status).toBe(409);
+    expect(provider).not.toHaveBeenCalled();
+  });
+});
 
 describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL and the product agent", () => {
   beforeEach(() => {
@@ -163,7 +205,7 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     const network = vi.fn(async (_url: unknown, init?: RequestInit) => { payloads.push(JSON.parse(String(init?.body))); return googleReply(); });
     vi.stubGlobal("fetch", network);
     const app = await open();
-    const body = form({ reasoning, maxCalls: "1", maxOutputTokens: "512" }); body.delete("repetitions");
+    const body = form({ reasoning, callsPerRun: "1", maxOutputTokens: "512" }); body.delete("repetitions");
     const contractIds = scenarios.filter(scenario => scenario.suite === "contract").map(scenario => scenario.id);
     if (selection === "subset") body.append("scenario", contractIds[1]);
     if (selection === "suite") { body.delete("scenario"); body.set("suite", "contract"); }
@@ -173,8 +215,10 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     expect(record.plan.selection).toEqual({ scenarioIds: selection === "suite" ? contractIds : selection === "subset" ? contractIds.slice(0, 2) : [example.id], repetitions: 1 });
     expect(record.plan.model).toEqual({ provider: "google", id: "gemini-3.5-flash-lite", requested: { reasoning, maxOutputTokens: 512 }, effective: { reasoning, maxOutputTokens: 512 } });
     expect(record.plan.work).toHaveLength(selection === "suite" ? contractIds.length : selection === "subset" ? 2 : 1);
-    expect(payloads).toMatchObject([{ generationConfig: { maxOutputTokens: 512, thinkingConfig: { thinkingLevel: reasoning.toUpperCase() } } }]);
-    expect(network).toHaveBeenCalledTimes(1);
+    expect(payloads).toHaveLength(record.plan.work.length);
+    for (const payload of payloads) expect(payload).toMatchObject({ generationConfig: { maxOutputTokens: 512, thinkingConfig: { thinkingLevel: reasoning.toUpperCase() } } });
+    expect(network).toHaveBeenCalledTimes(record.plan.work.length);
+    expect(record.plan.limits).toMatchObject({ callsPerRun: 1, maxCalls: record.plan.work.length });
   });
 
   it("deduplicates concurrent tabs across servers and restart, rejects conflicts, and requires a new explicit allowance for reuse", async () => {
@@ -193,6 +237,8 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     const launchPage = await (await originalFetch(`${app.url}/?launch=1`)).text();
     expect(launchPage).not.toContain("Set QUOTE_AI_PROVIDER=google");
     const different = new URLSearchParams(body); different.set("reasoning", "high");
+    expect((await other.post("/sessions", different)).status).toBe(409);
+    different.set("reasoning", "minimal"); different.set("callsPerRun", "9");
     expect((await other.post("/sessions", different)).status).toBe(409);
     expect((await other.post("/sessions", form())).status).toBe(409);
     release(googleReply());
@@ -228,6 +274,7 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     expect(failed.state.reason).toContain("Set GEMINI_API_KEY");
     expect(failed.plan.launchAuthorization.method).toBe("browser-start");
     expect(failed.plan.selection.scenarioIds).toEqual([example.id]);
+    expect(failed.plan.limits).toMatchObject({ callsPerRun: 10, maxCalls: 10 });
     expect((await (await originalFetch(`${app.url}/?launch=1`)).text())).toContain("Set GEMINI_API_KEY");
     vi.stubEnv("GEMINI_API_KEY", "browser-test-key");
     expect(await (await app.post("/sessions", body)).json()).toEqual({ id });
@@ -270,17 +317,36 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
     expect(network).toHaveBeenCalledTimes(1);
   });
 
+  it("limits a Scenario Run without poisoning the next repetition or releasing its reservation", async () => {
+    const network = vi.fn(async () => network.mock.calls.length === 1
+      ? googleReply([{ functionCall: { name: "edit_quote_details", args: { fields: { title: "Staged" } } } }])
+      : googleReply());
+    vi.stubGlobal("fetch", network);
+    const app = await open();
+    const body = form({ repetitions: "2", callsPerRun: "1" });
+    const { id } = await (await app.post("/sessions", body)).json() as { id: string };
+    const completed = await eventually(() => app.record(id), record => record.state.status === "completed");
+    expect(completed.plan.limits).toMatchObject({ callsPerRun: 1, maxCalls: 2 });
+    expect(completed.state.calls).toBe(2);
+    expect(completed.state.work.map(work => work.status)).toEqual(["interrupted", "completed"]);
+    const first = await readRun(app.root, completed.state.work[0].runId!);
+    const second = await readRun(app.root, completed.state.work[1].runId!);
+    expect(first).toMatchObject({ automated: "failed", live: { stopReason: "run_call_limit", calls: [{ status: "complete" }] } });
+    expect(first.turns[0].after).toEqual(first.turns[0].before);
+    expect(second.live).toMatchObject({ calls: [{ status: "complete" }], sessionCalls: 2 });
+    expect(second.live?.stopReason).toBeUndefined();
+    expect(network).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
-    { limit: "calls", limits: { maxCalls: "1", maxSpendUsd: "10" }, calls: 1, completed: 1, reason: "call_limit" },
-    { limit: "spend", limits: { maxCalls: "10", maxSpendUsd: "0.58" }, calls: 1, completed: 1, reason: "spend_limit" },
-    { limit: "insufficient first reservation", limits: { maxCalls: "10", maxSpendUsd: "0.01" }, calls: 0, completed: 0, reason: "spend_limit" },
-  ])("shares the $limit allowance across repetitions and skips remaining work", async ({ limits, calls, completed, reason }) => {
+    { limit: "spend", maxSpendUsd: "0.58", calls: 1, completed: 1 },
+    { limit: "insufficient first reservation", maxSpendUsd: "0.01", calls: 0, completed: 0 },
+  ])("shares the $limit allowance across repetitions and skips remaining work", async ({ maxSpendUsd, calls, completed }) => {
     const network = vi.fn(async () => googleReply()); vi.stubGlobal("fetch", network);
     const app = await open();
-    const body = form({ repetitions: "4", ...limits });
-    const { id } = await (await app.post("/sessions", body)).json() as { id: string };
+    const { id } = await (await app.post("/sessions", form({ repetitions: "4", maxSpendUsd }))).json() as { id: string };
     const stopped = await eventually(() => app.record(id), record => record.state.status === "stopped");
-    expect(stopped.state.reason).toBe(reason);
+    expect(stopped.state.reason).toBe("spend_limit");
     expect(stopped.state.calls).toBe(calls);
     expect(stopped.state.work.filter(work => work.status === "completed")).toHaveLength(completed);
     expect(stopped.state.work.filter(work => work.status === "interrupted")).toHaveLength(1);
@@ -402,11 +468,20 @@ describe.runIf(Boolean(databaseUrl))("browser execution through HTTP, PostgreSQL
       expect(await postRaw(path, { origin: app.url, "sec-fetch-site": "cross-site" })).toBe(403);
       expect(await postRaw(path, {})).toBe(403);
     }
-    for (const [key, value] of Object.entries({ apiKey: "secret", databaseUrl: databaseUrl!, path: "/tmp/attack", command: "touch bad", model: "other", scenario: "unknown", suite: "unknown", repetitions: "0", reasoning: "off", maxCalls: "10001", maxElapsedMs: "3600001", maxSpendUsd: "0", maxOutputTokens: "4097", requestId: "not-a-uuid" })) {
+    for (const [key, value] of Object.entries({ apiKey: "secret", databaseUrl: databaseUrl!, path: "/tmp/attack", command: "touch bad", model: "other", scenario: "unknown", suite: "unknown", repetitions: "0", reasoning: "off", maxCalls: "1", callsPerRun: "101", maxElapsedMs: "3600001", maxSpendUsd: "0", maxOutputTokens: "4097", requestId: "not-a-uuid" })) {
       const body = form(); body.set(key, value);
       const response = await app.post("/sessions", body);
       expect(response.status, key).toBe(400);
       expect(await response.text()).not.toContain("browser-test-key");
+    }
+    for (const text of ["0", "-1", "1.5", "NaN", "101", ""]) {
+      const response = await app.post("/sessions", form({ callsPerRun: text }));
+      expect(response.status, text).toBe(400);
+    }
+    for (const body of [form({ repetitions: "101", callsPerRun: "100" }), form({ repetitions: "1000", callsPerRun: "100" })]) {
+      const response = await app.post("/sessions", body);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining("10000") });
     }
     const duplicates = form(); duplicates.append("reasoning", "high");
     expect((await app.post("/sessions", duplicates)).status).toBe(400);

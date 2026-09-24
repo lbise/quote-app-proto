@@ -64,6 +64,38 @@ it("records MAX_TOKENS on a complete zero-output Google completion", async () =>
   }
 });
 
+it("rejects an over-cap follow-up locally and admits the next Scenario Run", async () => {
+  const root = await mkdtemp(join(tmpdir(), "eval-run-cap-"));
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
+  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+  const network = vi.fn(async () => new Response(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "No change." }] }, finishReason: "STOP" }],
+    usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, totalTokenCount: 150 } })}\n\n`, { headers: { "content-type": "text/event-stream" } }));
+  vi.stubGlobal("fetch", network);
+  let live: ReturnType<typeof createLiveSession> | undefined;
+  try {
+    live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
+      maxCalls: 2, callsPerRun: 1, maxElapsedMs: 10_000, maxSpendUsd: 2, artifactRoot: root,
+      generation: { reasoning: "minimal", maxOutputTokens: 4096 } });
+    const input = { messages: [{ role: "user" as const, content: "Controlled", timestamp: Date.now() }] };
+    const first = live.forRun(scenarios[0], boundary);
+    const response = await first.boundary.streamFn(boundary.model, input);
+    for await (const _event of response) { /* Settle the reservation. */ }
+    expect(() => first.boundary.streamFn(boundary.model, input)).toThrow("run_call_limit");
+    expect(first.evidence()).toMatchObject({ stopReason: "run_call_limit", sessionCalls: 1, calls: [{ status: "complete" }] });
+    expect(live.stopped).toBeUndefined();
+    const second = live.forRun(scenarios[0], boundary);
+    const next = await second.boundary.streamFn(boundary.model, input);
+    for await (const _event of next) { /* Settle the reservation. */ }
+    expect(second.evidence()).toMatchObject({ sessionCalls: 2, calls: [{ number: 2, status: "complete" }] });
+    expect(second.evidence().stopReason).toBeUndefined();
+    expect(live.limits).toEqual({ callsPerRun: 1, maxCalls: 2, maxElapsedMs: 10_000, maxSpendUsd: 2 });
+    expect(network).toHaveBeenCalledTimes(2);
+    const ledger = (await readFile(join(root, "live-sessions", `${live.id}.jsonl`), "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    expect(ledger[0].limits).toMatchObject({ callsPerRun: 1, maxCalls: 2 });
+    expect(ledger.filter(entry => entry.scenarioHash && entry.call?.status === "reserved")).toHaveLength(2);
+  } finally { live?.close(); vi.unstubAllGlobals(); clock.mockRestore(); await rm(root, { recursive: true, force: true }); }
+});
+
 it("rejects manual-only scenarios instead of labeling a zero-call case a live-model pass", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-manual-only-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));

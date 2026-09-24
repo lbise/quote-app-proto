@@ -5,7 +5,7 @@ export type Assertion = {
   /** Untagged assertions check commercial state, preserving existing scenario hashes. */
   category?: "contract" | "commercial";
   label: string;
-  /** Dot path into {quote, calculation, outcome, failedCalls}. IDs are excluded from quote; sectionId becomes section index. */
+  /** Dot path into {quote, calculation, outcome, failedCalls, message}. IDs are excluded from quote; sectionId becomes section index. */
   path: string;
   operator: "equals" | "contains" | "oneOf" | "unchanged";
   expected?: unknown;
@@ -95,7 +95,7 @@ export type LiveEvidence = {
   sessionId: string;
   approvedScenarioHashes: string[];
   approval: { at: string; scenarioHash: string; provider: string; model: string; method: "explicit-launch" };
-  limits: { maxCalls: number; maxElapsedMs: number; maxSpendUsd: number };
+  limits: { maxCalls: number; callsPerRun?: number; maxElapsedMs: number; maxSpendUsd: number };
   pricing: { id: string; checkedAt: string; expiresAt: string; source: string; inputNanoUsd: number; outputNanoUsd: number; maxInputTokens: number; maxOutputTokens: number;
     units?: string; routing?: string; endpoints?: unknown[]; cacheReadNanoUsd?: number; cacheWriteNanoUsd?: number; requestNanoUsd?: number; reasoningNanoUsd?: number };
   calls: LiveCall[];
@@ -113,7 +113,7 @@ export type EvaluationSessionPlan = {
   selection: { scenarioIds: string[]; repetitions: number };
   model: { provider: string; id: string; requested: Record<string, unknown>; effective: Record<string, unknown> };
   launchAuthorization: { method: "explicit-cli-launch" | "browser-start"; at: string; scenarioHashes: string[] };
-  limits: { maxCalls: number; maxElapsedMs: number; maxSpendUsd: number } | null;
+  limits: { maxCalls: number; callsPerRun?: number; maxElapsedMs: number; maxSpendUsd: number } | null;
   pricing: (LiveEvidence["pricing"] & { units: string; assumptions: string }) | null;
   work: { id: string; scenarioId: string; scenarioHash: string; repetition: number }[];
 };

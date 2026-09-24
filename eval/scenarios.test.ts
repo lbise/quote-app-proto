@@ -4,15 +4,15 @@ import { evaluateAssertions } from "./assertions";
 import { scenarios } from "./scenarios";
 
 describe("evaluation scenario library", () => {
-  it("keeps the 26-scenario library range separate from five contract fixtures", () => {
+  it("keeps focused and full-job scenarios separate from fictional tool checks", () => {
     const libraryScenarios = scenarios.filter((scenario) => scenario.suite !== "contract");
     const contracts = scenarios.filter((scenario) => scenario.suite === "contract");
     expect(libraryScenarios.length).toBeGreaterThanOrEqual(24);
-    expect(libraryScenarios.length).toBeLessThanOrEqual(28);
+    expect(libraryScenarios.length).toBeLessThanOrEqual(29);
     expect(contracts.map((scenario) => scenario.id)).toEqual([
-      "contract-fixed-line", "contract-quantity-line", "contract-section-assignment", "contract-multi-paragraph-facts", "contract-mixed-batches",
+      "contract-fixed-line", "contract-quantity-line", "contract-section-assignment", "contract-multi-paragraph-facts", "contract-targeted-correction", "contract-copy-unknown-quantity", "contract-mixed-batches",
     ]);
-    expect(scenarios).toHaveLength(31);
+    expect(scenarios).toHaveLength(34);
     expect(new Set(scenarios.map((scenario) => scenario.id)).size).toBe(scenarios.length);
     for (const scenario of scenarios) {
       expect(scenario.version).toBeGreaterThan(0);
@@ -138,6 +138,17 @@ describe("evaluation scenario library", () => {
     bulkAfter.lines[0].unitPrice = "71.10";
     bulkAfter.lines[1].unitPrice = "71.10";
     expect(evaluateAssertions(bulk.steps[0].assertions, bulk.startingQuote, bulkAfter, "committed", 0).every((result) => result.passed)).toBe(true);
+  });
+
+  it("requires an ambiguous target to be clarified before a focused correction", () => {
+    const scenario = scenarios.find(item => item.id === "ambiguous-panel-correction")!;
+    expect(scenario.steps).toHaveLength(2);
+    expect(scenario.steps[0].assertions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "quote", operator: "unchanged" }),
+      expect.objectContaining({ path: "message", operator: "contains", expected: "?" }),
+    ]));
+    expect(scenario.expectedQuote?.lines.map(line => line.quantity)).toEqual(["2", "4"]);
+    expect(scenario.expectedCalculation?.total).toBe(6000);
   });
 
   it("agrees with every independently authored final commercial calculation", () => {

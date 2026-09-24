@@ -12,31 +12,37 @@ const launch = document.querySelector("#launch-form");
 if (launch) {
   const button = launch.querySelector("button[type=submit]");
   const choices = [...launch.querySelectorAll("input[name=scenario]")];
-  const suite = launch.elements.namedItem("suite");
   const repetitions = launch.elements.namedItem("repetitions");
+  const callsPerRun = launch.elements.namedItem("callsPerRun");
+  const sessionMinutes = launch.elements.namedItem("sessionMinutes");
+  const elapsedMs = launch.elements.namedItem("maxElapsedMs");
+  sessionMinutes.addEventListener("input", () => { elapsedMs.value = String(Number(sessionMinutes.value) * 60000); });
   const error = document.querySelector("#launch-error");
   let submitting = false;
-  let activeSuite = "";
-  let customSelection = new Set(choices.filter(choice => choice.checked).map(choice => choice.value));
   const search = document.querySelector("#scenario-search");
-  const selectVisible = document.querySelector("#select-visible");
+  const behavior = document.querySelector("#behavior-filter");
   const clearSelection = document.querySelector("#clear-selection");
   function filterScenarios() {
     const query = search.value.trim().toLowerCase();
     const rows = choices.map(choice => choice.closest(".scenario-choice"));
-    for (const row of rows) row.hidden = !row.dataset.search.includes(query);
+    for (const row of rows) row.hidden = !row.dataset.search.includes(query) || Boolean(behavior.value && !row.dataset.groups.split(" ").includes(behavior.value));
     const visible = rows.filter(row => !row.hidden).length;
-    document.querySelector("#visible-count").textContent = `${visible} of ${rows.length} scenarios`;
+    document.querySelector("#visible-count").textContent = `${visible} of ${rows.length} items`;
     document.querySelector("#no-scenarios").hidden = visible > 0;
   }
   search.addEventListener("input", filterScenarios);
-  selectVisible.addEventListener("click", () => {
-    if (suite.value) return;
+  behavior.addEventListener("change", filterScenarios);
+  document.querySelector("#select-visible").addEventListener("click", () => {
     for (const choice of choices) if (!choice.disabled && !choice.closest(".scenario-choice").hidden) choice.checked = true;
     selection();
   });
+  for (const [buttonId, kind] of [["#select-scenarios", "scenario"], ["#select-tool-tests", "contract"]]) {
+    document.querySelector(buttonId).addEventListener("click", () => {
+      for (const choice of choices) if (!choice.disabled && choice.dataset.suite === kind) choice.checked = true;
+      selection();
+    });
+  }
   clearSelection.addEventListener("click", () => {
-    if (suite.value) return;
     for (const choice of choices) choice.checked = false;
     selection();
   });
@@ -98,30 +104,21 @@ if (launch) {
   model?.addEventListener("change", () => { void checkModel(); });
   void checkModel();
   function selection() {
-    if (suite.value !== activeSuite) {
-      if (!activeSuite) customSelection = new Set(choices.filter(choice => choice.checked).map(choice => choice.value));
-      if (!suite.value) for (const choice of choices) choice.checked = customSelection.has(choice.value);
-      activeSuite = suite.value;
-    }
-    for (const choice of choices) {
-      choice.disabled = Boolean(suite.value) || choice.dataset.controlled === "true";
-      if (suite.value) choice.checked = choice.dataset.suite === suite.value;
-      choice.closest(".scenario-choice").dataset.selected = String(choice.checked);
-    }
-    selectVisible.disabled = Boolean(suite.value);
-    clearSelection.disabled = Boolean(suite.value);
-    const selected = choices.filter(choice => suite.value ? choice.dataset.suite === suite.value : choice.checked);
+    for (const choice of choices) choice.closest(".scenario-choice").dataset.selected = String(choice.checked);
+    const selected = choices.filter(choice => choice.checked);
     const count = selected.length;
     const repeat = Number(repetitions.value);
-    document.querySelector("#selection-summary").textContent = `${count} ${count === 1 ? "scenario" : "scenarios"} × ${repeat} ${repeat === 1 ? "repetition" : "repetitions"} = ${count * repeat} planned Scenario Runs.`;
+    document.querySelector("#selection-summary").textContent = `${count} ${count === 1 ? "selected item" : "selected items"} × ${repeat} ${repeat === 1 ? "repetition" : "repetitions"} = ${count * repeat} planned Scenario Runs.`;
     document.querySelector("#selected-scenarios").replaceChildren(...selected.map(choice => {
       const item = document.createElement("li");
-      item.textContent = choice.closest("label").textContent;
+      const kind = choice.dataset.suite === "contract" ? "Tool validation test" : "Scenario";
+      item.textContent = `${kind} · ${choice.closest("label").textContent}`;
       return item;
     }));
-    const controlled = selected.some(choice => choice.dataset.controlled === "true");
-    document.querySelector("#selection-warning").textContent = controlled ? "This selection includes controlled-only cases and cannot run live. Choose a custom subset without those cases." : "";
-    button.disabled = submitting || launch.dataset.unavailable === "true" || !count || controlled || !verified || (model && !model.value) || !reasoning.value;
+    document.querySelector("#selection-empty").hidden = count > 0;
+    const tooManyCalls = count * repeat * Number(callsPerRun.value) > 10000;
+    document.querySelector("#selection-warning").textContent = tooManyCalls ? "Reduce repetitions, selected items or calls per run. The session can allow at most 10,000 provider calls." : "";
+    button.disabled = submitting || launch.dataset.unavailable === "true" || !count || tooManyCalls || !verified || (model && !model.value) || !reasoning.value;
   }
   launch.addEventListener("input", selection);
   launch.addEventListener("change", selection);
@@ -135,7 +132,7 @@ if (launch) {
     error.textContent = "";
     try {
       const body = new URLSearchParams(new FormData(launch));
-      if (!body.get("suite")) body.delete("suite");
+      body.delete("sessionMinutes");
       const result = await post(launch.action, body);
       location.assign(`/?session=${encodeURIComponent(result.id)}`);
     } catch (failure) {

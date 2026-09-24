@@ -69,6 +69,10 @@ export function startEvaluation(options: EvaluationLaunch) {
   if (options.mode === "live" && !options.live || options.mode !== "live" && options.live) throw new Error("Live transport requires a bounded live session.");
   if (options.mode === "live" && !options.live?.pricing) throw new Error("Live execution requires limits and usable pricing.");
   if (options.live && (options.boundary.model.provider !== options.live.modelProvider || options.boundary.model.id !== options.live.modelId)) throw new Error("Live model differs from the approved session.");
+  if (options.browserRequest && (!options.live?.limits.callsPerRun
+    || options.live.limits.maxCalls !== options.live.limits.callsPerRun * options.scenarios.length * options.repetitions)) {
+    throw new Error("Browser call allowance must equal the per-run cap times planned work.");
+  }
   if (options.live && (options.settings.requested.reasoning !== "unspecified" && options.settings.requested.reasoning !== options.live.effectiveGeneration.reasoning
     || options.settings.requested.maxOutputTokens !== undefined && options.settings.requested.maxOutputTokens !== options.live.effectiveGeneration.maxOutputTokens)) {
     throw new Error("Requested live generation differs from validated effective settings.");

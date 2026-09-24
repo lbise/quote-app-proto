@@ -86,6 +86,8 @@ describe("pi Quote assistant model boundary", () => {
     expect(lineTool?.description).toBe(editQuoteLinesDescription);
     expect(lineTool?.description).toBe(proposedTools.find((tool) => tool.name === "edit_quote_lines")?.description);
     expect(sectionTool?.description).toBe(proposedTools.find((tool) => tool.name === "edit_quote_sections")?.description);
+    expect(sectionTool?.description).toContain("The application generates IDs for new sections");
+    expect(sectionTool?.parameters).toMatchObject({ properties: { sections: { items: { properties: { id: { description: expect.stringContaining("Never invent an ID for a new section") } } } } } });
     expect(lineTool?.parameters).toMatchObject({ properties: { lines: { items: { properties: { description: { type: "string" }, mode: {}, quantity: {}, unit: {}, unitPrice: {}, amount: {} } } } } });
     expect(sectionTool?.parameters).toMatchObject({ properties: { sections: { items: { properties: { title: { type: "string" } } } } } });
   });

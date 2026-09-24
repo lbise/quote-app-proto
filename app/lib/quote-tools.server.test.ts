@@ -127,6 +127,21 @@ describe("createQuoteTools", () => {
     expect(tools.result().quote?.sections[0].title).toBe("Salon");
   });
 
+  it("rejects invented section IDs without staging work, then accepts new sections without IDs", async () => {
+    const tools = executor(emptyQuote("Q-new-sections"));
+    await expect(tool(tools, "edit_quote_sections").execute("invented", {
+      sections: [{ id: "zone_a", title: "Atelier" }, { id: "zone_b", title: "Réserve" }],
+    })).rejects.toThrow("invalid_section_id");
+    expect(tools.result().quote?.sections).toEqual([]);
+    await tool(tools, "edit_quote_sections").execute("created", {
+      sections: [{ title: "Atelier" }, { title: "Réserve" }],
+    });
+    expect(tools.result().quote?.sections).toEqual([
+      { id: expect.any(String), title: "Atelier" },
+      { id: expect.any(String), title: "Réserve" },
+    ]);
+  });
+
   it("copies lines and sections with fresh IDs and unknown measurements", async () => {
     const tools = executor({
       ...emptyQuote("Q-copy"), sections: [{ id: "living", title: "Séjour" }],

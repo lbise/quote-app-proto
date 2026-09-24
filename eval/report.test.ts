@@ -16,7 +16,7 @@ it("lets a reviewer inspect a source-derived scenario without any run or provide
   expect(html).toContain("Starting Working Draft");
   expect(html).toContain("Ajoute la dépose.");
   expect(html).toContain("quote.lines.length");
-  expect(html).toContain("No provider calls");
+  expect(html).not.toContain("Private local report");
   expect(html).toContain('<details class="evidence-panel"><summary>Scenario metadata, source and adaptations</summary>');
   expect(html).toContain('<details class="evidence-panel" id="script" open>');
   expect(html).toContain("Ask for the missing amount.");
@@ -139,7 +139,7 @@ it("separates fictional contract outcomes from commercial outcomes without chang
   expect(html).toContain("Contract checks");
   expect(html).not.toContain('nav aria-label="Contract checks"');
   expect(html).not.toContain('nav aria-label="Scenario cases"');
-  expect(html).toContain("Fictional contract check");
+  expect(html).toContain("Fictional tool validation test");
   expect(html).toContain("Contract checks: <strong>failed</strong> · Commercial checks: <strong>passed</strong>");
   expect(html).toContain("contract check");
   expect(html).toContain("Automated: <strong>failed</strong>");
@@ -172,8 +172,8 @@ it("shows grouped scenario links only in the explicit library view", () => {
   const html = renderReport({ scenarios: [contract, scenario], runs: [], reviews: [], libraryView: true });
   expect(html).toContain('<h1>Scenario library</h1>');
   expect(html).toContain('class="library-grid"');
-  expect(html).toContain('nav aria-label="Contract checks"');
-  expect(html).toContain('nav aria-label="Scenario cases"');
+  expect(html).toContain('nav aria-label="Tool validation tests"');
+  expect(html).toContain('nav aria-label="Scenarios"');
   expect(html).toContain('class="scenario-links"');
   expect(html).toContain('href="/?scenario=contract%261"');
   expect(html).toContain('Joinery &lt;script&gt;alert(1)&lt;/script&gt;');

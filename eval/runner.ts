@@ -154,10 +154,6 @@ function missingExpectations(scenario: Scenario): string | undefined {
   return undefined;
 }
 
-function assertionsFor(step: ScenarioStep, before: QuoteData, after: QuoteData, outcome: string, failedCalls: number): AssertionResult[] {
-  return evaluateAssertions(step.assertions, before, after, outcome, failedCalls);
-}
-
 function contractChecks(scenario: Scenario, turns: TurnResult[], sessionStopped: boolean): EvaluationRun["checks"] {
   if (scenario.suite !== "contract") return undefined;
   const complete = turns.length === scenario.steps.length;
@@ -333,7 +329,7 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       const message = step.kind === "artisan" && response.ok && payload && typeof payload === "object"
         ? ((payload as { messages?: { en?: string }[] }).messages?.at(-1)?.en ?? "")
         : "";
-      const assertions = assertionsFor(step, before, after, outcome, failedCalls);
+      const assertions = evaluateAssertions(step.assertions, before, after, outcome, failedCalls, message);
       if (!response.ok && !expectsTerminalOutcome(step, outcome)) {
         assertions.push({ ...(scenario.suite === "contract" ? { category: "contract" as const } : {}), label: "Terminal HTTP outcome is explicitly expected", path: "outcome", passed: false, expected: "an equals assertion for the terminal outcome", actual: outcome });
       }
