@@ -333,7 +333,7 @@ export function RecordsEditor({
 
           <section aria-labelledby="business-defaults-heading">
             <h2 id="business-defaults-heading" className="mb-3 text-base font-medium">{t(locale, "Valeurs par défaut de l'entreprise", "Business defaults")}</h2>
-            {quote && <p className="mb-4 text-sm text-muted-foreground">{t(locale, "Pour modifier les coordonnées de l'entreprise dans ce devis, utilisez Coordonnées et conditions.", "To change this Quote's business details, use Details & terms.")}</p>}
+            {quote && <p className="mb-4 text-sm text-muted-foreground">{t(locale, "Pour modifier les coordonnées de l'entreprise dans ce devis, cliquez sur le bloc de l'entreprise dans le devis.", "To change this Quote's business details, select the business block in the Quote.")}</p>}
             <form id="record-defaults-form" onSubmit={saveDefaults} noValidate>
               <FieldGroup>
                 <Field data-disabled={busy || undefined}>

@@ -31,11 +31,9 @@ test("an Artisan can open and edit Quotes without the secure-context UUID API", 
     await expect(page.getByText("HTTP access regression fixture")).toBeVisible();
     await expect(page.getByText(/CHF\s*42\.00/)).toBeVisible();
 
-    await page.getByRole("button", { name: "Add a section" }).click();
-    const sections = page.getByRole("dialog");
-    await sections.getByRole("button", { name: "Add", exact: true }).click();
-    await sections.getByLabel("Section name 1").fill("HTTP section fixture");
-    await sections.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: "Add section", exact: true }).click();
+    await page.getByLabel("New section name").fill("HTTP section fixture");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Customers and defaults" }).click();
@@ -50,7 +48,7 @@ test("an Artisan can open and edit Quotes without the secure-context UUID API", 
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText("HTTP Customer fixture", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: /HTTP section fixture/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "HTTP section fixture", exact: true })).toBeVisible();
     expect(requestIds.length).toBeGreaterThanOrEqual(5);
     for (const id of requestIds) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(new Set(requestIds).size).toBe(requestIds.length);

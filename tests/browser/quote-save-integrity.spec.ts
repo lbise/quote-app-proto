@@ -5,13 +5,13 @@ test('an Artisan can correct a rejected duplicate reference without losing the W
   const second = await createCompleteQuote(artisan);
   const { page } = artisan;
   await page.goto(`/quotes?id=${second.id}`);
-  await page.getByRole('button', { name: 'Details & terms' }).click();
-  await page.getByLabel('Reference', { exact: true }).fill(first.draft.reference);
+  await page.getByRole('button', { name: 'Edit reference and dates' }).click();
+  await page.locator('#metadata-reference').fill(first.draft.reference);
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Not saved');
 
-  await page.getByRole('button', { name: 'Details & terms' }).click();
-  await page.getByLabel('Reference', { exact: true }).fill(second.draft.reference);
+  await page.getByRole('button', { name: 'Edit reference and dates' }).click();
+  await page.locator('#metadata-reference').fill(second.draft.reference);
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Saved');
   await page.reload();

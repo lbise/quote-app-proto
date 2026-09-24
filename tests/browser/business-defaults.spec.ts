@@ -81,10 +81,10 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await page.getByRole("button", { name: "New Quote", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Prepare a Quote" })).toBeAttached();
   const incompleteUrl = page.url();
-  await expect(page.getByText("Entreprise à renseigner", { exact: true })).toBeVisible();
+  await expect(page.locator(".qp-business-name")).toHaveText("Entreprise à renseigner");
   await page.getByRole("button", { name: "Customers and defaults" }).click();
   const defaults = page.getByRole("region", { name: "Business defaults" });
-  await expect(defaults.getByText("To change this Quote's business details, use Details & terms.")).toBeVisible();
+  await expect(defaults.getByText("To change this Quote's business details, select the business block in the Quote.")).toBeVisible();
   await defaults.getByLabel("Business name").fill("Atelier des Tilleuls");
   await defaults.getByLabel("Address", { exact: true }).fill("Rue Exemple 4\n1000 Exemple");
   await defaults.getByLabel("Contact details").fill("bonjour@example.test · 021 000 00 00");
@@ -94,7 +94,7 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await expect(page.getByRole("dialog").getByRole("status")).toContainText("This Quote is unchanged.");
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.reload();
-  await expect(page.getByText("Entreprise à renseigner", { exact: true })).toBeVisible();
+  await expect(page.locator(".qp-business-name")).toHaveText("Entreprise à renseigner");
   await page.getByRole("button", { name: "My Quotes", exact: true }).click();
   await page.getByRole("button", { name: "New Quote", exact: true }).click();
   const paper = page.getByRole("article");
@@ -111,7 +111,7 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await expect(paper).toContainText("Atelier des Tilleuls");
   await expect(paper).not.toContainText("Atelier des Tilleuls actualisé");
   await page.goto(incompleteUrl);
-  await expect(page.getByText("Entreprise à renseigner", { exact: true })).toBeVisible();
+  await expect(page.locator(".qp-business-name")).toHaveText("Entreprise à renseigner");
 });
 
 test("quote-local business and VAT edits autosave and undo without changing defaults", async ({ artisan }) => {
@@ -122,30 +122,26 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   const seeded = await createCompleteQuote(artisan);
   await page.goto(`/quotes?id=${seeded.id}`);
   const paper = page.getByRole("article");
-  await page.getByRole("button", { name: "Details & terms" }).press("Enter");
-  const editor = page.getByRole("dialog");
-  await expect(editor).toContainText("This changes this Quote only. Saved Customer records and business defaults stay unchanged.");
-  await editor.getByText("Your business", { exact: true }).press("Enter");
+  await paper.getByRole("button", { name: "Edit business details" }).press("Enter");
+  const editor = page.getByRole("dialog", { name: "Business details for this Quote" });
+  await expect(editor).toContainText("These details and VAT status change this Working Draft only.");
   await editor.getByLabel("Business name").fill("Atelier local au devis");
-  await editor.getByText("Terms", { exact: true }).press("Enter");
-  await editor.getByLabel("Quote terms").fill("Acompte convenu de 15 %. Solde à 45 jours.");
-  await editor.getByText("Pricing and VAT", { exact: true }).press("Enter");
-  await editor.getByLabel("VAT registered").selectOption("yes");
   await editor.getByLabel("VAT identifier").fill("");
-  await expect(editor).toContainText("The VAT identifier is missing. You can save this incomplete Working Draft and complete it later.");
+  await expect(editor).toContainText("Required before publication.");
   await editor.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
   await expect(paper).toContainText("Atelier local au devis");
-  await page.getByRole("button", { name: "Undo last change", exact: true }).click()
+  await page.getByRole("button", { name: "Undo last change", exact: true }).click();
   await expect(paper).toContainText("Atelier du Bois Sàrl");
-  await expect(paper).not.toContainText("Acompte convenu");
 
-  await page.getByRole("button", { name: "Details & terms" }).click();
-  await editor.getByText("Your business", { exact: true }).click();
+  await paper.getByRole("button", { name: "Edit business details" }).click();
   await editor.getByLabel("Business name").fill("Atelier local au devis");
-  await editor.getByText("Terms", { exact: true }).click();
-  await editor.getByLabel("Quote terms").fill("Acompte convenu de 15 %. Solde à 45 jours.");
   await editor.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved");
+  await paper.getByRole("button", { name: "Edit terms" }).click();
+  const terms = page.getByRole("dialog", { name: "Quote terms" });
+  await terms.getByLabel("Terms", { exact: true }).fill("Acompte convenu de 15 %. Solde à 45 jours.");
+  await terms.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
   await page.getByRole("button", { name: "Customers and defaults" }).click();
   const defaults = page.getByRole("region", { name: "Business defaults" });
@@ -157,8 +153,17 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await page.reload();
   await expect(paper).toContainText("Atelier local au devis");
   await expect(paper).toContainText("Acompte convenu de 15 %. Solde à 45 jours.");
+  await paper.getByRole("button", { name: "Edit business details" }).click();
+  await editor.getByRole("button", { name: "Restore from business settings" }).click();
+  await expect(editor.getByLabel("Business name")).toHaveValue("Atelier des Tilleuls actualisé");
+  await editor.getByRole("button", { name: "Cancel" }).click();
+  await paper.getByRole("button", { name: "Edit terms" }).click();
+  await terms.getByRole("button", { name: "Restore default terms" }).click();
+  await expect(terms.getByLabel("Terms", { exact: true })).toHaveValue("");
+  await terms.getByRole("button", { name: "Cancel" }).click();
+  await expect(paper).toContainText("Acompte convenu de 15 %. Solde à 45 jours.");
   await page.getByLabel("Interface language / Langue de l’interface").selectOption("fr");
-  await expect(page.getByRole("button", { name: "Coordonnées et conditions" })).toBeVisible();
+  await expect(paper.getByRole("button", { name: "Modifier les coordonnées de l’entreprise" })).toBeVisible();
   await page.setViewportSize({ width: 800, height: 900 });
   await page.getByRole("button", { name: "Devis", exact: true }).click();
   await expect(paper).toContainText("Acompte convenu de 15 %. Solde à 45 jours.");
@@ -204,11 +209,9 @@ for (const locale of ["en", "fr"] as const) {
     await page.getByLabel("Interface language / Langue de l’interface").selectOption(locale);
     await page.setViewportSize({ width: 800, height: 900 });
     await page.getByRole("button", { name: locale === "en" ? "Quote" : "Devis", exact: true }).click();
-    const details = page.getByRole("button", { name: locale === "en" ? "Details & terms" : "Coordonnées et conditions" });
+    const details = page.getByRole("button", { name: locale === "en" ? "Edit business details" : "Modifier les coordonnées de l’entreprise" });
     await details.click();
-    const editor = page.getByRole("dialog");
-    const pricing = editor.getByText(locale === "en" ? "Pricing and VAT" : "Prix et TVA", { exact: true });
-    await pricing.click();
+    const editor = page.getByRole("dialog", { name: locale === "en" ? "Business details for this Quote" : "Votre entreprise sur ce devis" });
     const identifier = editor.getByLabel(locale === "en" ? "VAT identifier" : "Numéro TVA");
     await expect(identifier).toHaveValue("CHE-000.000.000 TVA");
     await identifier.fill("");
@@ -218,7 +221,6 @@ for (const locale of ["en", "fr"] as const) {
     await page.reload();
     await page.getByRole("button", { name: locale === "en" ? "Quote" : "Devis", exact: true }).click();
     await details.click();
-    await pricing.click();
     await expect(identifier).toHaveValue("");
   });
 

@@ -2,8 +2,8 @@ import { createCompleteQuote, expect, setInterfaceLanguage, test } from "./fixtu
 
 for (const locale of ["en", "fr"] as const) {
   const copy = locale === "fr"
-    ? { message: "Votre message", send: "Envoyer le message", dialog: "Modifier le devis", view: "Voir les détails modifiés", titleChanged: "Objet modifié", discountChanged: "Remise modifiée", cancel: "Annuler" }
-    : { message: "Your message", send: "Send message", dialog: "Edit quote", view: "View changed details", titleChanged: "Title changed", discountChanged: "Discount changed", cancel: "Cancel" };
+    ? { message: "Votre message", send: "Envoyer le message", customer: "Choisir ou modifier le client", customerDialog: "Client du devis", customerName: "Nom du client", business: "Modifier les coordonnées de l’entreprise", businessDialog: "Votre entreprise sur ce devis", businessName: "Raison sociale", vat: "Assujetti à la TVA", vatId: "Numéro TVA", title: "Modifier l’objet du devis", titleInput: "Objet du devis", discount: "Modifier la remise", discountDialog: "Remise du devis", titleChanged: "Objet modifié", discountChanged: "Remise modifiée", view: "Voir les détails modifiés", cancel: "Annuler" }
+    : { message: "Your message", send: "Send message", customer: "Choose or edit Customer", customerDialog: "Quote Customer", customerName: "Customer name", business: "Edit business details", businessDialog: "Business details for this Quote", businessName: "Business name", vat: "VAT registered", vatId: "VAT identifier", title: "Edit Quote title", titleInput: "Quote title", discount: "Edit discount", discountDialog: "Quote discount", titleChanged: "Title changed", discountChanged: "Discount changed", view: "View changed details", cancel: "Cancel" };
 
   test(`commercial administrative and VAT/Discount corrections are visible in ${locale}`, async ({ artisan }) => {
     const seeded = await createCompleteQuote(artisan);
@@ -37,20 +37,30 @@ for (const locale of ["en", "fr"] as const) {
     await page.getByLabel(copy.message).fill("Corrige les informations de ce Quote.");
     await page.getByRole("button", { name: copy.send, exact: true }).click();
 
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toHaveRole("dialog");
-    await expect(page.getByRole("heading", { name: copy.dialog })).toBeVisible();
-    await expect(page.locator("#manual-title")).toHaveValue("Projet corrigé");
-    await expect(page.locator("#manual-customer-name")).toHaveValue("Maison corrigée");
-    await expect(page.locator("#manual-business-name")).toHaveValue("Atelier corrigé Sàrl");
-    await expect(page.locator("#manual-vat-registered")).toHaveValue("no");
-    await expect(page.locator("#manual-vat-id")).toHaveValue("");
-    await expect(page.locator("#manual-discount-mode")).toHaveValue("percent");
-    await expect(page.locator("#manual-discount")).toHaveValue("5");
+    const customer = page.getByRole("dialog", { name: copy.customerDialog });
+    await expect(customer.getByLabel(copy.customerName)).toHaveValue("Maison corrigée");
+    await expect(customer.getByLabel(locale === "fr" ? "Adresse du client" : "Customer address")).toHaveValue("Rue corrigée 4\\n1000 Lausanne");
+    await customer.getByRole("button", { name: copy.cancel, exact: true }).click();
 
-    await dialog.getByRole("button", { name: copy.cancel, exact: true }).click();
+    const paper = page.getByRole("article");
+    await paper.getByRole("button", { name: copy.title }).click();
+    await expect(page.getByLabel(copy.titleInput)).toHaveValue("Projet corrigé");
+    await page.getByRole("button", { name: copy.cancel, exact: true }).click();
+    await paper.getByRole("button", { name: copy.business }).click();
+    const business = page.getByRole("dialog", { name: copy.businessDialog });
+    await expect(business.getByLabel(copy.businessName)).toHaveValue("Atelier corrigé Sàrl");
+    await expect(business.getByLabel(copy.vat)).toHaveValue("no");
+    await expect(business.getByLabel(copy.vatId)).toHaveValue("");
+    await business.getByRole("button", { name: copy.cancel, exact: true }).click();
+    await paper.getByRole("button", { name: copy.discount }).click();
+    const discount = page.getByRole("dialog", { name: copy.discountDialog });
+    await expect(discount.locator("#quote-discount-mode")).toHaveValue("percent");
+    await expect(discount.locator("#quote-discount-edit")).toHaveValue("5");
+    await discount.getByRole("button", { name: copy.cancel, exact: true }).click();
+
     await expect(page.getByText(copy.titleChanged, { exact: true })).toBeVisible();
     await expect(page.getByText(copy.discountChanged, { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: copy.view, exact: true })).toBeVisible();
+    await page.getByRole("button", { name: copy.view, exact: true }).click();
+    await expect(page.getByRole("dialog", { name: copy.customerDialog }).getByLabel(copy.customerName)).toHaveValue("Maison corrigée");
   });
 }
