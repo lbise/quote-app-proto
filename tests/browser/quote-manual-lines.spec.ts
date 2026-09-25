@@ -3,7 +3,8 @@ import { expect, test } from "./fixtures";
 
 const interfaces = {
   en: {
-    newQuote: "New Quote", add: "Add a line", edit: "Edit line", dialog: "Edit quote line",
+    newQuote: "New Quote", add: "Add a line", edit: "Edit line", dialog: /^(?:Add a line|Edit quote line \d+)$/,
+    more: "More actions for line",
     mode: "Pricing mode", quantity: "Quantity", unit: "Unit", price: "Unit price", amount: "Amount",
     apply: "Apply", cancel: "Cancel", saved: "Saved", notSaved: "Not saved", retry: "Retry", undo: /^Undo/,
     up: "Move up line", down: "Move down line", duplicate: "Duplicate line", delete: "Delete line",
@@ -11,7 +12,8 @@ const interfaces = {
     precision: "This precision is not supported.", invalid: "Enter a valid value.",
   },
   fr: {
-    newQuote: "Nouveau devis", add: "Ajouter une ligne", edit: "Modifier la ligne", dialog: "Modifier la ligne",
+    newQuote: "Nouveau devis", add: "Ajouter une ligne", edit: "Modifier la ligne", dialog: /^(?:Ajouter une ligne|Modifier la ligne \d+)$/,
+    more: "Autres actions de la ligne",
     mode: "Mode de prix", quantity: "Quantité", unit: "Unité", price: "Prix unitaire", amount: "Montant",
     apply: "Appliquer", cancel: "Annuler", saved: "Enregistré", notSaved: "Non enregistré", retry: "Réessayer", undo: /^Annuler/,
     up: "Monter la ligne", down: "Descendre la ligne", duplicate: "Dupliquer la ligne", delete: "Supprimer la ligne",
@@ -42,6 +44,18 @@ async function addFixedLine(page: Page, copy: Copy, description: string, amount:
   await dialog.getByLabel(copy.mode, { exact: true }).selectOption("fixed");
   await dialog.getByLabel(copy.amount, { exact: true }).fill(amount);
   await persist(page, copy, "save", () => dialog.getByRole("button", { name: copy.apply, exact: true }).click());
+}
+
+async function openLineActions(page: Page, copy: Copy, number: number) {
+  const trigger = page.getByRole("button", { name: `${copy.more} ${number}`, exact: true });
+  await trigger.focus();
+  await trigger.press("Enter");
+  await expect(page.getByRole("menu")).toBeVisible();
+}
+
+async function chooseLineAction(page: Page, copy: Copy, number: number, action: "up" | "down" | "duplicate" | "delete") {
+  await openLineActions(page, copy, number);
+  await page.getByRole("menuitem", { name: `${copy[action]} ${number}`, exact: true }).click();
 }
 
 async function expectLines(page: Page, descriptions: string[]) {
@@ -147,10 +161,17 @@ for (const locale of ["en", "fr"] as const) {
       await addFixedLine(page, copy, "Protection du chantier", "10");
       await addFixedLine(page, copy, "Pose des panneaux", "20");
       await addFixedLine(page, copy, "Nettoyage final", "30");
-      await expect(page.getByRole("button", { name: `${copy.up} 1`, exact: true })).toBeDisabled();
-      await expect(page.getByRole("button", { name: `${copy.down} 3`, exact: true })).toBeDisabled();
+      await expect(page.getByRole("menuitem")).toHaveCount(0);
+      await openLineActions(page, copy, 1);
+      await expect(page.getByRole("menuitem", { name: `${copy.up} 1`, exact: true })).toBeDisabled();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("button", { name: `${copy.more} 1`, exact: true })).toBeFocused();
+      await openLineActions(page, copy, 3);
+      await expect(page.getByRole("menuitem", { name: `${copy.down} 3`, exact: true })).toBeDisabled();
+      await page.keyboard.press("Escape");
 
-      const down = page.getByRole("button", { name: `${copy.down} 1`, exact: true });
+      await openLineActions(page, copy, 1);
+      const down = page.getByRole("menuitem", { name: `${copy.down} 1`, exact: true });
       await down.focus();
       await persist(page, copy, "save", () => page.keyboard.press("Enter"));
       await expect(page.getByRole("button", { name: `${copy.edit} 2`, exact: true })).toBeFocused();
@@ -160,7 +181,7 @@ for (const locale of ["en", "fr"] as const) {
       await expectLines(page, ["Pose des panneaux", "Protection du chantier", "Nettoyage final"]);
       await expect(page.getByText("CHF 60.00", { exact: true })).toBeVisible();
 
-      await persist(page, copy, "save", () => page.getByRole("button", { name: `${copy.up} 3`, exact: true }).click());
+      await persist(page, copy, "save", () => chooseLineAction(page, copy, 3, "up"));
       await expect(page.getByRole("button", { name: `${copy.edit} 2`, exact: true })).toBeFocused();
       await expect(page.getByRole("button", { name: `${copy.edit} 2`, exact: true })).toBeInViewport();
       await expectLines(page, ["Pose des panneaux", "Nettoyage final", "Protection du chantier"]);
@@ -172,7 +193,7 @@ for (const locale of ["en", "fr"] as const) {
       await expectLines(page, ["Pose des panneaux", "Protection du chantier", "Nettoyage final"]);
       await expect(page.getByRole("button", { name: copy.undo })).toBeDisabled();
 
-      await persist(page, copy, "save", () => page.getByRole("button", { name: `${copy.duplicate} 2`, exact: true }).click());
+      await persist(page, copy, "save", () => chooseLineAction(page, copy, 2, "duplicate"));
       await expectLines(page, ["Pose des panneaux", "Protection du chantier", "Protection du chantier", "Nettoyage final"]);
       await expect(page.getByText("CHF 70.00", { exact: true })).toBeVisible();
       await page.reload();
@@ -204,7 +225,8 @@ for (const locale of ["en", "fr"] as const) {
       await addFixedLine(page, copy, "Pose des panneaux", "20");
       await addFixedLine(page, copy, "Nettoyage final", "30");
 
-      const removeMiddle = page.getByRole("button", { name: `${copy.delete} 2`, exact: true });
+      await openLineActions(page, copy, 2);
+      const removeMiddle = page.getByRole("menuitem", { name: `${copy.delete} 2`, exact: true });
       await removeMiddle.focus();
       await persist(page, copy, "save", () => page.keyboard.press("Enter"));
       await expectLines(page, ["Protection du chantier", "Nettoyage final"]);
@@ -219,17 +241,17 @@ for (const locale of ["en", "fr"] as const) {
       await page.reload();
       await expectLines(page, ["Protection du chantier", "Pose des panneaux", "Nettoyage final"]);
 
-      await persist(page, copy, "save", () => page.getByRole("button", { name: `${copy.delete} 3`, exact: true }).click());
+      await persist(page, copy, "save", () => chooseLineAction(page, copy, 3, "delete"));
       await expectLines(page, ["Protection du chantier", "Pose des panneaux"]);
       await expect(page.getByRole("button", { name: `${copy.edit} 2`, exact: true })).toBeFocused();
       await expect(page.getByRole("button", { name: `${copy.edit} 2`, exact: true })).toBeInViewport();
       await page.reload();
       await expectLines(page, ["Protection du chantier", "Pose des panneaux"]);
-      await persist(page, copy, "save", () => page.getByRole("button", { name: `${copy.delete} 2`, exact: true }).click());
+      await persist(page, copy, "save", () => chooseLineAction(page, copy, 2, "delete"));
       await expectLines(page, ["Protection du chantier"]);
       await expect(page.getByRole("button", { name: `${copy.edit} 1`, exact: true })).toBeFocused();
       await expect(page.getByRole("button", { name: `${copy.edit} 1`, exact: true })).toBeInViewport();
-      await persist(page, copy, "save", () => page.getByRole("button", { name: `${copy.delete} 1`, exact: true }).click());
+      await persist(page, copy, "save", () => chooseLineAction(page, copy, 1, "delete"));
       await expect(page.getByTestId("quote-line")).toHaveCount(0);
       await expect(page.getByRole("button", { name: copy.add, exact: true })).toBeFocused();
       await expect(page.getByRole("button", { name: copy.add, exact: true })).toBeInViewport();
@@ -263,7 +285,7 @@ for (const locale of ["en", "fr"] as const) {
         await route.continue();
       });
 
-      await page.getByRole("button", { name: `${copy.delete} 2`, exact: true }).click();
+      await chooseLineAction(page, copy, 2, "delete");
       await expect(page.getByRole("status")).toContainText(copy.notSaved);
       await expectLines(page, ["Protection du chantier", "Nettoyage final"]);
       await expect(page.getByRole("button", { name: `${copy.edit} 2`, exact: true })).toBeFocused();

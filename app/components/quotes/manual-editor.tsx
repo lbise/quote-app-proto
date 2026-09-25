@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
+import "./editor-layout.css"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -17,6 +18,8 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -117,7 +120,7 @@ export function ManualEditor({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="qp-modal" showCloseButton={false}>
+      <DialogContent className="qp-modal qp-editor-dialog" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{t(locale, "Modifier le devis", "Edit quote")}</DialogTitle>
           <DialogDescription>
@@ -125,7 +128,8 @@ export function ManualEditor({
           </DialogDescription>
         </DialogHeader>
 
-        <form className="flex max-h-[75vh] flex-col gap-5 overflow-y-auto" onSubmit={apply} noValidate>
+        <form className="qp-editor-form" onSubmit={apply} noValidate>
+          <div className="qp-editor-body">
           <details open>
             <summary>{t(locale, "Devis", "Quote")}</summary>
             <FieldGroup>
@@ -245,7 +249,8 @@ export function ManualEditor({
             </FieldGroup>
           </details>
 
-          <DialogFooter>
+          </div>
+          <DialogFooter className="qp-editor-footer">
             <Button type="button" variant="outline" onClick={onClose}>{t(locale, "Annuler", "Cancel")}</Button>
             <Button type="submit">{t(locale, "Appliquer", "Apply")}</Button>
           </DialogFooter>
@@ -257,17 +262,21 @@ export function ManualEditor({
 
 export function LineEditor({
   line,
+  lineNumber,
   sections,
   locale,
   onApply,
   onClose,
 }: {
   line: QuoteLine
+  lineNumber?: number
   sections: QuoteSection[]
   locale: Locale
   onApply: (l: QuoteLine) => void
   onClose: () => void
 }) {
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const descriptionLabelRef = useRef<HTMLLabelElement>(null)
   const [draft, setDraft] = useState<QuoteLine>(() => structuredClone(line))
   const [errors, setErrors] = useState<Errors>({})
 
@@ -320,7 +329,12 @@ export function LineEditor({
       ["lines.0.amount", "line-amount"],
     ])
     if (id) {
-      document.getElementById(id)?.focus()
+      // Wait for inline errors to render before revealing the whole field.
+      requestAnimationFrame(() => {
+        const field = document.getElementById(id)
+        field?.focus({ preventScroll: true })
+        field?.closest('[data-slot="field"]')?.scrollIntoView({ block: "nearest" })
+      })
       return
     }
     onApply(draft)
@@ -332,14 +346,28 @@ export function LineEditor({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="qp-modal" showCloseButton={false}>
+      <DialogContent className="qp-modal qp-editor-dialog" showCloseButton={false} onOpenAutoFocus={(event) => {
+        event.preventDefault()
+        // Focus the description label on touch devices so opening the editor
+        // does not summon a software keyboard. Tab still reaches Description first.
+        const target = window.matchMedia("(pointer: coarse)").matches ? descriptionLabelRef.current : descriptionRef.current
+        target?.focus({ preventScroll: true })
+      }}>
         <DialogHeader>
-          <DialogTitle>{t(locale, "Modifier la ligne", "Edit quote line")}</DialogTitle>
+          <DialogTitle>{lineNumber === undefined
+            ? t(locale, "Ajouter une ligne", "Add a line")
+            : t(locale, `Modifier la ligne ${lineNumber}`, `Edit quote line ${lineNumber}`)}</DialogTitle>
           <DialogDescription>{t(locale, "Les champs peuvent rester vides. Utilisez une virgule ou un point pour les décimales.", "Fields may stay blank. Use a comma or a point for decimals.")}</DialogDescription>
         </DialogHeader>
 
-        <form className="flex max-h-[75vh] flex-col gap-5 overflow-y-auto" onSubmit={apply} noValidate>
+        <form className="qp-editor-form" onSubmit={apply} noValidate>
+          <div className="qp-editor-body">
           <FieldGroup>
+            <Field data-invalid={Boolean(fieldError("description")) || undefined}>
+              <FieldLabel ref={descriptionLabelRef} tabIndex={-1} htmlFor="line-description">{t(locale, "Description", "Description")}</FieldLabel>
+              <Textarea ref={descriptionRef} id="line-description" rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} aria-invalid={Boolean(fieldError("description"))} aria-describedby={fieldError("description") ? "line-description-error" : undefined} />
+              {fieldError("description") && <FieldError id="line-description-error">{fieldError("description")}</FieldError>}
+            </Field>
             <Field data-invalid={Boolean(fieldError("sectionId")) || undefined}>
               <FieldLabel htmlFor="line-section">{t(locale, "Section", "Section")}</FieldLabel>
               <select id="line-section" value={draft.sectionId} onChange={(event) => update("sectionId", event.target.value)} aria-invalid={Boolean(fieldError("sectionId"))} aria-describedby={fieldError("sectionId") ? "line-section-error" : undefined}>
@@ -349,11 +377,10 @@ export function LineEditor({
               </select>
               {fieldError("sectionId") && <FieldError id="line-section-error">{fieldError("sectionId")}</FieldError>}
             </Field>
-            <Field data-invalid={Boolean(fieldError("description")) || undefined}>
-              <FieldLabel htmlFor="line-description">{t(locale, "Description", "Description")}</FieldLabel>
-              <Textarea id="line-description" rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} aria-invalid={Boolean(fieldError("description"))} aria-describedby={fieldError("description") ? "line-description-error" : undefined} />
-              {fieldError("description") && <FieldError id="line-description-error">{fieldError("description")}</FieldError>}
-            </Field>
+          </FieldGroup>
+          <FieldSet className="qp-editor-pricing">
+            <FieldLegend>{t(locale, "Prix", "Pricing")}</FieldLegend>
+            <FieldGroup>
             <Field>
               <FieldLabel htmlFor="line-mode">{t(locale, "Mode de prix", "Pricing mode")}</FieldLabel>
               <select id="line-mode" value={draft.mode} onChange={(event) => changeMode(event.target.value as QuoteLine["mode"])}>
@@ -362,7 +389,7 @@ export function LineEditor({
               </select>
             </Field>
 
-            {draft.mode === "quantity" ? <>
+            {draft.mode === "quantity" ? <FieldGroup className="qp-editor-quantity-grid">
               <Field data-invalid={Boolean(fieldError("quantity")) || undefined}>
                 <FieldLabel htmlFor="line-quantity">{t(locale, "Quantité", "Quantity")}</FieldLabel>
                 <Input id="line-quantity" inputMode="decimal" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} aria-invalid={Boolean(fieldError("quantity"))} aria-describedby={fieldError("quantity") ? "line-quantity-error" : undefined} />
@@ -380,15 +407,17 @@ export function LineEditor({
                 <Input id="line-unit-price" inputMode="decimal" value={draft.unitPrice} onChange={(event) => update("unitPrice", event.target.value)} aria-invalid={Boolean(fieldError("unitPrice"))} aria-describedby={fieldError("unitPrice") ? "line-unit-price-error" : undefined} />
                 {fieldError("unitPrice") && <FieldError id="line-unit-price-error">{fieldError("unitPrice")}</FieldError>}
               </Field>
-            </> : <Field data-invalid={Boolean(fieldError("amount")) || undefined}>
+            </FieldGroup> : <Field data-invalid={Boolean(fieldError("amount")) || undefined}>
               <FieldLabel htmlFor="line-amount">{t(locale, "Montant", "Amount")}</FieldLabel>
               <Input id="line-amount" inputMode="decimal" value={draft.amount} onChange={(event) => update("amount", event.target.value)} aria-invalid={Boolean(fieldError("amount"))} aria-describedby={fieldError("amount") ? "line-amount-error" : undefined} />
               <FieldDescription>{t(locale, "Un montant de zéro est accepté.", "An amount of zero is allowed.")}</FieldDescription>
               {fieldError("amount") && <FieldError id="line-amount-error">{fieldError("amount")}</FieldError>}
             </Field>}
-          </FieldGroup>
+            </FieldGroup>
+          </FieldSet>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="qp-editor-footer">
             <Button type="button" variant="outline" onClick={onClose}>{t(locale, "Annuler", "Cancel")}</Button>
             <Button type="submit">{t(locale, "Appliquer", "Apply")}</Button>
           </DialogFooter>

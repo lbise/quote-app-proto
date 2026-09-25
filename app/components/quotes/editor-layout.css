@@ -1,0 +1,98 @@
+/* Editor-specific layout wins over the workspace's generic .qp-modal rules. */
+.qp-modal.qp-editor-dialog {
+  --qp-editor-padding: var(--space-md, 1rem);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+
+.qp-modal.qp-editor-dialog > [data-slot='dialog-header'] {
+  flex: 0 0 auto;
+  padding: var(--qp-editor-padding);
+  padding-bottom: var(--space-xs, .5rem);
+}
+
+.qp-modal.qp-editor-dialog .qp-editor-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.qp-modal.qp-editor-dialog .qp-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg, 1.5rem);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: var(--qp-editor-padding);
+  padding: var(--qp-editor-padding);
+}
+
+/* Fields keep their natural height; only the body gives up space. */
+.qp-modal.qp-editor-dialog .qp-editor-body > * {
+  flex-shrink: 0;
+}
+
+.qp-modal.qp-editor-dialog .qp-editor-footer {
+  flex: 0 0 auto;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: var(--space-xs, .5rem);
+  margin: 0;
+  padding: var(--space-sm, .75rem) var(--qp-editor-padding);
+  padding-bottom: max(var(--space-sm, .75rem), env(safe-area-inset-bottom));
+}
+
+.qp-modal.qp-editor-dialog .qp-editor-footer > button {
+  min-height: 44px;
+}
+
+.qp-modal.qp-editor-dialog .qp-editor-pricing {
+  border-top: 1px solid var(--color-rule, var(--border));
+  padding-top: var(--space-md, 1rem);
+}
+
+.qp-modal.qp-editor-dialog .qp-editor-quantity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.qp-modal.qp-editor-dialog .qp-editor-quantity-grid > :last-child {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 640px) {
+  .qp-modal.qp-editor-dialog {
+    --qp-editor-padding: var(--space-lg, 1.5rem);
+  }
+
+  .qp-modal.qp-editor-dialog .qp-editor-quantity-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .qp-modal.qp-editor-dialog .qp-editor-quantity-grid > :last-child {
+    grid-column: auto;
+  }
+}
+
+@media (pointer: coarse) {
+  .qp-modal.qp-editor-dialog input,
+  .qp-modal.qp-editor-dialog select,
+  .qp-modal.qp-editor-dialog textarea {
+    font-size: max(1rem, var(--text-base, 1rem));
+    min-height: 44px;
+  }
+}
+
+@media (max-height: 500px) {
+  .qp-modal.qp-editor-dialog {
+    --qp-editor-padding: var(--space-sm, .75rem);
+  }
+}

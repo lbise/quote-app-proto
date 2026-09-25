@@ -165,7 +165,7 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await page.getByLabel("Interface language / Langue de l’interface").selectOption("fr");
   await expect(paper.getByRole("button", { name: "Modifier les coordonnées de l’entreprise" })).toBeVisible();
   await page.setViewportSize({ width: 800, height: 900 });
-  await page.getByRole("button", { name: "Devis", exact: true }).click();
+  await page.getByRole("radio", { name: "Devis", exact: true }).click();
   await expect(paper).toContainText("Acompte convenu de 15 %. Solde à 45 jours.");
   await expect(paper.getByText("Total CHF", { exact: true })).toBeVisible();
 });
@@ -208,7 +208,7 @@ for (const locale of ["en", "fr"] as const) {
     await page.goto(`/quotes?id=${seeded.id}`);
     await page.getByLabel("Interface language / Langue de l’interface").selectOption(locale);
     await page.setViewportSize({ width: 800, height: 900 });
-    await page.getByRole("button", { name: locale === "en" ? "Quote" : "Devis", exact: true }).click();
+    await page.getByRole("radio", { name: locale === "en" ? "Quote" : "Devis", exact: true }).click();
     const details = page.getByRole("button", { name: locale === "en" ? "Edit business details" : "Modifier les coordonnées de l’entreprise" });
     await details.click();
     const editor = page.getByRole("dialog", { name: locale === "en" ? "Business details for this Quote" : "Votre entreprise sur ce devis" });
@@ -219,7 +219,7 @@ for (const locale of ["en", "fr"] as const) {
     await editor.getByRole("button", { name: locale === "en" ? "Apply" : "Appliquer", exact: true }).click();
     await expect(page.getByRole("status")).toHaveText(locale === "en" ? "Saved" : "Enregistré");
     await page.reload();
-    await page.getByRole("button", { name: locale === "en" ? "Quote" : "Devis", exact: true }).click();
+    await page.getByRole("radio", { name: locale === "en" ? "Quote" : "Devis", exact: true }).click();
     await details.click();
     await expect(identifier).toHaveValue("");
   });

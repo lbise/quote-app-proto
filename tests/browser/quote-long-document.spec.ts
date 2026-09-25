@@ -13,8 +13,10 @@ test("the long French Quote keeps approved section navigation, focus, and desk g
   await expect(rail.getByRole("button", { name: "Organise", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Organise sections", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Section actions Cuisine", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add section after Cuisine", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add section at end", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Insert section below", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add section", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Add section", exact: true })).toBeVisible();
+  await expect(page.locator(".qp-section-add-line")).toHaveCount(0);
   await expect(page.getByText("Ajustage final, joints, caches latéraux et nettoyage des agencements posés.")).toBeVisible();
 
   const [railBox, documentBox, conversationBox] = await Promise.all([rail.boundingBox(), documentPane.boundingBox(), conversation.boundingBox()]);
@@ -26,6 +28,11 @@ test("the long French Quote keeps approved section navigation, focus, and desk g
   expect(conversationBox!.x - documentBox!.x - documentBox!.width).toBe(16);
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator(".qp-app")).toHaveScreenshot("long-quote-desk.png", { animations: "disabled" });
+
+  await page.getByRole("button", { name: "Section actions Cuisine", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Insert section below", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Section actions Cuisine", exact: true })).toBeFocused();
 
   const scrollableQuote = page.getByRole("region", { name: "Scrollable Quote content" });
   expect(await scrollableQuote.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
@@ -51,5 +58,9 @@ test("the long French Quote keeps approved section navigation, focus, and desk g
   await expect(rail.getByRole("button", { name: "Organiser", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Organiser les sections", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Actions de section Cuisine", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Ajouter une section après Cuisine", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ajouter une section", exact: true })).toHaveCount(1);
+  await page.getByRole("button", { name: "Actions de section Cuisine", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Insérer une section après celle-ci", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Actions de section Cuisine", exact: true })).toBeFocused();
 });

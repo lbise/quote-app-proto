@@ -92,6 +92,10 @@ for (const locale of ["en", "fr"] as const) {
     await composer.fill("Change the cladding to 45.");
     await composer.press("Control+Enter");
     await expect(composer).toHaveValue("Change the cladding to 45.\n");
+    expect(requests).toBe(0);
+    await composer.press("Shift+Enter");
+    await expect(composer).toHaveValue("Change the cladding to 45.\n\n");
+    expect(requests).toBe(0);
     await composer.press("Enter");
 
     await expect(page.getByText(copy[locale].clarification, { exact: true })).toBeVisible();

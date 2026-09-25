@@ -8,7 +8,7 @@ export function QuoteHeader({ locale, onLanguage, onList, quote, onRecords }: {
 }) {
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
   return <header className="qp-app-header">
-    <div className="qp-brand-group"><button className="qp-wordmark" onClick={onList}>easy<span>quote</span><span className="qp-brand-dot">.</span></button><span className="qp-header-divider" /><Button variant="ghost" onClick={onList}><ArrowLeft data-icon="inline-start" />{t('Mes devis', 'My Quotes')}</Button></div>
+    <div className="qp-brand-group"><button className="qp-wordmark" onClick={onList}>easy<span>quote</span><span className="qp-brand-dot">.</span></button><span className="qp-header-divider" /><Button variant="ghost" onClick={onList} aria-label={t('Mes devis', 'My Quotes')}><ArrowLeft data-icon="inline-start" /><span className="qp-back-label">{t('Mes devis', 'My Quotes')}</span></Button></div>
     {quote && <div className="qp-project-heading"><span>{quote.reference}</span><strong>{quote.title || t('Nouveau devis', 'New Quote')}</strong></div>}
     <div className="qp-header-end">
       <Button variant="ghost" size="icon-sm" onClick={onRecords} aria-label={t('Clients et valeurs par défaut', 'Customers and defaults')} title={t('Clients et valeurs par défaut', 'Customers and defaults')}><Settings2 /></Button>

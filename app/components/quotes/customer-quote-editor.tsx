@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import type { QuoteData } from "@/lib/quote"
 import { randomUUID } from "@/lib/random-id"
+import "./editor-layout.css"
 
 type Locale = "fr" | "en"
 type Customer = { id: string; name: string; address: string; contact: string }
@@ -146,14 +147,15 @@ export function CustomerQuoteEditor({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose() }}>
-      <DialogContent className="qp-modal flex max-h-[calc(100dvh-2rem)] flex-col" showCloseButton={false}>
+      <DialogContent className="qp-modal qp-editor-dialog" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{t(locale, "Client du devis", "Quote Customer")}</DialogTitle>
           <DialogDescription>{t(locale,
             "Choisissez un client enregistré ou saisissez ses coordonnées. Les modifications ici ne changent que ce devis.",
             "Choose a saved Customer or enter their details. Edits here change only this Quote.")}</DialogDescription>
         </DialogHeader>
-        <form id={`${id}-form`} onSubmit={(event) => void apply(event)} className="min-h-0 overflow-y-auto">
+        <form id={`${id}-form`} onSubmit={(event) => void apply(event)} className="qp-editor-form">
+          <div className="qp-editor-body">
           <FieldGroup>
             <Field data-disabled={saving || undefined}>
               <FieldLabel htmlFor={`${id}-search`}>{t(locale, "Rechercher un client", "Search Customers")}</FieldLabel>
@@ -218,13 +220,14 @@ export function CustomerQuoteEditor({
                 "The Quote is unchanged. Your entries are kept; retry or uncheck saving to the list.")}</AlertDescription>
             </Alert>}
           </FieldGroup>
-        </form>
-        <DialogFooter className="shrink-0">
+          </div>
+        <DialogFooter className="qp-editor-footer">
           <Button type="button" variant="outline" disabled={saving} onClick={onClose}>{t(locale, "Annuler", "Cancel")}</Button>
           <Button type="submit" form={`${id}-form`} disabled={saving}>{saving
             ? t(locale, "Enregistrement…", "Saving…")
             : t(locale, "Appliquer au devis", "Apply to Quote")}</Button>
         </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )
