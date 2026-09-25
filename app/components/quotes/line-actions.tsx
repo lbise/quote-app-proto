@@ -24,12 +24,12 @@ export function LineActions({ number, locale, canMoveUp, canMoveDown, onEdit, on
     callback();
   };
   return <div className="qp-line-actions" lang={locale}>
-    <Button ref={editButton} variant="ghost" size="icon-sm" onClick={onEdit} aria-label={`${t('Modifier la ligne', 'Edit line')} ${number}`} title={`${t('Modifier la ligne', 'Edit line')} ${number}`}>
+    <Button ref={editButton} variant="ghost" size="icon-sm" className="max-[1000px]:size-11" onClick={onEdit} aria-label={`${t('Modifier la ligne', 'Edit line')} ${number}`} title={`${t('Modifier la ligne', 'Edit line')} ${number}`}>
       <Pencil />
     </Button>
     <DropdownMenu onOpenChange={open => { if (open) { actionSelected.current = false; duplicatedLineId.current = null; } }}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={t(`Autres actions de la ligne ${number}`, `More actions for line ${number}`)}>
+        <Button variant="ghost" size="icon-sm" className="max-[1000px]:size-11" aria-label={t(`Autres actions de la ligne ${number}`, `More actions for line ${number}`)}>
           <MoreHorizontal />
         </Button>
       </DropdownMenuTrigger>

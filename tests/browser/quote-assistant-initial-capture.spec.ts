@@ -98,7 +98,7 @@ for (const locale of ["en", "fr"] as const) {
 
     await sendFirstMessage(page, locale, frenchWork);
     await expect(page.getByText(clarification[locale], { exact: true })).toBeVisible();
-    await expect(page.getByTestId("quote-line")).toContainText("À compléter");
+    await expect(page.getByTestId("quote-line")).toContainText(locale === 'fr' ? 'Quantité manquante' : 'Quantity missing');
     await expect(page.getByTestId("quote-line")).toContainText("—");
     expect(requests[0]).toMatchObject({ text: frenchWork, locale });
 

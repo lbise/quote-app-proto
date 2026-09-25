@@ -153,7 +153,8 @@ test('detail editors retain visible actions with long content and validation on 
   await customer.getByLabel('Save to customer list', { exact: true }).check();
   await customer.getByRole('button', { name: 'Apply to Quote', exact: true }).click();
   await expect(customer.getByLabel('Customer name', { exact: true })).toBeFocused();
-  await expect(customer.getByLabel('Customer name', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+  await expect(customer.getByLabel('Customer name', { exact: true })).toHaveAttribute('aria-invalid', 'false');
+  await expect(customer.getByLabel('Customer name', { exact: true })).toHaveAccessibleDescription('Customer name missing');
   await expectActionsVisible(customer, 'Apply to Quote', 'Cancel');
   await customer.getByRole('button', { name: 'Cancel', exact: true }).click();
 });

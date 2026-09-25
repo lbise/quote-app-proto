@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { calculateQuote, type QuoteData, type QuoteLine, type QuoteSection } from "@/lib/quote"
+import { calculateQuote, emptyQuote, type QuoteData, type QuoteLine, type QuoteSection } from "@/lib/quote"
+import { focusEditorField, lineInputId, QuoteField } from './quote-validation'
 
 type Locale = "fr" | "en"
 type Errors = Record<string, string>
@@ -263,6 +264,7 @@ export function ManualEditor({
 export function LineEditor({
   line,
   lineNumber,
+  focusField,
   sections,
   locale,
   onApply,
@@ -270,6 +272,7 @@ export function LineEditor({
 }: {
   line: QuoteLine
   lineNumber?: number
+  focusField?: string
   sections: QuoteSection[]
   locale: Locale
   onApply: (l: QuoteLine) => void
@@ -278,48 +281,21 @@ export function LineEditor({
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const descriptionLabelRef = useRef<HTMLLabelElement>(null)
   const [draft, setDraft] = useState<QuoteLine>(() => structuredClone(line))
-  const [errors, setErrors] = useState<Errors>({})
+  const calculation = calculateQuote(emptyQuote('', { sections, lines: [draft] }))
 
   function update<K extends keyof QuoteLine>(key: K, value: QuoteLine[K]) {
     setDraft((current) => ({ ...current, [key]: value }))
-    setErrors((current) => {
-      const next = { ...current }
-      delete next[`lines.0.${String(key)}`]
-      return next
-    })
   }
 
   function changeMode(mode: QuoteLine["mode"]) {
     setDraft((current) => mode === "quantity"
       ? { ...current, mode, amount: "" }
       : { ...current, mode, quantity: "", unit: "", unitPrice: "" })
-    setErrors({})
   }
 
   function apply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const result = calculateQuote({
-      reference: "",
-      title: "",
-      customerName: "",
-      customerAddress: "",
-      customerContact: "",
-      businessName: "",
-      businessAddress: "",
-      businessContact: "",
-      vatId: "",
-      vatRegistered: null,
-      issueDate: "",
-      validUntil: "",
-      siteAddress: "",
-      terms: "",
-      discountMode: "none",
-      discount: "",
-      sections,
-      lines: [draft],
-    })
-    const nextErrors = errorsFor(result, locale)
-    setErrors(nextErrors)
+    const nextErrors = errorsFor(calculation, locale)
     const id = firstErrorId(nextErrors, [
       ["lines.0.sectionId", "line-section"],
       ["lines.0.description", "line-description"],
@@ -341,12 +317,12 @@ export function LineEditor({
     onClose()
   }
 
-  const fieldError = (field: string) => errors[`lines.0.${field}`]
   const hasCurrentSection = sections.some((section) => section.id === draft.sectionId)
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="qp-modal qp-editor-dialog" showCloseButton={false} onOpenAutoFocus={(event) => {
+        if (focusField) { focusEditorField(lineInputId(focusField))(event); return }
         event.preventDefault()
         // Focus the description label on touch devices so opening the editor
         // does not summon a software keyboard. Tab still reaches Description first.
@@ -363,20 +339,18 @@ export function LineEditor({
         <form className="qp-editor-form" onSubmit={apply} noValidate>
           <div className="qp-editor-body">
           <FieldGroup>
-            <Field data-invalid={Boolean(fieldError("description")) || undefined}>
+            <QuoteField calculation={calculation} path="lines[0].description" id="line-description" locale={locale}>
               <FieldLabel ref={descriptionLabelRef} tabIndex={-1} htmlFor="line-description">{t(locale, "Description", "Description")}</FieldLabel>
-              <Textarea ref={descriptionRef} id="line-description" rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} aria-invalid={Boolean(fieldError("description"))} aria-describedby={fieldError("description") ? "line-description-error" : undefined} />
-              {fieldError("description") && <FieldError id="line-description-error">{fieldError("description")}</FieldError>}
-            </Field>
-            <Field data-invalid={Boolean(fieldError("sectionId")) || undefined}>
+              <Textarea ref={descriptionRef} id="line-description" rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} />
+            </QuoteField>
+            <QuoteField calculation={calculation} path="lines[0].sectionId" id="line-section" locale={locale}>
               <FieldLabel htmlFor="line-section">{t(locale, "Section", "Section")}</FieldLabel>
-              <select id="line-section" value={draft.sectionId} onChange={(event) => update("sectionId", event.target.value)} aria-invalid={Boolean(fieldError("sectionId"))} aria-describedby={fieldError("sectionId") ? "line-section-error" : undefined}>
+              <select id="line-section" value={draft.sectionId} onChange={(event) => update("sectionId", event.target.value)}>
                 <option value="">{t(locale, "Sans section", "No section")}</option>
                 {!hasCurrentSection && draft.sectionId && <option value={draft.sectionId}>{draft.sectionId}</option>}
                 {sections.map((section) => <option key={section.id} value={section.id}>{section.title}</option>)}
               </select>
-              {fieldError("sectionId") && <FieldError id="line-section-error">{fieldError("sectionId")}</FieldError>}
-            </Field>
+            </QuoteField>
           </FieldGroup>
           <FieldSet className="qp-editor-pricing">
             <FieldLegend>{t(locale, "Prix", "Pricing")}</FieldLegend>
@@ -390,29 +364,25 @@ export function LineEditor({
             </Field>
 
             {draft.mode === "quantity" ? <FieldGroup className="qp-editor-quantity-grid">
-              <Field data-invalid={Boolean(fieldError("quantity")) || undefined}>
+              <QuoteField calculation={calculation} path="lines[0].quantity" id="line-quantity" locale={locale}>
                 <FieldLabel htmlFor="line-quantity">{t(locale, "Quantité", "Quantity")}</FieldLabel>
-                <Input id="line-quantity" inputMode="decimal" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} aria-invalid={Boolean(fieldError("quantity"))} aria-describedby={fieldError("quantity") ? "line-quantity-error" : undefined} />
-                {fieldError("quantity") && <FieldError id="line-quantity-error">{fieldError("quantity")}</FieldError>}
-              </Field>
-              <Field data-invalid={Boolean(fieldError("unit")) || undefined}>
+                <Input id="line-quantity" inputMode="decimal" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} />
+              </QuoteField>
+              <QuoteField calculation={calculation} path="lines[0].unit" id="line-unit" locale={locale}>
                 <FieldLabel htmlFor="line-unit">{t(locale, "Unité", "Unit")}</FieldLabel>
-                <Input id="line-unit" list="line-unit-suggestions" value={draft.unit} onChange={(event) => update("unit", event.target.value)} aria-invalid={Boolean(fieldError("unit"))} aria-describedby={fieldError("unit") ? "line-unit-error" : undefined} />
+                <Input id="line-unit" list="line-unit-suggestions" value={draft.unit} onChange={(event) => update("unit", event.target.value)} aria-describedby="line-unit-help" />
                 <datalist id="line-unit-suggestions"><option value="h" /><option value="m" /><option value="m²" /><option value="m³" /><option value="pce" /><option value="forfait" /></datalist>
-                <FieldDescription>{t(locale, "Suggestions uniquement. Aucune conversion n'est appliquée.", "Suggestions only. No conversion is applied.")}</FieldDescription>
-                {fieldError("unit") && <FieldError id="line-unit-error">{fieldError("unit")}</FieldError>}
-              </Field>
-              <Field data-invalid={Boolean(fieldError("unitPrice")) || undefined}>
+                <FieldDescription id="line-unit-help">{t(locale, "Suggestions uniquement. Aucune conversion n'est appliquée.", "Suggestions only. No conversion is applied.")}</FieldDescription>
+              </QuoteField>
+              <QuoteField calculation={calculation} path="lines[0].unitPrice" id="line-unit-price" locale={locale}>
                 <FieldLabel htmlFor="line-unit-price">{t(locale, "Prix unitaire", "Unit price")}</FieldLabel>
-                <Input id="line-unit-price" inputMode="decimal" value={draft.unitPrice} onChange={(event) => update("unitPrice", event.target.value)} aria-invalid={Boolean(fieldError("unitPrice"))} aria-describedby={fieldError("unitPrice") ? "line-unit-price-error" : undefined} />
-                {fieldError("unitPrice") && <FieldError id="line-unit-price-error">{fieldError("unitPrice")}</FieldError>}
-              </Field>
-            </FieldGroup> : <Field data-invalid={Boolean(fieldError("amount")) || undefined}>
+                <Input id="line-unit-price" inputMode="decimal" value={draft.unitPrice} onChange={(event) => update("unitPrice", event.target.value)} />
+              </QuoteField>
+            </FieldGroup> : <QuoteField calculation={calculation} path="lines[0].amount" id="line-amount" locale={locale}>
               <FieldLabel htmlFor="line-amount">{t(locale, "Montant", "Amount")}</FieldLabel>
-              <Input id="line-amount" inputMode="decimal" value={draft.amount} onChange={(event) => update("amount", event.target.value)} aria-invalid={Boolean(fieldError("amount"))} aria-describedby={fieldError("amount") ? "line-amount-error" : undefined} />
-              <FieldDescription>{t(locale, "Un montant de zéro est accepté.", "An amount of zero is allowed.")}</FieldDescription>
-              {fieldError("amount") && <FieldError id="line-amount-error">{fieldError("amount")}</FieldError>}
-            </Field>}
+              <Input id="line-amount" inputMode="decimal" value={draft.amount} onChange={(event) => update("amount", event.target.value)} aria-describedby="line-amount-help" />
+              <FieldDescription id="line-amount-help">{t(locale, "Un montant de zéro est accepté.", "An amount of zero is allowed.")}</FieldDescription>
+            </QuoteField>}
             </FieldGroup>
           </FieldSet>
           </div>

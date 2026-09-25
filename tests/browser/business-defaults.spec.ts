@@ -127,7 +127,8 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await expect(editor).toContainText("These details and VAT status change this Working Draft only.");
   await editor.getByLabel("Business name").fill("Atelier local au devis");
   await editor.getByLabel("VAT identifier").fill("");
-  await expect(editor).toContainText("Required before publication.");
+  await expect(editor.getByLabel('VAT identifier')).toHaveAccessibleDescription('VAT identifier missing');
+  await expect(editor.getByLabel('VAT identifier')).toHaveAttribute('aria-invalid', 'false');
   await editor.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
   await expect(paper).toContainText("Atelier local au devis");

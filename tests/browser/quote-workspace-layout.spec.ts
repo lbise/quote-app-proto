@@ -125,6 +125,48 @@ for (const locale of ["en", "fr"] as const) {
     expect(assistantRequests).toBe(1);
   });
 
+  test(`line controls share the content row on desktop and the pricing row on phone in ${locale}`, async ({ artisan }) => {
+    const seeded = await createCompleteQuote(artisan);
+    const { page } = artisan;
+    await setInterfaceLanguage(page, locale);
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.goto(`/quotes?id=${seeded.id}`);
+    const line = page.getByTestId("quote-line").first();
+    const description = line.locator(".qp-line-description");
+    const pricing = line.locator(".qp-line-pricing");
+    const actions = line.locator(".qp-line-actions");
+    const edit = line.getByRole("button", { name: copy.editLine, exact: true });
+    const menu = line.getByRole("button", { name: copy.more, exact: true });
+    await expect(actions).toBeVisible();
+    let [descriptionBox, pricingBox, actionsBox] = await Promise.all([description.boundingBox(), pricing.boundingBox(), actions.boundingBox()]);
+    expect(Math.abs(descriptionBox!.y - actionsBox!.y)).toBeLessThan(2);
+    expect(Math.abs(pricingBox!.y - actionsBox!.y)).toBeLessThan(2);
+    expect(actionsBox!.x).toBeGreaterThan(pricingBox!.x + pricingBox!.width - 1);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("radio", { name: copy.quote, exact: true }).click();
+    [descriptionBox, pricingBox, actionsBox] = await Promise.all([description.boundingBox(), pricing.boundingBox(), actions.boundingBox()]);
+    expect(actionsBox!.y).toBeGreaterThanOrEqual(descriptionBox!.y + descriptionBox!.height - 1);
+    expect(Math.abs(pricingBox!.y - actionsBox!.y)).toBeLessThan(2);
+    expect(actionsBox!.x).toBeGreaterThan(pricingBox!.x + pricingBox!.width - 1);
+    expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual((await line.boundingBox())!.x + (await line.boundingBox())!.width + 1);
+    for (const control of [edit, menu]) {
+      const box = (await control.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    if (locale === "en") await expect(line).toHaveScreenshot("quote-line-phone.png", { animations: "disabled" });
+    await page.setViewportSize({ width: 320, height: 740 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+    await menu.focus();
+    await menu.press("Enter");
+    await expect(page.getByRole("menuitem", { name: new RegExp(locale === "fr" ? "Dupliquer la ligne 1" : "Duplicate line 1") })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeFocused();
+    await edit.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+  });
+
   test(`document pencils are visible without hover, retain accessible names and disappear on publication in ${locale}`, async ({ artisan }) => {
     const seeded = await createCompleteQuote(artisan);
     const { page } = artisan;

@@ -51,8 +51,10 @@ test('retrying Customer creation after a lost response creates only one reusable
   });
   await editor.getByRole('checkbox', { name: 'Save to customer list' }).check();
   await editor.getByRole('button', { name: 'Apply to Quote' }).click();
-  await expect(editor.getByLabel('Customer name')).toHaveAttribute('aria-invalid', 'true');
-  await expect(editor.getByLabel('Customer address')).toHaveAttribute('aria-invalid', 'true');
+  await expect(editor.getByLabel('Customer name')).toHaveAttribute('aria-invalid', 'false');
+  await expect(editor.getByLabel('Customer name')).toHaveAccessibleDescription('Customer name missing');
+  await expect(editor.getByLabel('Customer address')).toHaveAttribute('aria-invalid', 'false');
+  await expect(editor.getByLabel('Customer address')).toHaveAccessibleDescription('Customer address missing');
   await expect(editor.getByLabel('Customer name')).toBeFocused();
   await editor.getByLabel('Customer name').fill('Customer retry fixture');
   await expect(editor.getByLabel('Customer name')).toHaveAttribute('aria-invalid', 'false');

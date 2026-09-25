@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import type { QuoteData } from "@/lib/quote"
+import { calculateQuote, type QuoteData } from "@/lib/quote"
+import { focusEditorField, QuoteField } from './quote-validation'
 import { randomUUID } from "@/lib/random-id"
 import "./editor-layout.css"
 
@@ -32,11 +33,13 @@ export function CustomerQuoteEditor({
   locale,
   onApply,
   onClose,
+  focusField,
 }: {
   quote: QuoteData
   locale: Locale
   onApply: (next: QuoteData) => void
   onClose: () => void
+  focusField?: string
 }) {
   const id = useId()
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -50,7 +53,7 @@ export function CustomerQuoteEditor({
   const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(false)
-  const [invalid, setInvalid] = useState<Array<"name" | "address">>([])
+  const calculation = calculateQuote({ ...quote, customerName: fields.name, customerAddress: fields.address, customerContact: fields.contact })
   const loadController = useRef<AbortController | null>(null)
   const saveRequest = useRef<{ payload: string; id: string } | null>(null)
 
@@ -86,7 +89,6 @@ export function CustomerQuoteEditor({
     setSearch("")
     setSaveToList(false)
     setSaveError(false)
-    setInvalid([])
     const customer = customers.find((item) => item.id === id)
     // Choosing "New Customer" deliberately starts a blank record. Opening the dialog does not.
     setFields(customer
@@ -97,7 +99,6 @@ export function CustomerQuoteEditor({
 
   function change(key: keyof CustomerFields, value: string) {
     setFields((current) => ({ ...current, [key]: value }))
-    setInvalid((current) => current.filter((field) => field !== key))
     setSaveError(false)
   }
 
@@ -105,13 +106,9 @@ export function CustomerQuoteEditor({
     event.preventDefault()
     if (saving) return
     if (saveToList && !selectedId) {
-      const missing = [
-        ...(!fields.name.trim() ? ["name" as const] : []),
-        ...(!fields.address.trim() ? ["address" as const] : []),
-      ]
-      if (missing.length) {
-        setInvalid(missing)
-        document.getElementById(`${id}-${missing[0]}`)?.focus()
+      const missing = calculation.missing.find(problem => problem.path === 'customerName' || problem.path === 'customerAddress')
+      if (missing) {
+        document.getElementById(`${id}-${missing.path === 'customerName' ? 'name' : 'address'}`)?.focus()
         return
       }
       setSaving(true)
@@ -147,7 +144,7 @@ export function CustomerQuoteEditor({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose() }}>
-      <DialogContent className="qp-modal qp-editor-dialog" showCloseButton={false}>
+      <DialogContent className="qp-modal qp-editor-dialog" showCloseButton={false} onOpenAutoFocus={focusEditorField(focusField ? `${id}-${focusField === 'customerAddress' ? 'address' : 'name'}` : undefined)}>
         <DialogHeader>
           <DialogTitle>{t(locale, "Client du devis", "Quote Customer")}</DialogTitle>
           <DialogDescription>{t(locale,
@@ -188,20 +185,14 @@ export function CustomerQuoteEditor({
               ? t(locale, "Aucun client ne correspond à la recherche.", "No Customers match your search.")
               : t(locale, "Aucun client enregistré. Saisissez ses coordonnées ci-dessous.", "No saved Customers. Enter details below.")}</p>}
             <Button type="button" variant="outline" disabled={saving} onClick={() => choose("")}>{t(locale, "Nouveau client (effacer les champs)", "New Customer (clear fields)")}</Button>
-            <Field data-invalid={invalid.includes("name") || undefined} data-disabled={saving || undefined}>
+            <QuoteField calculation={calculation} path="customerName" id={`${id}-name`} locale={locale} disabled={saving}>
               <FieldLabel htmlFor={`${id}-name`}>{t(locale, "Nom du client", "Customer name")}</FieldLabel>
-              <Input id={`${id}-name`} value={fields.name} disabled={saving} aria-invalid={invalid.includes("name")}
-                aria-describedby={invalid.includes("name") ? `${id}-name-error` : undefined}
-                onChange={(event) => change("name", event.target.value)} />
-              {invalid.includes("name") && <FieldError id={`${id}-name-error`}>{t(locale, "Indiquez le nom pour enregistrer ce client.", "Enter a name to save this Customer.")}</FieldError>}
-            </Field>
-            <Field data-invalid={invalid.includes("address") || undefined} data-disabled={saving || undefined}>
+              <Input id={`${id}-name`} value={fields.name} disabled={saving} onChange={(event) => change("name", event.target.value)} />
+            </QuoteField>
+            <QuoteField calculation={calculation} path="customerAddress" id={`${id}-address`} locale={locale} disabled={saving}>
               <FieldLabel htmlFor={`${id}-address`}>{t(locale, "Adresse du client", "Customer address")}</FieldLabel>
-              <Textarea id={`${id}-address`} value={fields.address} disabled={saving} aria-invalid={invalid.includes("address")}
-                aria-describedby={invalid.includes("address") ? `${id}-address-error` : undefined}
-                onChange={(event) => change("address", event.target.value)} />
-              {invalid.includes("address") && <FieldError id={`${id}-address-error`}>{t(locale, "Indiquez l'adresse pour enregistrer ce client.", "Enter an address to save this Customer.")}</FieldError>}
-            </Field>
+              <Textarea id={`${id}-address`} value={fields.address} disabled={saving} onChange={(event) => change("address", event.target.value)} />
+            </QuoteField>
             <Field data-disabled={saving || undefined}>
               <FieldLabel htmlFor={`${id}-contact`}>{t(locale, "Personne de contact", "Contact person")}</FieldLabel>
               <Input id={`${id}-contact`} value={fields.contact} disabled={saving}
@@ -210,7 +201,7 @@ export function CustomerQuoteEditor({
             </Field>
             {!selectedId && <Field orientation="horizontal" data-disabled={saving || undefined}>
               <input id={`${id}-save`} type="checkbox" checked={saveToList} disabled={saving}
-                onChange={(event) => { setSaveToList(event.target.checked); setSaveError(false); setInvalid([]) }} />
+                onChange={(event) => { setSaveToList(event.target.checked); setSaveError(false) }} />
               <FieldLabel htmlFor={`${id}-save`}>{t(locale, "Enregistrer dans la liste des clients", "Save to customer list")}</FieldLabel>
             </Field>}
             {saveError && <Alert variant="destructive" role="alert">

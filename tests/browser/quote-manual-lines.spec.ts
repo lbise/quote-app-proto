@@ -313,7 +313,7 @@ for (const locale of ["en", "fr"] as const) {
       await expect(page.getByText("Sous-total partiel HT", { exact: true })).toBeVisible();
       await expect(page.getByText("Total à compléter", { exact: true })).toBeVisible();
       await expect(page.getByText("CHF 25.50", { exact: true })).toBeVisible();
-      await expect(page.getByTestId("quote-line").nth(1).getByText("À compléter", { exact: true })).toBeVisible();
+      await expect(page.getByTestId("quote-line").nth(1).getByRole('button', { name: locale === 'fr' ? 'Quantité manquante' : 'Quantity missing', exact: true })).toBeVisible();
 
       await page.reload();
       const edit = page.getByRole("button", { name: `${copy.edit} 2`, exact: true });

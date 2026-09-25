@@ -26,6 +26,7 @@ import { AssistantDisclosure } from './assistant-disclosure';
 import { AssistantDebug } from './assistant-debug';
 import { AssistantMarkdown } from './assistant-markdown';
 import { problemLabel } from './problem-label';
+import { MissingWarning, QuoteField } from './quote-validation';
 import type { QuoteAIDisclosure } from '../../lib/quote-ai-disclosure';
 import { useBlocker, useRouteLoaderData } from 'react-router';
 
@@ -39,6 +40,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
   const [input, setInput] = useState('');
   const [editLine, setEditLine] = useState<QuoteLine | null>(null);
+  const [focusField, setFocusField] = useState<string | undefined>();
   const [modal, setModal] = useState<'business' | 'customer' | 'site' | 'discount' | 'terms' | 'publish' | 'records' | 'privacy' | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -68,7 +70,8 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   const blocked = !calculation.complete || save !== 'saved' || ai === 'processing' || busy;
   const showOutline = quote.sections.length > 0 && !outlineCollapsed;
   const activeSection = quote.sections.some(s => s.id === sectionId) ? sectionId : quote.sections[0]?.id || '';
-  const missingLines = quote.lines.filter(l => amountFor(l) === null);
+  const problems = [...calculation.errors, ...calculation.missing];
+  const problemLines = calculation.lines.filter((_, index) => problems.some(problem => problem.path.startsWith(`lines[${index}].`)));
   const blocker = useBlocker(save !== 'saved');
 
   useEffect(() => {
@@ -125,8 +128,8 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
       else document.querySelector<HTMLElement>('.qp-document-scroll')?.focus({ preventScroll: true });
     }, 0);
   }
-  function openModal(name: typeof modal) { returnLineId.current = null; returnFocus.current = document.activeElement as HTMLElement; setModal(name); }
-  function edit(line: QuoteLine) { returnLineId.current = line.id; returnFocus.current = document.activeElement as HTMLElement; setEditLine(clone(line)); }
+  function openModal(name: typeof modal, field?: string) { setFocusField(field); returnLineId.current = null; returnFocus.current = document.activeElement as HTMLElement; setModal(name); }
+  function edit(line: QuoteLine, field?: string) { setFocusField(field); returnLineId.current = line.id; returnFocus.current = document.activeElement as HTMLElement; setEditLine(clone(line)); }
   function reveal(id: string, focusEdit = false) {
     const line = quote.lines.find(l => l.id === id);
     if (line) setSectionId(line.sectionId);
@@ -144,13 +147,26 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
       setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: 'center' }), 0);
       return;
     }
+    const lineMatch = /^lines\[(\d+)\]\.(.+)$/.exec(field);
+    const sectionMatch = /^sections\[(\d+)\]\.(.+)$/.exec(field);
+    if (lineMatch) {
+      const line = calculation.quote?.lines[Number(lineMatch[1])];
+      if (line) { reveal(line.id); edit(line, lineMatch[2]); }
+      return;
+    }
+    if (sectionMatch) {
+      const section = quote.sections[Number(sectionMatch[1])];
+      setTimeout(() => document.getElementById(`section-${section?.id}`)?.querySelector<HTMLButtonElement>('.qp-section-rename-trigger')?.click(), 0);
+      return;
+    }
+    if (field === 'lines') { addLine(''); return; }
     if (field === 'title') { setTitleDraft(quote.title); setEditingTitle(true); }
-    else if (field === 'discount' || field === 'discountMode') openModal('discount');
-    else if (field === 'siteAddress') openModal('site');
-    else if (field.startsWith('customer')) openModal('customer');
-    else if (field.startsWith('business') || field.startsWith('vat')) openModal('business');
-    else if (field === 'terms') openModal('terms');
-    else if (field === 'reference' || field === 'issueDate' || field === 'validUntil') setTimeout(() => metadataTrigger.current?.click(), 0);
+    else if (field === 'discount' || field === 'discountMode') openModal('discount', field);
+    else if (field === 'siteAddress') openModal('site', field);
+    else if (field.startsWith('customer')) openModal('customer', field);
+    else if (field.startsWith('business') || field.startsWith('vat')) openModal('business', field);
+    else if (field === 'terms') openModal('terms', field);
+    else if (field === 'reference' || field === 'issueDate' || field === 'validUntil') { setFocusField(field); setTimeout(() => metadataTrigger.current?.click(), 0); }
     setTimeout(() => document.getElementById(field === 'discount' ? 'quote-totals' : 'quote-title')?.scrollIntoView({ block: 'center' }), 0);
   }
   function moveLine(line: QuoteLine, delta: number) {
@@ -278,21 +294,26 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     </div>
   </section>;
 
+  function warning(path: string) {
+    const problem = !readOnly && calculation.missing.find(problem => problem.path === path);
+    return problem ? <MissingWarning key={path} problem={problem} locale={locale} onClick={() => revealField(path)} /> : null;
+  }
   function renderLine(line: QuoteLine) {
     const index = quote.lines.findIndex(l => l.id === line.id), cents = amountFor(line);
+    const path = `lines[${calculation.lines.findIndex(result => result.id === line.id)}]`;
     const canMoveUp = index > 0 && quote.lines[index - 1].sectionId === line.sectionId;
     const canMoveDown = index >= 0 && index < quote.lines.length - 1 && quote.lines[index + 1].sectionId === line.sectionId;
     return <div className={`qp-line ${changed.includes(line.id) ? 'qp-line-changed' : ''}`} id={`line-${line.id}`} key={line.id} data-testid="quote-line">
-      <div className="qp-line-content" lang="fr"><span className="qp-line-number">{String(index + 1).padStart(2, '0')}</span><div className="qp-line-description">{line.description || <span className="qp-missing">Description à compléter</span>}{changed.includes(line.id) && <span className="qp-changed-label" lang={locale}><Check />{t('Modifié', 'Changed')}</span>}</div>
-        <div className="qp-line-pricing">{line.mode === 'fixed' ? <span>Forfait</span> : <><span>{line.quantity || '—'} {line.unit || '—'}</span><span>× {line.unitPrice || '—'}</span></>}<strong>{formatMoney(cents)}</strong>{cents === null && <span className="qp-missing">À compléter</span>}{cents === 0 && <span>Sans frais</span>}</div>
+      <div className={`qp-line-content${readOnly ? '' : ' qp-line-content-editable'}`} lang="fr"><span className="qp-line-number">{String(index + 1).padStart(2, '0')}</span><div className="qp-line-description">{warning(`${path}.description`) || line.description || <span className="qp-missing">Description à compléter</span>}{changed.includes(line.id) && <span className="qp-changed-label" lang={locale}><Check />{t('Modifié', 'Changed')}</span>}</div>
+        <div className="qp-line-pricing">{line.mode === 'fixed' ? <span>Forfait</span> : <><span>{warning(`${path}.quantity`) || line.quantity || '—'} {warning(`${path}.unit`) || line.unit || '—'}</span>{warning(`${path}.unitPrice`) || <span>× {line.unitPrice || '—'}</span>}</>}{line.mode === 'fixed' ? warning(`${path}.amount`) || <strong>{formatMoney(cents)}</strong> : <strong>{formatMoney(cents)}</strong>}{readOnly && cents === null && <span className="qp-missing">À compléter</span>}{cents === 0 && <span>Sans frais</span>}</div>
+        {!readOnly && <LineActions number={index + 1} locale={locale} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onEdit={() => edit(line)} onMove={delta => moveLine(line, delta)} onDelete={() => deleteLine(line)} onDuplicate={() => {
+          const next = clone(quote), copy = { ...line, id: quoteLineId() };
+          next.lines.splice(index + 1, 0, copy);
+          apply(next, [copy.id]);
+          reveal(copy.id, true);
+          return copy.id;
+        }} />}
       </div>
-      {!readOnly && <LineActions number={index + 1} locale={locale} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onEdit={() => edit(line)} onMove={delta => moveLine(line, delta)} onDelete={() => deleteLine(line)} onDuplicate={() => {
-        const next = clone(quote), copy = { ...line, id: quoteLineId() };
-        next.lines.splice(index + 1, 0, copy);
-        apply(next, [copy.id]);
-        reveal(copy.id, true);
-        return copy.id;
-      }} />}
     </div>;
   }
   const documentAdd = !readOnly && <DropdownMenu onOpenChange={open => { if (open) addMenuAction.current = null; }}>
@@ -314,12 +335,12 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   const quoteDocument = <section id="qp-quote-document" className="qp-document-pane" aria-label={t('Devis destiné au client', 'Customer-facing Quote')}>
     <div className="qp-document-tools"><span><FileText />{t('Le devis', 'The Quote')}<span className="qp-french-label">FR · CHF</span></span>{quote.sections.length > 0 && <div className="qp-jump qp-jump-narrow"><label htmlFor="section-jump">{t('Aller à', 'Jump to')}</label><select id="section-jump" value={activeSection} onChange={e => { setSectionId(e.target.value); document.getElementById(`section-${e.target.value}`)?.scrollIntoView({ block: 'start' }); }}>{quote.sections.map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</select></div>}<div className="qp-document-actions">{documentAdd}{assistantCollapsed && <Button ref={showAssistantButton} variant="outline" size="sm" className="qp-assistant-toggle" aria-controls="qp-assistant" aria-expanded={false} onClick={() => toggleAssistant(false)}><MessageSquare data-icon="inline-start" />{t('Afficher l’assistant', 'Show assistant')}{ai === 'processing' && <span className="qp-spinner" aria-label={t('Modification en cours', 'Change in progress')} />}</Button>}</div></div>
     <div ref={documentScroll} key={recordId} className="qp-document-scroll" role="region" tabIndex={0} aria-label={t('Contenu du devis, défilant', 'Scrollable Quote content')}>
-      {!readOnly && (sum.missing > 0 || missingAdmin) && <div className="qp-editor-guidance"><TriangleAlert /><div><strong>{sum.missing > 0 ? t(`${sum.missing} lignes à compléter`, `${sum.missing} lines need details`) : t('Coordonnées à compléter', 'Details need completing')}</strong><p>{sum.missing > 0 ? t('Le total définitif attend les valeurs manquantes.', 'The final total is withheld until values are complete.') : t('Les montants sont calculés, mais les coordonnées restent à renseigner.', 'Amounts are calculated, but contact details are still missing.')}</p></div><Button variant="ghost" size="sm" onClick={() => missingLines[0] ? reveal(missingLines[0].id) : revealField(([...calculation.errors, ...calculation.missing].find(problem => !problem.path.startsWith('lines'))?.path ?? 'businessName'))}>{t('Voir', 'View')}</Button></div>}
+      {!readOnly && problems.length > 0 && <div className="qp-editor-guidance"><TriangleAlert /><div aria-live="polite"><strong>{problemLines.length > 0 ? (problemLines.length === 1 ? t('1 ligne à compléter', '1 line needs details') : t(`${problemLines.length} lignes à compléter`, `${problemLines.length} lines need details`)) : t('Informations à compléter', 'Details need completing')}</strong><p>{t('Complétez les champs signalés avant publication.', 'Complete the flagged fields before publication.')}</p></div><Button variant="ghost" size="sm" onClick={() => revealField((problems.find(problem => problem.path.startsWith('lines[')) ?? problems[0]).path)}>{t('Voir', 'View')}</Button></div>}
       {readOnly && <div className="qp-editor-guidance qp-published-note"><LockKeyhole /><p>{t('Révision figée. Publication sans envoi au destinataire.', 'Frozen revision. Publication did not send this Quote.')}</p></div>}
       <article className="qp-paper" lang="fr">
-        <header className="qp-paper-header"><div className="qp-business-name">{quote.businessName || 'Entreprise à renseigner'}</div>{readOnly ? <div className="qp-paper-meta"><span>Devis {quote.reference}</span><span>{quote.issueDate}</span></div> : <QuoteMetadataPopover quote={quote} locale={locale} lockedReference={revisions.length > 0} onApply={q => apply(q)}><button ref={metadataTrigger} type="button" className="qp-paper-meta qp-edit-target" aria-label={t('Modifier la référence et les dates', 'Edit reference and dates')} title={t('Modifier la référence et les dates', 'Edit reference and dates')}><span className="qp-edit-content"><span>Devis {quote.reference || '…'}</span><span>{quote.issueDate || t('Date à renseigner', 'Set issue date')}</span></span><EditAffordance locale={locale} /></button></QuoteMetadataPopover>}</header>
-        <div className="qp-document-title" id="quote-title">{editingTitle && !readOnly ? <form className="qp-inline-title" onSubmit={e => { e.preventDefault(); apply({ ...quote, title: titleDraft }); setEditingTitle(false); }}><label htmlFor="quote-title-input" className="sr-only">{t('Objet du devis', 'Quote title')}</label><input id="quote-title-input" autoFocus value={titleDraft} onChange={e => setTitleDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setEditingTitle(false); }} /><Button type="submit" size="sm">{t('Enregistrer', 'Save')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => setEditingTitle(false)}>{t('Annuler', 'Cancel')}</Button></form> : <h2 aria-label={!readOnly ? quote.title || t('Nouveau devis', 'New Quote') : undefined}>{readOnly ? quote.title || 'Nouveau devis' : <button type="button" className="qp-edit-target" onClick={() => { setTitleDraft(quote.title); setEditingTitle(true); }} aria-label={t('Modifier l’objet du devis', 'Edit Quote title')}><span>{quote.title || t('Ajouter un objet', 'Add a title')}</span><EditAffordance locale={locale} /></button>}</h2>}{!readOnly && changedFields.includes('title') && <span className="qp-changed-label" lang={locale}><Check />{t('Objet modifié', 'Title changed')}</span>}{readOnly ? <p>{quote.siteAddress}</p> : <button type="button" className="qp-edit-target qp-site-target" onClick={() => openModal('site')} aria-label={t('Modifier l’adresse du chantier', 'Edit site address')}><span>{quote.siteAddress || t('Ajouter l’adresse du chantier', 'Add site address')}</span><EditAffordance locale={locale} /></button>}</div>
-        <div className="qp-addresses"><div><span>Proposé par</span>{readOnly ? <><strong>{quote.businessName}</strong><p>{quote.businessAddress}</p><p>{quote.businessContact}</p></> : <button type="button" className="qp-edit-target qp-address-target" onClick={() => openModal('business')} aria-label={t('Modifier les coordonnées de l’entreprise', 'Edit business details')}><span className="qp-edit-content"><strong>{quote.businessName || 'Entreprise à renseigner'}</strong><span>{quote.businessAddress}</span><span>{quote.businessContact}</span></span><EditAffordance locale={locale} /></button>}</div><div><span>À l’attention de</span>{readOnly ? <><strong>{quote.customerName || 'Destinataire à renseigner'}</strong><p>{quote.customerAddress || 'Adresse à renseigner'}</p><p>{quote.customerContact}</p></> : <button type="button" className="qp-edit-target qp-address-target" onClick={() => openModal('customer')} aria-label={t('Choisir ou modifier le client', 'Choose or edit Customer')}><span className="qp-edit-content"><strong>{quote.customerName || t('Choisir un client', 'Choose a Customer')}</strong><span>{quote.customerAddress || 'Adresse à renseigner'}</span><span>{quote.customerContact}</span></span><EditAffordance locale={locale} /></button>}</div></div>
+        <header className="qp-paper-header"><div className="qp-business-name">{quote.businessName || 'Entreprise à renseigner'}</div>{readOnly ? <div className="qp-paper-meta"><span>Devis {quote.reference}</span><span>{quote.issueDate}</span></div> : <QuoteMetadataPopover quote={quote} locale={locale} focusField={focusField} lockedReference={revisions.length > 0} onApply={q => apply(q)}><button ref={metadataTrigger} type="button" onPointerDown={() => setFocusField(undefined)} className="qp-paper-meta qp-edit-target" aria-label={t('Modifier la référence et les dates', 'Edit reference and dates')} title={t('Modifier la référence et les dates', 'Edit reference and dates')}><span className="qp-edit-content"><span>Devis {quote.reference || '…'}</span><span>{quote.issueDate || t('Date à renseigner', 'Set issue date')}</span></span><EditAffordance locale={locale} /></button></QuoteMetadataPopover>}{!readOnly && <div className="qp-metadata-warnings">{warning('reference')}{warning('issueDate')}</div>}</header>
+        <div className="qp-document-title" id="quote-title">{editingTitle && !readOnly ? <form className="qp-inline-title" onSubmit={e => { e.preventDefault(); apply({ ...quote, title: titleDraft }); setEditingTitle(false); }}><QuoteField calculation={calculateQuote({ ...quote, title: titleDraft })} path="title" id="quote-title-input" locale={locale}><label htmlFor="quote-title-input" className="sr-only">{t('Objet du devis', 'Quote title')}</label><input id="quote-title-input" autoFocus value={titleDraft} onChange={e => setTitleDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setEditingTitle(false); }} /></QuoteField><Button type="submit" size="sm">{t('Enregistrer', 'Save')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => setEditingTitle(false)}>{t('Annuler', 'Cancel')}</Button></form> : <h2 aria-label={!readOnly ? quote.title || t('Nouveau devis', 'New Quote') : undefined}>{readOnly ? quote.title || 'Nouveau devis' : warning('title') || <button type="button" className="qp-edit-target" onClick={() => { setTitleDraft(quote.title); setEditingTitle(true); }} aria-label={t('Modifier l’objet du devis', 'Edit Quote title')}><span>{quote.title || t('Ajouter un objet', 'Add a title')}</span><EditAffordance locale={locale} /></button>}</h2>}{!readOnly && changedFields.includes('title') && <span className="qp-changed-label" lang={locale}><Check />{t('Objet modifié', 'Title changed')}</span>}{readOnly ? <p>{quote.siteAddress}</p> : <button type="button" className="qp-edit-target qp-site-target" onClick={() => openModal('site')} aria-label={t('Modifier l’adresse du chantier', 'Edit site address')}><span>{quote.siteAddress || t('Ajouter l’adresse du chantier', 'Add site address')}</span><EditAffordance locale={locale} /></button>}</div>
+        <div className="qp-addresses"><div><span>Proposé par</span>{readOnly ? <><strong>{quote.businessName}</strong><p>{quote.businessAddress}</p><p>{quote.businessContact}</p></> : <button type="button" className="qp-edit-target qp-address-target" onClick={() => openModal('business')} aria-label={t('Modifier les coordonnées de l’entreprise', 'Edit business details')}><span className="qp-edit-content"><strong>{quote.businessName}</strong><span>{quote.businessAddress}</span><span>{quote.businessContact}</span></span><EditAffordance locale={locale} /></button>}{warning('businessName')}{warning('businessAddress')}{warning('businessContact')}</div><div><span>À l’attention de</span>{readOnly ? <><strong>{quote.customerName || 'Destinataire à renseigner'}</strong><p>{quote.customerAddress || 'Adresse à renseigner'}</p><p>{quote.customerContact}</p></> : <button type="button" className="qp-edit-target qp-address-target" onClick={() => openModal('customer')} aria-label={t('Choisir ou modifier le client', 'Choose or edit Customer')}><span className="qp-edit-content"><strong>{quote.customerName}</strong><span>{quote.customerAddress}</span><span>{quote.customerContact}</span></span><EditAffordance locale={locale} /></button>}{warning('customerName')}{warning('customerAddress')}</div></div>
         {!quote.lines.length && <div className="qp-empty-document"><FileText /><h2>Les travaux apparaîtront ici.</h2><p>Commencez par une description dans la conversation, ou ajoutez une ligne manuellement.</p></div>}
         {quote.lines.filter(l => !l.sectionId).map(renderLine)}
         {quote.sections.map((section, sectionIndex) => {
@@ -328,7 +349,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
           const incomplete = sectionCalculation?.incomplete ?? true;
           const subtotal = sectionCalculation?.subtotal ?? 0;
           return <section className="qp-quote-section" id={`section-${section.id}`} key={section.id}>
-            <SectionHeading title={section.title} locale={locale} readOnly={readOnly} index={sectionIndex} count={quote.sections.length} lineCount={lines.length} onAddLine={() => addLine(section.id)} onInsert={trigger => beginSection(section.id, trigger)} changed={changedFields.includes(`section:${section.id}`)} onRename={title => apply(renameQuoteSection(quote, section.id, title))} onMove={delta => { apply(moveQuoteSection(quote, section.id, delta)); setSectionId(section.id); }} onDuplicate={() => { const id = `section-${randomUUID()}`; const next = duplicateQuoteSection(quote, section.id, id, quoteLineId); apply(renameQuoteSection(next, id, `${section.title} copie`)); setSectionId(id); setTimeout(() => document.getElementById(`section-${id}`)?.querySelector<HTMLElement>('.qp-section-rename-trigger')?.focus({ preventScroll: true }), 0); }} onRemove={() => removeSection(section.id, false)} onDelete={() => removeSection(section.id, true)} />
+            <SectionHeading quote={quote} calculation={calculation} title={section.title} locale={locale} readOnly={readOnly} index={sectionIndex} count={quote.sections.length} lineCount={lines.length} onAddLine={() => addLine(section.id)} onInsert={trigger => beginSection(section.id, trigger)} changed={changedFields.includes(`section:${section.id}`)} onRename={title => apply(renameQuoteSection(quote, section.id, title))} onMove={delta => { apply(moveQuoteSection(quote, section.id, delta)); setSectionId(section.id); }} onDuplicate={() => { const id = `section-${randomUUID()}`; const next = duplicateQuoteSection(quote, section.id, id, quoteLineId); apply(renameQuoteSection(next, id, `${section.title} copie`)); setSectionId(id); setTimeout(() => document.getElementById(`section-${id}`)?.querySelector<HTMLElement>('.qp-section-rename-trigger')?.focus({ preventScroll: true }), 0); }} onRemove={() => removeSection(section.id, false)} onDelete={() => removeSection(section.id, true)} />
             {lines.map(renderLine)}
             <div className="qp-section-subtotal"><span>{incomplete ? 'Sous-total partiel' : 'Sous-total'}</span><strong>{formatMoney(subtotal)}</strong></div>
             {!readOnly && insertion === section.id && <AddSectionControl locale={locale} after={section.id} initiallyOpen onCancel={cancelSection} onAdd={title => addSection(section.id, title)} />}
@@ -341,10 +362,10 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
           <div><span>{sum.missing ? 'Sous-total partiel HT' : 'Sous-total HT'}</span><span>{formatMoney(sum.subtotal)}</span></div>
           {quote.discountMode !== 'none' && <div><span>Remise {quote.discountMode === 'percent' ? `${quote.discount} %` : 'CHF'}</span><span>{sum.missing || !sum.validDiscount ? '—' : `− ${formatMoney(sum.discount)}`}</span></div>}
           {!readOnly && <Button variant="ghost" size="sm" className="qp-detail-action" onClick={() => openModal('discount')}><Pencil data-icon="inline-start" />{quote.discountMode === 'none' ? t('Ajouter une remise', 'Add discount') : t('Modifier la remise', 'Edit discount')}</Button>}
-          {!readOnly && quote.vatRegistered === null && <Button variant="ghost" size="sm" className="qp-detail-action" onClick={() => openModal('business')}>{t('Préciser la TVA', 'Confirm VAT status')}</Button>}
+          {warning('vatRegistered')}{warning('vatId')}{warning('discount')}
           {quote.vatRegistered && <div><span>TVA 8,1 %</span><span>{sum.total === null ? '—' : formatMoney(sum.vat)}</span></div>}
           <div className="qp-total"><strong>{sum.total === null ? 'Total à compléter' : 'Total CHF'}</strong><strong>{formatMoney(sum.total)}</strong></div>
-          {!sum.validDiscount && <p className="qp-missing">La remise doit être comprise entre zéro et le sous-total.</p>}
+          {calculation.errors.some(problem => problem.path === 'discount') && <p className="qp-missing">{t('La remise doit être comprise entre zéro et le sous-total.', 'Discount must be between zero and the subtotal.')}</p>}
         </div>
         <footer className="qp-terms"><h3>Conditions</h3>{readOnly ? <p>{quote.terms || 'Conditions à renseigner'}</p> : <button type="button" className="qp-edit-target qp-terms-target" onClick={() => openModal('terms')} aria-label={t('Modifier les conditions', 'Edit terms')}><span>{quote.terms || t('Ajouter des conditions', 'Add terms')}</span><EditAffordance locale={locale} /></button>}{quote.validUntil && <p>Offre valable jusqu’au {quote.validUntil}.</p>}{quote.vatRegistered && <p>{quote.vatId}</p>}</footer>
       </article>
@@ -360,7 +381,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
       <ToggleGroup className="qp-narrow-tabs" type="single" value={narrowPanel} onValueChange={value => { if (value === 'chat' || value === 'quote') setNarrowPanel(value); }} aria-label={t('Espace de travail', 'Workspace view')}><ToggleGroupItem value="chat" aria-controls="qp-assistant"><MessageSquare data-icon="inline-start" />{t('Conversation', 'Conversation')}</ToggleGroupItem><ToggleGroupItem value="quote" aria-controls="qp-quote-document"><FileText data-icon="inline-start" />{t('Devis', 'Quote')}</ToggleGroupItem></ToggleGroup>
       <div className="qp-layout qp-layout-b"><div id="qp-review-outline" className="qp-review-rail" hidden={!quote.sections.length} data-collapsed={!showOutline}>{outline}</div><div className="qp-review-main">{toolbar}<div className="qp-split">{quoteDocument}{chat}</div></div></div>
     </main>
-    {editLine && <LineEditor line={editLine} lineNumber={quote.lines.some(line => line.id === editLine.id) ? quote.lines.findIndex(line => line.id === editLine.id) + 1 : undefined} sections={quote.sections} locale={locale} onClose={closeModal} onApply={line => {
+    {editLine && !readOnly && <LineEditor focusField={focusField} line={editLine} lineNumber={quote.lines.some(line => line.id === editLine.id) ? quote.lines.findIndex(line => line.id === editLine.id) + 1 : undefined} sections={quote.sections} locale={locale} onClose={closeModal} onApply={line => {
       const previous = quote.lines.find(candidate => candidate.id === line.id);
       const next = { ...quote, lines: previous && previous.sectionId !== line.sectionId
         ? appendQuoteLineToSection(quote.lines, line, quote.sections)
@@ -369,17 +390,17 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
           : appendQuoteLineToSection(quote.lines, line, quote.sections) };
       apply(next, [line.id]);
     }} />}
-    {modal === 'business' && !readOnly && <BusinessQuoteEditor quote={quote} locale={locale} onClose={closeModal} onApply={q => apply(q)} onSettings={() => setModal('records')} />}
-    {modal === 'customer' && !readOnly && <CustomerQuoteEditor quote={quote} locale={locale} onClose={closeModal} onApply={q => apply(q)} />}
+    {modal === 'business' && !readOnly && <BusinessQuoteEditor quote={quote} locale={locale} focusField={focusField} onClose={closeModal} onApply={q => apply(q)} onSettings={() => setModal('records')} />}
+    {modal === 'customer' && !readOnly && <CustomerQuoteEditor quote={quote} locale={locale} focusField={focusField} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'site' && !readOnly && <SiteQuoteEditor quote={quote} locale={locale} onClose={closeModal} onApply={q => apply(q)} />}
-    {modal === 'discount' && !readOnly && <DiscountQuoteEditor quote={quote} locale={locale} onClose={closeModal} onApply={q => apply(q)} />}
+    {modal === 'discount' && !readOnly && <DiscountQuoteEditor quote={quote} locale={locale} focusField={focusField} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'terms' && !readOnly && <TermsQuoteEditor quote={quote} locale={locale} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'records' && <RecordsEditor quote={readOnly ? null : quote} locale={locale} onApplyCustomer={applyCustomer} onClose={closeModal} />}
     {modal === 'privacy' && <AssistantDisclosure locale={locale} processing={quoteAI} onClose={closeModal} />}
     {modal === 'publish' && <Dialog open onOpenChange={open => { if (!open) closeModal(); }}><DialogContent className="qp-modal" showCloseButton={false}><DialogHeader><DialogTitle>{t('Relire avant publication', 'Review before publication')}</DialogTitle><DialogDescription>{t('La publication fige le contenu. Elle n’envoie pas le devis.', 'Publication freezes the content. It does not send the Quote.')}</DialogDescription></DialogHeader>
       <div className="qp-publication-summary"><FileText /><h2>{quote.title}</h2><p>{quote.customerName || t('Destinataire manquant', 'Missing Customer')}</p><strong>CHF {formatMoney(sum.total)}</strong><p>{quote.reference} · {t('Révision', 'Revision')} {revisions.length + 1}</p></div>
       <ul className="qp-publication-checks"><li>{sum.total !== null ? <Check /> : <TriangleAlert />}{t('Toutes les lignes sont chiffrées', 'Every line is priced')}</li><li>{!missingAdmin ? <Check /> : <TriangleAlert />}{t('Coordonnées et informations requises', 'Contact details and required information')}</li><li>{save === 'saved' ? <Check /> : <TriangleAlert />}{t('Modifications enregistrées', 'Changes saved')}</li><li>{ai !== 'processing' ? <Check /> : <TriangleAlert />}{t('Aucune modification IA en attente', 'No AI change pending')}</li></ul>
-      {blocked ? <Alert><TriangleAlert /><AlertTitle>{t('Publication indisponible', 'Publication unavailable')}</AlertTitle><AlertDescription>{t('Complétez les points signalés puis revenez à cette relecture.', 'Complete the flagged points, then return to this review.')}<ul>{[...calculation.errors, ...calculation.missing].map((problem, i) => <li key={i}>{problemLabel(problem, locale)}{!problem.path.startsWith('lines') && !problem.path.startsWith('sections') && <Button type="button" variant="link" size="sm" onClick={() => { closeModal(); setTimeout(() => revealField(problem.path), 0); }}>{t('Corriger', 'Fix')}</Button>}</li>)}</ul></AlertDescription></Alert> : <p>{t('Cette révision ne pourra être ni modifiée ni annulée. Une correction nécessitera une nouvelle révision.', 'This revision cannot be edited or undone. A correction requires a new revision.')}</p>}
+      {blocked ? <Alert><TriangleAlert /><AlertTitle>{t('Publication indisponible', 'Publication unavailable')}</AlertTitle><AlertDescription>{t('Complétez les points signalés puis revenez à cette relecture.', 'Complete the flagged points, then return to this review.')}<ul>{[...calculation.errors, ...calculation.missing].map((problem, i) => <li key={i}>{problemLabel(problem, locale)}{<Button type="button" variant="link" size="sm" onClick={() => { closeModal(); setTimeout(() => revealField(problem.path), 0); }}>{t('Corriger', 'Fix')}</Button>}</li>)}</ul></AlertDescription></Alert> : <p>{t('Cette révision ne pourra être ni modifiée ni annulée. Une correction nécessitera une nouvelle révision.', 'This revision cannot be edited or undone. A correction requires a new revision.')}</p>}
       <div className="qp-modal-actions"><Button variant="outline" onClick={closeModal}>{t('Retour au devis', 'Back to Quote')}</Button><Button disabled={blocked} onClick={() => void publish()}><LockKeyhole data-icon="inline-start" />{t('Confirmer la publication', 'Confirm publication')}</Button></div>
     </DialogContent></Dialog>}
   </div>;
