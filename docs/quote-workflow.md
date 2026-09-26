@@ -27,6 +27,12 @@ The design source remains under `app/components/quote-prototype/` for comparison
 
 Publication freezes commercial content and calculated amounts together. It removes the Working Draft, assigns the next revision number and does not send anything. New revision drafts copy the latest publication's dates, identity snapshots, terms and tax settings unchanged. Editing reusable records never refreshes existing Quotes. Section-editor changes apply as one undoable action when the Artisan chooses Done.
 
+## PDFs
+
+[Quote PDFs](quote-pdf.md) is the specification. `app/lib/quote-document.ts` turns a Published Revision (with its stored amounts) or a Working Draft into what a Quote Layout shows. `app/lib/quote-layouts/` holds every Quote Layout version. Never change an existing version's appearance (ADR 0004). `app/lib/pdf-renderer.server.ts` prints a layout's self-contained HTML with headless Chromium, with no JavaScript or network access (ADR 0005). `app/lib/quote-pdf.server.ts` serves `GET /api/quotes/:id/revisions/:number/document` and `GET /api/quotes/:id/draft-preview`. PDFs are rendered on each download and never stored.
+
+`app/lib/business-logo.server.ts` serves `POST /api/business-logo`, which accepts PNG or JPEG up to 1 MB, identified by file signature, and `GET /api/business-logo/:id`. Logos are immutable rows. A new Working Draft copies the business default `logoId` with the other business details, and Publication freezes it in the revision. Downloads only load logos that belong to the Quote's business.
+
 Local edits do not survive a browser crash or closure unless the server accepted them. The browser warns before leaving with unsaved work where supported. A conflict with another window retains local edits for inspection; it does not silently overwrite the newer server version.
 
 ## Business defaults and copied details
@@ -36,6 +42,8 @@ Use **Customers & business** to save reusable business name, address, contact de
 VAT registration has three states: To confirm, Yes and No. Saving registered defaults requires a nonblank VAT identifier. Artisans can save incomplete business details and leave registration at To confirm. Business setup never blocks starting a Quote. A Working Draft may also retain registered status with a missing identifier. Its editor explains that it is incomplete, and Publication still requires the missing details. Registered Quotes support only current standard-rate work. This flow does not change the existing calculation rules.
 
 Save defaults reports success only after the server accepts the request. A load failure disables the forms and offers Retry. A save failure keeps the entries and offers Retry without refreshing any Quote. Saving a Customer does not reset pending default edits. Closing with unsaved default edits asks whether to discard them, with Keep editing focused first.
+
+The business logo uploads and is removed at once, separately from Save defaults. It appears on the PDFs of new Quotes. **Restore from business settings** in a Working Draft copies the current logo too.
 
 `app/lib/business-defaults.server.test.ts` covers this behavior through authenticated PostgreSQL requests. `tests/browser/business-defaults.spec.ts` covers copy scope, quote-local edits and Undo, load/save retries, discard confirmation and English/French keyboard validation. French terms remain commercial content when the interface language changes.
 
@@ -53,6 +61,7 @@ Focused tests:
 ```sh
 npx vitest run app/lib/quote.test.ts app/lib/quote-tools.server.test.ts app/lib/quote-assistant.server.test.ts
 TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quotes-ai.server.test.ts
+TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quote-pdf.server.test.ts app/lib/business-logo.server.test.ts
 npm run test:browser
 ```
 
@@ -60,13 +69,13 @@ npm run test:browser
 
 Browser tests use an isolated database whose name ends in `_browser`, unless `BROWSER_TEST_DATABASE_URL` is supplied. The setup creates that database and applies migrations. Its PostgreSQL role needs permission to create a database. Browser authentication goes through Better Auth; only test-user email verification uses direct fixture setup. Never point these tests at production. Browser traces contain authenticated test traffic and should not be published without review.
 
-The default browser suite uses Chromium on port 5180. Install it with `npx playwright install chromium`. PostgreSQL-backed server tests are skipped unless `TEST_DATABASE_URL` is set. A passing run with skips does not verify persistence. CI runs the database-backed tests and the browser suite.
+The default browser suite uses Chromium on port 5180. Install it with `npx playwright install chromium`. The PDF server tests need the same Chromium. PostgreSQL-backed server tests are skipped unless `TEST_DATABASE_URL` is set. A passing run with skips does not verify persistence. CI runs the database-backed tests and the browser suite.
 
 Routine request tests use a controllable pi model boundary and the real tool executor. Browser tests use network interception for deterministic assistant replies. Neither makes live model calls. Fictional Google app experiments require the isolated workflow in [quote-ai.md](quote-ai.md). Real-data rehearsal remains gated on recorded provider review and the release acceptance in #21. No provider credentials reach the browser.
 
 ## Migration and rollback
 
-`0002_quotes.sql` adds Quote, revision, conversation, request, Customer and defaults storage. `0003_quote_request_leases.sql` adds request payload hashes and AI lease expiry. `0004_quote_capture_provenance.sql` stores server-owned initial-capture and undo eligibility and gives conversation messages a stable ordering sequence. These migrations are additive and leave authentication tables unchanged.
+`0002_quotes.sql` adds Quote, revision, conversation, request, Customer and defaults storage. `0003_quote_request_leases.sql` adds request payload hashes and AI lease expiry. `0004_quote_capture_provenance.sql` stores server-owned initial-capture and undo eligibility and gives conversation messages a stable ordering sequence. `0005_quote_revision_layout.sql` records each Published Revision's Quote Layout; existing revisions get standard version 1. `0006_business_logo.sql` adds immutable business logos. These migrations are additive and leave authentication tables unchanged.
 
 Take a database backup before deployment. The previous application can run against the expanded schema, but cannot expose the new Quote workflow. Roll back the application image without dropping the new tables or columns. Preserve them so drafts and publications remain available after rolling forward. A database restore is a separate recovery operation and can lose changes made after the backup.
 

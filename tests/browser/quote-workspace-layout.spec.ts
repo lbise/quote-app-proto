@@ -11,7 +11,7 @@ const interfaces = {
     edit: "Edit", editLine: "Edit line 1", more: "More actions for line 1",
     addToQuote: "Add to Quote", addSection: "Add section", addLine: "Add a line",
     details: ["Edit reference and dates", "Edit Quote title", "Edit site address", "Edit business details", "Choose or edit Customer", "Edit terms"],
-    publish: "Review & publish", confirm: "Confirm publication", published: "Published revision 1",
+    publish: "Review & publish", confirm: "Confirm publication", published: "Published revision 1", close: "Close",
   },
   fr: {
     hide: "Masquer l’assistant", show: "Afficher l’assistant", conversation: "Conversation avec l’assistant",
@@ -20,7 +20,7 @@ const interfaces = {
     edit: "Modifier", editLine: "Modifier la ligne 1", more: "Autres actions de la ligne 1",
     addToQuote: "Ajouter au devis", addSection: "Ajouter une section", addLine: "Ajouter une ligne",
     details: ["Modifier la référence et les dates", "Modifier l’objet du devis", "Modifier l’adresse du chantier", "Modifier les coordonnées de l’entreprise", "Choisir ou modifier le client", "Modifier les conditions"],
-    publish: "Relire et publier", confirm: "Confirmer la publication", published: "Révision publiée 1",
+    publish: "Relire et publier", confirm: "Confirmer la publication", published: "Révision publiée 1", close: "Fermer",
   },
 } as const;
 
@@ -200,6 +200,7 @@ for (const locale of ["en", "fr"] as const) {
     await page.getByRole("button", { name: copy.publish, exact: true }).click();
     await page.getByRole("button", { name: copy.confirm, exact: true }).click();
     await expect(page.getByText(copy.published, { exact: true })).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: copy.close, exact: true }).click();
     await expect(documentPane.locator(".qp-edit-target, .qp-edit-affordance")).toHaveCount(0);
     await expect(documentPane.getByRole("button", { name: copy.editLine, exact: true })).toHaveCount(0);
     await expect(documentPane.getByRole("button", { name: copy.more, exact: true })).toHaveCount(0);

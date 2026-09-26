@@ -5,6 +5,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Headless Chromium prints Quote PDFs (ADR 0005). Install it where the
+# unprivileged runtime user can read it, with its system libraries and fonts.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx playwright-core install --with-deps --only-shell chromium
+
 COPY . .
 RUN npm run build
 

@@ -10,6 +10,7 @@ import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
 import { QuoteAIError, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
 import type { QuoteAssistantDiagnostic, QuoteAssistantSuccessDebug } from "./quote-assistant-debug";
 import { quoteDraftLimit } from "./quote-limits";
+import { currentQuoteLayout } from "./quote-layouts";
 import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -17,14 +18,14 @@ type Store = Database | Transaction;
 type Message = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
 type Action = "create" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "customer-apply" | "defaults-save";
 type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; customer?: unknown; customerId?: unknown; defaults?: unknown };
-type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: { id: string; email: string; emailVerified: boolean } } | null> } };
+export type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: { id: string; email: string; emailVerified: boolean } } | null> } };
 type QuoteDetail = Awaited<ReturnType<typeof readDetail>>;
 
 const MAX_HTTP_BYTES = 256_000;
 const MAX_REQUEST_ID = 128;
 const MAX_TEXT = 8_000;
 const AI_LEASE_MS = 60_000; // Greater than the provider's bounded 45-second timeout.
-const defaultFields = ["businessName", "businessAddress", "businessContact", "vatRegistered", "vatId", "terms"] as const;
+const defaultFields = ["businessName", "businessAddress", "businessContact", "vatRegistered", "vatId", "terms", "logoId"] as const;
 
 function assistantDiagnostic(error: unknown, requestId: string, fallback: QuoteAssistantDiagnostic): { diagnostic: QuoteAssistantDiagnostic } | undefined {
   const diagnostic = error instanceof QuoteAIError ? error.diagnostic : fallback;
@@ -43,8 +44,14 @@ function assistantSuccessDebug(debug: QuoteAssistantSuccessDebug | undefined, re
 
 export type QuoteHandlerDependencies = { database?: Database; auth?: SessionAuth; modelBoundary?: QuoteAIModelBoundary; now?: () => Date };
 
-class RequestFailure extends Error {
+export class RequestFailure extends Error {
   constructor(readonly status: number, readonly code: string, readonly details?: unknown) { super(code); }
+}
+
+/** The JSON error body for a refused request. Unexpected errors never reveal details. */
+export function failureResponse(error: unknown, unexpectedCode: string): Response {
+  if (error instanceof RequestFailure) return json({ error: error.code }, error.status);
+  return json({ error: unexpectedCode }, 500);
 }
 
 function json(value: unknown, status = 200) {
@@ -189,7 +196,8 @@ function storedChanges(changed: string[], changedFields?: string[]): string[] | 
   return changed.length ? changed : undefined;
 }
 
-async function authorised(request: Request, auth: SessionAuth, database: Database): Promise<string> {
+/** Resolve the signed-in Artisan's business, or fail with 401/403. */
+export async function authorised(request: Request, auth: SessionAuth, database: Database): Promise<string> {
   const current = await auth.api.getSession({ headers: request.headers });
   if (!current) throw new RequestFailure(401, "authentication_required");
   if (!hasApprovedAccess(current.user)) throw new RequestFailure(403, "access_denied");
@@ -198,7 +206,7 @@ async function authorised(request: Request, auth: SessionAuth, database: Databas
   return profile.businessId;
 }
 
-function assertMutationOrigin(request: Request) {
+export function assertMutationOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin || !trustedOrigins().includes(origin)) throw new RequestFailure(403, "untrusted_origin");
 }
@@ -252,17 +260,26 @@ function defaultsFrom(value: unknown, rejectInvalid: boolean): Partial<QuoteData
       defaults.vatRegistered = supplied;
     } else {
       if (typeof supplied !== "string" || supplied.length > 20_000) throw new RequestFailure(400, "invalid_defaults");
+      if (field === "logoId" && !/^[A-Za-z0-9_-]{0,128}$/.test(supplied)) {
+        if (rejectInvalid) throw new RequestFailure(400, "invalid_defaults");
+        continue;
+      }
       defaults[field] = supplied;
     }
   }
   return defaults;
 }
 
+/** The business defaults copied into each new Working Draft. */
+export async function businessDefaultsFor(database: Store, businessId: string): Promise<Partial<QuoteData>> {
+  const [savedDefaults] = await database.select().from(businessDefaults).where(eq(businessDefaults.businessId, businessId)).limit(1);
+  return defaultsFrom(savedDefaults?.defaults, false);
+}
+
 async function readList(database: Store, businessId: string) {
   const records = await database.select().from(quote).where(eq(quote.businessId, businessId)).orderBy(desc(quote.updatedAt));
   const revisions = await database.select().from(quoteRevision).where(eq(quoteRevision.businessId, businessId));
   const customers = await database.select().from(customer).where(eq(customer.businessId, businessId)).orderBy(asc(customer.name));
-  const [savedDefaults] = await database.select().from(businessDefaults).where(eq(businessDefaults.businessId, businessId)).limit(1);
   return {
     quotes: records.map((record) => {
       const latest = revisions.filter((revision) => revision.quoteId === record.id).sort((a, b) => b.number - a.number)[0];
@@ -270,7 +287,7 @@ async function readList(database: Store, businessId: string) {
       return { id: record.id, reference: record.reference, title: document.title ?? record.title, customerName: document.customerName ?? "", hasDraft: record.draft !== null, revision: latest?.number ?? 0, updatedAt: record.updatedAt.toISOString() };
     }),
     customers: customers.map((entry) => ({ id: entry.id, name: entry.name, address: entry.address, contact: entry.contact })),
-    defaults: defaultsFrom(savedDefaults?.defaults, false),
+    defaults: await businessDefaultsFor(database, businessId),
   };
 }
 
@@ -407,6 +424,11 @@ async function saveCustomer(database: Database, businessId: string, body: Body, 
 
 async function saveDefaults(database: Database, businessId: string, body: Body, now: Date) {
   const defaults = defaultsFrom(body.defaults, true);
+  // The logo is uploaded separately. Keep it unless this save explicitly changes it.
+  if (defaults.logoId === undefined) {
+    const { logoId } = await businessDefaultsFor(database, businessId);
+    if (logoId) defaults.logoId = logoId;
+  }
   if (defaults.vatRegistered === true && !defaults.vatId?.trim()) {
     throw new RequestFailure(422, "invalid_defaults", { errors: [{ path: "vatId", code: "required" }] });
   }
@@ -497,7 +519,10 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
       if (checked.draft.reference !== record.reference) throw new RequestFailure(422, "reference_fixed");
       if (!checked.calculation.complete) throw new RequestFailure(422, "incomplete_draft", { missing: checked.calculation.missing });
       const [previous] = await transaction.select({ number: quoteRevision.number }).from(quoteRevision).where(eq(quoteRevision.quoteId, id!)).orderBy(desc(quoteRevision.number)).limit(1);
-      await transaction.insert(quoteRevision).values({ id: crypto.randomUUID(), quoteId: id!, businessId, number: (previous?.number ?? 0) + 1, quote: checked.draft, calculation: checked.calculation });
+      await transaction.insert(quoteRevision).values({
+        id: crypto.randomUUID(), quoteId: id!, businessId, number: (previous?.number ?? 0) + 1, quote: checked.draft, calculation: checked.calculation,
+        layoutId: currentQuoteLayout.id, layoutVersion: currentQuoteLayout.version,
+      });
       await transaction.update(quote).set({ draft: null, undoDraft: null, capturedLineIds: [], undoCapturedLineIds: null, pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, title: checked.draft.title, version: record.version + 1, updatedAt: now }).where(eq(quote.id, id!));
     }
     await recordRequest(transaction, { businessId, quoteId: id!, action, requestId, status: "complete", baseVersion: record.version, payloadHash: hash, now });

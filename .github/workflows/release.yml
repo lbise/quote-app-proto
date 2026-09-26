@@ -53,6 +53,9 @@ jobs:
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
 
+      - name: Install browser (PDF rendering tests)
+        run: npx playwright install --with-deps chromium
+
       - name: Test
         run: npm run test
 

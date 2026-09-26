@@ -28,7 +28,7 @@ The phone supports initial capture while the Artisan is at the job site. The off
 
 The current web application combines conversation with direct editing of a Working Draft. It supports French and English interfaces. A Quote's customer-facing language is independent of the Artisan's interface language. Current calculations use CHF.
 
-Speech input and PDF output are confirmed product goals, not shipped capabilities. The current implementation and its limits are described in `docs/quote-workflow.md`.
+Speech input is a confirmed product goal, not a shipped capability. The current implementation and its limits are described in `docs/quote-workflow.md`.
 
 ## Capabilities and constraints
 
@@ -38,6 +38,7 @@ Speech input and PDF output are confirmed product goals, not shipped capabilitie
 - Conversation and manual editing update the Working Draft. Quote Lines can have quantity-based or fixed prices, and optional Quote Sections organize work.
 - The application calculates amounts and validates commercial data. The assistant may propose quantities and prices, but application validation does not establish that those proposals are commercially correct.
 - Incomplete Working Drafts are allowed. Business setup must not block starting a Quote.
+- The Artisan downloads a customer-ready PDF (Quote Document) of any Published Revision and sends it manually. A Draft Preview of a Working Draft is marked as a draft. PDFs are rendered on demand in the Quote Layout recorded at Publication and are not stored (ADR 0004, ADR 0005). An optional business logo is copied into new Quotes and freezes with each revision. In-app delivery and acceptance tracking are out of scope. See `docs/quote-pdf.md`.
 - The Artisan explicitly approves Publication. The assistant cannot publish a Quote on the Artisan's behalf.
 - Publication freezes commercial content and calculated amounts in a numbered Published Revision. Later corrections require a new Working Draft and another Publication.
 - Publication does not send a Quote or establish Customer receipt or acceptance.
@@ -48,7 +49,7 @@ Speech input and PDF output are confirmed product goals, not shipped capabilitie
 ### Intended capabilities and open decisions
 
 - Support starting a Quote by speech on a phone at the job site. The speech-capture mechanism, recording retention and behavior with poor connectivity remain undecided.
-- Produce a customer-ready PDF that the Artisan can send. PDF layout and export behavior remain undecided. In-app delivery is not established by this goal.
+- Offer more Quote Layouts and layout options, chosen per Quote. The first release has only the standard layout.
 - Reduce the time needed to prepare Quotes. No numerical time-saving target or measured claim has been established.
 
 ## Product principles

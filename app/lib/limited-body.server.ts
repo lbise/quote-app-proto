@@ -7,6 +7,14 @@ export async function readLimitedBody(
   source: Pick<Request, 'headers' | 'body'>,
   maximumBytes: number,
 ): Promise<string> {
+  return new TextDecoder().decode(await readLimitedBytes(source, maximumBytes));
+}
+
+/** Checks streamed bytes as well as the optional declared size. */
+export async function readLimitedBytes(
+  source: Pick<Request, 'headers' | 'body'>,
+  maximumBytes: number,
+): Promise<Uint8Array> {
   const declared = source.headers.get('content-length');
   if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > maximumBytes)) throw new BodyLimitError();
   if (!source.body) throw new Error('Missing body.');
@@ -28,5 +36,5 @@ export async function readLimitedBody(
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return new TextDecoder().decode(bytes);
+  return bytes;
 }

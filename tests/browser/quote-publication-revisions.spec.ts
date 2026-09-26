@@ -9,6 +9,7 @@ test("an Artisan publishes revision 1, prepares a new Working Draft, and keeps r
 
   await page.getByRole("button", { name: "Review & publish" }).click();
   await page.getByRole("button", { name: "Confirm publication" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
   await expect(page.getByRole("button", { name: "New revision" })).toBeVisible();
   await expect(page.getByText("Published revision 1")).toBeVisible();
 
@@ -21,6 +22,7 @@ test("an Artisan publishes revision 1, prepares a new Working Draft, and keeps r
 
   await page.getByRole("button", { name: "Review & publish" }).click();
   await page.getByRole("button", { name: "Confirm publication" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
   await expect(page.getByText("Published revision 2")).toBeVisible();
 
   await page.getByLabel("Quote version").selectOption({ label: "Revision 1" });

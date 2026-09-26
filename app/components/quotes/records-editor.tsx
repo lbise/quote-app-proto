@@ -17,6 +17,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { type QuoteData } from "@/lib/quote"
+import { BusinessLogoField } from "./business-logo-field"
 import { randomUUID } from "@/lib/random-id"
 
 type Locale = "fr" | "en"
@@ -229,6 +230,28 @@ export function RecordsEditor({
     }
   }
 
+  function logoUploaded(logoId: string) {
+    setDefaults((current) => ({ ...current, logoId }))
+    setSavedDefaults((current) => ({ ...current, logoId }))
+  }
+
+  /** Removing the logo saves at once, like uploading. Other unsaved default edits stay in the form. */
+  async function removeLogo(): Promise<boolean> {
+    try {
+      const response = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "defaults-save", defaults: { ...savedDefaults, logoId: "" } }),
+      })
+      if (!response.ok) return false
+      setDefaults((current) => ({ ...current, logoId: "" }))
+      setSavedDefaults((current) => ({ ...current, logoId: "" }))
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function close(action = onClose) {
     if (status === "saving") return
     if (customerDirty) {
@@ -336,6 +359,7 @@ export function RecordsEditor({
             {quote && <p className="mb-4 text-sm text-muted-foreground">{t(locale, "Pour modifier les coordonnées de l'entreprise dans ce devis, cliquez sur le bloc de l'entreprise dans le devis.", "To change this Quote's business details, select the business block in the Quote.")}</p>}
             <form id="record-defaults-form" onSubmit={saveDefaults} noValidate>
               <FieldGroup>
+                <BusinessLogoField locale={locale} logoId={defaults.logoId || undefined} disabled={busy} onUploaded={logoUploaded} onRemove={removeLogo} />
                 <Field data-disabled={busy || undefined}>
                   <FieldLabel htmlFor="record-business-name">{t(locale, "Raison sociale", "Business name")}</FieldLabel>
                   <Input id="record-business-name" value={defaults.businessName ?? ""} disabled={busy} onChange={(event) => updateDefaults("businessName", event.target.value)} />

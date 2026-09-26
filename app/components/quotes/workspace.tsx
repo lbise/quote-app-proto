@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowUp, Check, CheckCheck, FileText, LockKeyhole, MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, Pencil, Plus, RotateCcw, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { ArrowRight, ArrowUp, Check, CheckCheck, FileDown, FileText, LockKeyhole, MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, Pencil, Plus, RotateCcw, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -21,6 +21,7 @@ import { CustomerQuoteEditor } from './customer-quote-editor';
 import { RecordsEditor } from './records-editor';
 import { AddSectionControl, SectionHeading } from './section-preview-controls';
 import { useQuote, type QuoteRecord } from './use-quote';
+import { downloadPdf } from './pdf-download';
 import { QuoteHeader } from './quote-header';
 import { AssistantDisclosure } from './assistant-disclosure';
 import { AssistantDebug } from './assistant-debug';
@@ -41,7 +42,9 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   const [input, setInput] = useState('');
   const [editLine, setEditLine] = useState<QuoteLine | null>(null);
   const [focusField, setFocusField] = useState<string | undefined>();
-  const [modal, setModal] = useState<'business' | 'customer' | 'site' | 'discount' | 'terms' | 'publish' | 'records' | 'privacy' | null>(null);
+  const [modal, setModal] = useState<'business' | 'customer' | 'site' | 'discount' | 'terms' | 'publish' | 'published' | 'records' | 'privacy' | null>(null);
+  const [pdf, setPdf] = useState<'idle' | 'preparing' | 'failed'>('idle');
+  const [previewExcludedProposal, setPreviewExcludedProposal] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [sectionId, setSectionId] = useState('');
@@ -228,7 +231,22 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   async function publish() {
     if (blocked) return;
     const next = await mutate('publish');
-    if (next) { setReadRevision(next.revisions.length - 1); closeModal(); }
+    if (next) { setReadRevision(next.revisions.length - 1); setModal('published'); }
+  }
+  /** Draft Previews show the saved Working Draft: wait for pending saves, and say when a proposal is still being prepared. */
+  async function downloadDraftPreview() {
+    const proposalPending = ai === 'processing';
+    setPdf('preparing');
+    setPreviewExcludedProposal(false);
+    if (!(await flush())) { setPdf('failed'); return; }
+    const downloaded = await downloadPdf(`/api/quotes/${encodeURIComponent(record.id)}/draft-preview`);
+    setPreviewExcludedProposal(downloaded && proposalPending);
+    setPdf(downloaded ? 'idle' : 'failed');
+  }
+  async function downloadQuoteDocument(revisionNumber: number) {
+    setPdf('preparing');
+    setPreviewExcludedProposal(false);
+    setPdf(await downloadPdf(`/api/quotes/${encodeURIComponent(record.id)}/revisions/${revisionNumber}/document`) ? 'idle' : 'failed');
   }
   async function newRevision() {
     if (record.draft) { setReadRevision(null); return; }
@@ -240,8 +258,14 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     <div className="qp-toolbar-actions">
       {revisions.length > 0 && <select aria-label={t('Version du devis', 'Quote version')} value={readRevision === null ? 'draft' : String(readRevision)} onChange={e => setReadRevision(e.target.value === 'draft' ? null : Number(e.target.value))} disabled={save !== 'saved' || ai === 'processing' || busy}>{record.draft && <option value="draft">{t('Brouillon', 'Draft')}</option>}{revisions.map((r, i) => <option key={r.number} value={i}>{t('Révision', 'Revision')} {r.number}</option>)}</select>}
       {!readOnly && <Button variant="ghost" disabled={!record.canUndo || save !== 'saved' || busy || ai === 'processing'} onClick={() => void mutate('undo')} className="qp-undo" aria-label={t('Annuler la dernière modification', 'Undo last change')} title={t('Annuler la dernière modification', 'Undo last change')}><RotateCcw data-icon="inline-start" /><span>{t('Annuler la dernière modification', 'Undo last change')}</span></Button>}
+      {readOnly
+        ? <Button variant="outline" disabled={pdf === 'preparing'} onClick={() => void downloadQuoteDocument(revisions[readRevision].number)}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : t('Télécharger le PDF', 'Download PDF')}</Button>
+        : <Button variant="outline" disabled={pdf === 'preparing' || busy} onClick={() => void downloadDraftPreview()}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : t('Aperçu PDF', 'PDF preview')}</Button>}
       {readOnly ? <Button disabled={busy} onClick={() => void newRevision()}><Pencil data-icon="inline-start" />{record.draft ? t('Reprendre', 'Resume draft') : t('Nouvelle révision', 'New revision')}</Button> : <Button onClick={() => openModal('publish')}><Check data-icon="inline-start" />{t('Relire et publier', 'Review & publish')}</Button>}
     </div>
+    {(pdf === 'failed' || previewExcludedProposal) && <p className={`qp-pdf-status${pdf === 'failed' ? ' qp-pdf-status-failed' : ''}`} role="status">{pdf === 'failed'
+      ? t('Le PDF n’a pas pu être préparé. Vérifiez que les modifications sont enregistrées et votre connexion, puis réessayez.', 'The PDF could not be prepared. Check that changes are saved and your connection, then try again.')
+      : t('Les modifications proposées non acceptées ne figurent pas dans l’aperçu.', 'Proposed changes not yet accepted are not in the preview.')}</p>}
   </div>;
   const outlineLinks = <>
     {quote.sections.map((section) => { const lines = quote.lines.filter(l => l.sectionId === section.id), missing = lines.some(l => amountFor(l) === null); return <button key={section.id} className={activeSection === section.id ? 'is-current' : ''} aria-current={activeSection === section.id ? 'true' : undefined} onClick={() => { setSectionId(section.id); setNarrowPanel('quote'); setTimeout(() => document.getElementById(`section-${section.id}`)?.scrollIntoView({ block: 'start' }), 0); }}><span>{section.title}</span>{missing ? <TriangleAlert aria-label={t('À compléter', 'Incomplete')} /> : <span>{lines.length}</span>}</button>; })}
@@ -402,6 +426,10 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
       <ul className="qp-publication-checks"><li>{sum.total !== null ? <Check /> : <TriangleAlert />}{t('Toutes les lignes sont chiffrées', 'Every line is priced')}</li><li>{!missingAdmin ? <Check /> : <TriangleAlert />}{t('Coordonnées et informations requises', 'Contact details and required information')}</li><li>{save === 'saved' ? <Check /> : <TriangleAlert />}{t('Modifications enregistrées', 'Changes saved')}</li><li>{ai !== 'processing' ? <Check /> : <TriangleAlert />}{t('Aucune modification IA en attente', 'No AI change pending')}</li></ul>
       {blocked ? <Alert><TriangleAlert /><AlertTitle>{t('Publication indisponible', 'Publication unavailable')}</AlertTitle><AlertDescription>{t('Complétez les points signalés puis revenez à cette relecture.', 'Complete the flagged points, then return to this review.')}<ul>{[...calculation.errors, ...calculation.missing].map((problem, i) => <li key={i}>{problemLabel(problem, locale)}{<Button type="button" variant="link" size="sm" onClick={() => { closeModal(); setTimeout(() => revealField(problem.path), 0); }}>{t('Corriger', 'Fix')}</Button>}</li>)}</ul></AlertDescription></Alert> : <p>{t('Cette révision ne pourra être ni modifiée ni annulée. Une correction nécessitera une nouvelle révision.', 'This revision cannot be edited or undone. A correction requires a new revision.')}</p>}
       <div className="qp-modal-actions"><Button variant="outline" onClick={closeModal}>{t('Retour au devis', 'Back to Quote')}</Button><Button disabled={blocked} onClick={() => void publish()}><LockKeyhole data-icon="inline-start" />{t('Confirmer la publication', 'Confirm publication')}</Button></div>
+    </DialogContent></Dialog>}
+    {modal === 'published' && readRevision !== null && <Dialog open onOpenChange={open => { if (!open) closeModal(); }}><DialogContent className="qp-modal" showCloseButton={false}><DialogHeader><DialogTitle>{t(`Révision ${revisions[readRevision].number} publiée`, `Revision ${revisions[readRevision].number} published`)}</DialogTitle><DialogDescription>{t('Le devis n’a pas été envoyé. Téléchargez le PDF pour le transmettre au client.', 'The Quote was not sent. Download the PDF to share it with the Customer.')}</DialogDescription></DialogHeader>
+      {pdf === 'failed' && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{t('PDF indisponible', 'PDF unavailable')}</AlertTitle><AlertDescription>{t('Le PDF n’a pas pu être préparé. La révision est bien publiée. Réessayez.', 'The PDF could not be prepared. The revision is published. Try again.')}</AlertDescription></Alert>}
+      <div className="qp-modal-actions"><Button variant="outline" onClick={closeModal}>{t('Fermer', 'Close')}</Button><Button disabled={pdf === 'preparing'} onClick={() => void downloadQuoteDocument(revisions[readRevision].number)}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : t('Télécharger le devis', 'Download Quote')}</Button></div>
     </DialogContent></Dialog>}
   </div>;
 }

@@ -33,7 +33,7 @@ export async function setInterfaceLanguage(page: Page, locale: "en" | "fr") {
   await expect(page.locator(".qp-app")).toHaveAttribute("lang", locale);
 }
 
-async function requestQuote(artisan: Artisan, body: Record<string, unknown>): Promise<QuoteResponse> {
+export async function requestQuote(artisan: Artisan, body: Record<string, unknown>): Promise<QuoteResponse> {
   await artisan.page.goto("/quotes");
   return artisan.page.evaluate(async (requestBody) => {
     const response = await fetch("/api/quotes", {

@@ -42,6 +42,18 @@ _Avoid_: Chapter, sub-quote
 An unconditional reduction of a Quote's price before VAT, expressed as either a percentage or a fixed monetary amount.
 _Avoid_: Early-payment discount, negative Quote Line
 
+**Quote Document**:
+The customer-ready PDF of a Published Revision. Only Published Revisions have Quote Documents.
+_Avoid_: Export, printout, final PDF
+
+**Draft Preview**:
+A PDF of a Working Draft, visibly marked as a draft and not meant for the Customer. Creating one does not publish the Quote.
+_Avoid_: Draft quote document
+
+**Quote Layout**:
+The presentation used to turn a Quote's content into a PDF. A Quote Layout changes appearance only and never the commercial content or amounts. Each Published Revision keeps the Quote Layout it was published with.
+_Avoid_: Template, theme
+
 ## Evaluation language
 
 **Evaluation Session**:

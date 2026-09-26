@@ -33,6 +33,8 @@ export type QuoteData = {
   discount: string;
   sections: QuoteSection[];
   lines: QuoteLine[];
+  /** The business logo copied with the business details. Absent when the Quote shows no logo. */
+  logoId?: string;
 };
 
 export type QuoteProblem = { path: string; code: string };
@@ -262,6 +264,10 @@ function quoteFrom(input: unknown, errors: QuoteProblem[]): QuoteData | null {
       addProblem(errors, "vatRegistered", "invalid_type");
       return null;
     }
+    if (input.logoId !== undefined && (typeof input.logoId !== "string" || !/^[A-Za-z0-9_-]{0,128}$/.test(input.logoId))) {
+      addProblem(errors, "logoId", "invalid_type");
+      return null;
+    }
     if (!Array.isArray(input.sections) || !Array.isArray(input.lines)) {
       addProblem(errors, "", "invalid_structure");
       return null;
@@ -302,6 +308,7 @@ function quoteFrom(input: unknown, errors: QuoteProblem[]): QuoteData | null {
     return {
       ...Object.fromEntries(stringFields.map((field) => [field, input[field]])),
       vatRegistered: input.vatRegistered,
+      ...(typeof input.logoId === "string" && input.logoId ? { logoId: input.logoId } : {}),
       sections,
       lines: normalizeLines(lines, sections),
     } as QuoteData;

@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { firstQuoteExample } from "./first-quote-examples";
 import { calculateQuote, emptyQuote } from "./quote";
 
 function completeQuote() {
@@ -322,17 +322,15 @@ describe("calculateQuote", () => {
   });
 
   it("uses the independently checked adapted landscape and civil-works totals", () => {
-    const landscape = JSON.parse(readFileSync(new URL("../../docs/examples/first-quotes/landscape-reference.json", import.meta.url), "utf8"));
-    const civilWorks = JSON.parse(readFileSync(new URL("../../docs/examples/first-quotes/civil-works-reference.json", import.meta.url), "utf8"));
 
-    expect(calculateQuote(referenceQuote(landscape))).toMatchObject({
+    expect(calculateQuote(firstQuoteExample("landscape-reference"))).toMatchObject({
       errors: [], missing: [], subtotal: 1_503_200, discount: 0, net: 1_503_200, vat: 121_759, total: 1_624_959, complete: true,
       sections: [
         { id: "section-1", subtotal: 1_296_200, incomplete: false },
         { id: "section-2", subtotal: 207_000, incomplete: false },
       ],
     });
-    expect(calculateQuote(referenceQuote(civilWorks))).toMatchObject({
+    expect(calculateQuote(firstQuoteExample("civil-works-reference"))).toMatchObject({
       errors: [], missing: [], subtotal: 931_150, discount: 0, net: 931_150, vat: 75_423, total: 1_006_573, complete: true,
       sections: [
         { id: "section-1", subtotal: 104_000, incomplete: false },
@@ -343,8 +341,7 @@ describe("calculateQuote", () => {
   });
 
   it("uses every independently checked line and section amount from the long joinery fixture", () => {
-    const joinery = JSON.parse(readFileSync(new URL("../../docs/examples/first-quotes/joinery-reference.json", import.meta.url), "utf8"));
-    const result = calculateQuote(referenceQuote(joinery));
+    const result = calculateQuote(firstQuoteExample("joinery-reference"));
 
     expect(result.errors).toEqual([]);
     expect(result.missing).toEqual([]);
@@ -522,32 +519,3 @@ describe("calculateQuote", () => {
 
   });
 });
-
-function referenceQuote(reference: any) {
-  const sections = reference.sections.map((section: any, index: number) => ({ id: `section-${index + 1}`, title: section.name }));
-  return {
-    ...completeQuote(),
-    reference: reference.quoteSnapshot.reference,
-    title: reference.title,
-    issueDate: reference.quoteSnapshot.issueDate,
-    customerName: reference.quoteSnapshot.customer.name,
-    customerAddress: reference.quoteSnapshot.customer.address,
-    businessName: reference.quoteSnapshot.issuer.name,
-    businessAddress: reference.quoteSnapshot.issuer.address,
-    businessContact: reference.quoteSnapshot.issuer.email,
-    vatId: reference.quoteSnapshot.issuer.vatIdentifier,
-    vatRegistered: reference.quoteSnapshot.tax.mode === "vat",
-    terms: Array.isArray(reference.quoteSnapshot.terms) ? reference.quoteSnapshot.terms.join("\n") : "",
-    sections,
-    lines: reference.sections.flatMap((section: any, sectionIndex: number) => section.lines.map((line: any, lineIndex: number) => ({
-      id: `line-${sectionIndex + 1}-${lineIndex + 1}`,
-      sectionId: `section-${sectionIndex + 1}`,
-      description: line.description,
-      mode: line.kind === "fixed" ? "fixed" : "quantity",
-      quantity: line.quantity ?? "",
-      unit: line.unit ?? "",
-      unitPrice: line.unitPrice ?? "",
-      amount: line.amount,
-    }))),
-  };
-}

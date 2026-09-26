@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  customType,
   integer,
   index,
   jsonb,
@@ -115,6 +116,29 @@ export const businessDefaults = pgTable("business_defaults", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => "bytea",
+  toDriver: (value) => Buffer.from(value),
+  fromDriver: (value) => new Uint8Array(value),
+});
+
+// Logos are immutable. Replacing a logo adds a row, and Working Drafts and
+// Published Revisions keep pointing at the logo they copied (ADR 0003).
+export const businessLogo = pgTable(
+  "business_logo",
+  {
+    id: text("id").primaryKey(),
+    businessId: text("business_id").notNull().references(() => artisanBusiness.id, { onDelete: "cascade" }),
+    contentType: text("content_type").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("business_logo_business_idx").on(table.businessId),
+    check("business_logo_content_type", sql`${table.contentType} in ('image/png', 'image/jpeg')`),
+  ],
+);
+
 export const customer = pgTable(
   "customer",
   {
@@ -167,6 +191,9 @@ export const quoteRevision = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(),
     quote: jsonb("quote").$type<unknown>().notNull(),
     calculation: jsonb("calculation").$type<unknown>().notNull(),
+    // The Quote Layout this revision was published with (ADR 0004).
+    layoutId: text("layout_id").default("standard").notNull(),
+    layoutVersion: integer("layout_version").default(1).notNull(),
   },
   (table) => [uniqueIndex("quote_revision_quote_number_idx").on(table.quoteId, table.number)],
 );

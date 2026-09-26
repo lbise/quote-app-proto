@@ -28,7 +28,7 @@ const translations = {
     delete: "Delete section and its lines", keep: "Keep section",
     insert: "Insert section below", addSection: "Add section", addToQuote: "Add to Quote",
     addLine: "Add line to", lineLabel: "Line", addUngrouped: "Add ungrouped line", addLineEmpty: "Add a line",
-    quote: "Quote", publish: "Review & publish", confirm: "Confirm publication", published: "Published revision 1",
+    quote: "Quote", publish: "Review & publish", confirm: "Confirm publication", published: "Published revision 1", close: "Close",
     editLine: "Edit line", lineDialog: /^(?:Add a line|Edit quote line \d+)$/, apply: "Apply",
     noSection: "No section", newSectionName: "New section name", add: "Add", undo: /^Undo/,
   },
@@ -39,7 +39,7 @@ const translations = {
     delete: "Supprimer la section et ses lignes", keep: "Conserver la section",
     insert: "Insérer une section après celle-ci", addSection: "Ajouter une section", addToQuote: "Ajouter au devis",
     addLine: "Ajouter une ligne à", lineLabel: "Ligne", addUngrouped: "Ajouter une ligne sans section", addLineEmpty: "Ajouter une ligne",
-    quote: "Devis", publish: "Relire et publier", confirm: "Confirmer la publication", published: "Révision publiée 1",
+    quote: "Devis", publish: "Relire et publier", confirm: "Confirmer la publication", published: "Révision publiée 1", close: "Fermer",
     editLine: "Modifier la ligne", lineDialog: /^(?:Ajouter une ligne|Modifier la ligne \d+)$/, apply: "Appliquer",
     noSection: "Sans section", newSectionName: "Nom de la nouvelle section", add: "Ajouter", undo: /^Annuler/,
   },
@@ -308,6 +308,7 @@ for (const locale of ["en", "fr"] as const) {
     await page.getByRole("button", { name: copy.publish, exact: true }).click();
     await page.getByRole("button", { name: copy.confirm, exact: true }).click();
     await expect(page.getByText(copy.published, { exact: true })).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: copy.close, exact: true }).click();
     for (const name of [copy.addToQuote, copy.addSection, copy.addLineEmpty, copy.insert]) {
       await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
     }

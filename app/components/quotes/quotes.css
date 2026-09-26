@@ -33,6 +33,9 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 .qp-app input, .qp-app textarea, .qp-modal input, .qp-modal textarea { caret-color: var(--color-accent); }
 .qp-layout { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .qp-work-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-xs) var(--space-md); flex-shrink: 0; }
+.qp-work-toolbar:has(.qp-pdf-status) { flex-wrap: wrap; }
+.qp-pdf-status { flex: 1 0 100%; margin: 0; font-size: var(--text-sm); color: var(--color-muted); text-align: right; }
+.qp-pdf-status-failed { color: var(--color-error); }
 .qp-document-status, .qp-toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-md); }
 .qp-save { display: inline-flex; gap: var(--space-2xs); align-items: center; font-size: var(--text-sm); color: var(--color-muted); }
 .qp-save-error { color: var(--color-error); }

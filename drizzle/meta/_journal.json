@@ -36,6 +36,20 @@
       "when": 1770000004000,
       "tag": "0004_quote_capture_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1770000005000,
+      "tag": "0005_quote_revision_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770000006000,
+      "tag": "0006_business_logo",
+      "breakpoints": true
     }
   ]
 }
