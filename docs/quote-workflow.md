@@ -62,8 +62,11 @@ Focused tests:
 npx vitest run app/lib/quote.test.ts app/lib/quote-tools.server.test.ts app/lib/quote-assistant.server.test.ts
 TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quotes-ai.server.test.ts
 TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quote-pdf.server.test.ts app/lib/business-logo.server.test.ts
+TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quote-pricing.server.test.ts app/lib/quote-publication.server.test.ts app/lib/quote-revisions.server.test.ts
 npm run test:browser
 ```
+
+`quote-pricing`, `quote-publication` and `quote-revisions` cover the whole-Quote Discount and VAT rules (#15), first Publication (#18) and later revisions (#19) through authenticated requests and reloads. They share the sign-in harness in `app/lib/quote-http.test-support.ts`. The browser specs with the same names cover those workflows in English and French.
 
 `quote-tools.server.test.ts` covers the registered commercial and structural tools, bounded section editing, copying, ordering, targeted deletion, unknown-measurement cleanup, fresh IDs and all-work guards. `quote-assistant.server.test.ts` covers the full-draft model context, structural moves/deletion, mixed-turn rollback, failed-call status and response limits. `quotes-ai.server.test.ts` exercises the authenticated PostgreSQL path for persistence, structural totals, whole-turn Undo, reference locking, retries and third-failure rollback. The browser assistant specs use intercepted responses for deterministic UI behavior, not live model calls. They cover disclosure, change visibility, stale/retry behavior and manual Undo; they do not replace authenticated executor coverage.
 

@@ -424,6 +424,55 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(reopened.messages.at(-1)).toMatchObject({ role: "note", en: "Response was stale; the Working Draft changed." });
   });
 
+  it("blocks Publication while an assistant change is pending, then publishes the settled result", async () => {
+    let detail = await createDraft();
+    detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: complete(detail.draft.reference) })).json();
+    let startedResolve!: () => void;
+    let releaseResolve!: () => void;
+    const started = new Promise<void>((resolve) => { startedResolve = resolve; });
+    const gate = new Promise<void>((resolve) => { releaseResolve = resolve; });
+    const delayed = scriptedModel([
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Titre assistant" } })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Titre corrigé."),
+    ], async () => {
+      startedResolve();
+      await gate;
+    });
+    const assistant = request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Titre assistant", locale: "fr" }, undefined, delayed.handler);
+    await started;
+
+    const blocked = await request({ action: "publish", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID() });
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({ error: "assistant_pending" });
+    expect((await (await request(undefined, detail.id)).json())).toMatchObject({ pending: true, revisions: [] });
+
+    releaseResolve();
+    const settled = await assistant;
+    expect(settled.status).toBe(200);
+    detail = await settled.json();
+    const published = await request({ action: "publish", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID() });
+    expect(published.status).toBe(200);
+    expect(await published.json()).toMatchObject({ draft: null, revisions: [{ number: 1, quote: { title: "Titre assistant" } }] });
+  });
+
+  it("does not let a conversational request start a revision draft or change a Published Revision", async () => {
+    let detail = await createDraft();
+    const draftVersion = (await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: complete(detail.draft.reference) })).json()).version;
+    detail = await (await request({ action: "publish", id: detail.id, expectedVersion: draftVersion, requestId: crypto.randomUUID() })).json();
+    const model = scriptedModel([
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Nouvelle révision" } })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Révision préparée."),
+    ]);
+    for (const expectedVersion of [detail.version, draftVersion]) {
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion, requestId: crypto.randomUUID(), text: "Prépare une nouvelle révision avec un autre titre", locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toBe(expectedVersion === draftVersion ? "stale_version" : "working_draft_required");
+    }
+    const reopened = await (await request(undefined, detail.id)).json();
+    expect(reopened).toMatchObject({ draft: null, pending: false, version: detail.version });
+    expect(reopened.revisions).toEqual(detail.revisions);
+  });
+
   it("keeps a Published reference immutable through the assistant", async () => {
     let detail = await createDraft();
     detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: complete(detail.draft.reference) })).json();

@@ -107,6 +107,8 @@ function totalsFor(quote: QuoteData, calculation: QuoteCalculation): QuoteDocume
     const rate = quote.discountMode === "percent" && quote.discount.trim() ? decimal(quote.discount, 0).replace(".", ",") : "";
     const label = rate ? `Remise ${rate} %` : "Remise";
     totals.push({ label, amount: calculation.discount === null ? amount(null) : { text: `\u2212 ${swissAmount(calculation.discount)}`, missing: false }, grand: false });
+    // VAT is charged on the discounted subtotal. Without VAT, that amount is already the total.
+    if (quote.vatRegistered !== false) totals.push({ label: "Sous-total apr\u00e8s remise HT", amount: amount(calculation.net), grand: false });
   }
   if (quote.vatRegistered === true) totals.push({ label: "TVA 8,1 %", amount: amount(calculation.vat), grand: false });
   // An unregistered business shows no VAT row. An unanswered VAT status must stay visible in a Working Draft.

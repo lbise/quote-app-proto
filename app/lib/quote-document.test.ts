@@ -83,6 +83,19 @@ describe("Quote Document content", () => {
     ]);
   });
 
+  it("shows the discounted subtotal that VAT is charged on when a VAT-registered Quote has a Discount", () => {
+    const quote = {
+      ...firstQuoteExample("civil-works-reference"),
+      vatRegistered: true, sections: [], discountMode: "percent" as const, discount: "10",
+      lines: [{ id: "a", sectionId: "", description: "Forfait pose", mode: "fixed" as const, quantity: "", unit: "", unitPrice: "", amount: "1000" }],
+    };
+    expect(published(1, quote).totals.map((total) => [total.label, total.amount.text])).toEqual([
+      ["Sous-total HT", "1\u2019000.00"], ["Remise 10 %", "\u2212 100.00"], ["Sous-total apr\u00e8s remise HT", "900.00"], ["TVA 8,1 %", "72.90"], ["Total CHF", "972.90"],
+    ]);
+    const incomplete = quoteDocumentContent({ kind: "draft", quote: { ...quote, lines: [{ ...quote.lines[0], amount: "" }] } });
+    expect(incomplete.totals).toContainEqual({ label: "Sous-total apr\u00e8s remise HT", amount: { text: "\u00e0 compl\u00e9ter", missing: true }, grand: false });
+  });
+
   it("carries the Quote's details, parties, dates and terms in Swiss French formatting", () => {
     const quote = { ...firstQuoteExample("civil-works-reference"), validUntil: "2026-09-30", siteAddress: "Chemin Exemple 4\n1000 Exemple", customerContact: "M. Exemple" };
     expect(published(2, quote)).toMatchObject({
