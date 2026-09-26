@@ -5,8 +5,11 @@ import { listRuns } from "./artifacts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 const exec = promisify(execFile);
+// Each test starts one or more `tsx` CLI processes, sequentially, bounded by their own 10 s timeout.
+// A cold start takes over a second on CI, so the 5 s default flakes on tests that start several.
+vi.setConfig({ testTimeout: 30_000 });
 function command(...args: string[]) {
   return exec(process.execPath, ["--import", "tsx", "scripts/evaluate.ts", ...args], { env: { ...process.env, NODE_ENV: "production" }, timeout: 10_000 });
 }
