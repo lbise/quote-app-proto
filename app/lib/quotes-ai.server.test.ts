@@ -96,10 +96,16 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
       })], { stopReason: "toolUse" }),
       fauxAssistantMessage("Le forfait a été ajouté."),
     ]);
-    const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Ajoute un forfait de 486,50 CHF pour le réglage de volets.", locale: "fr" }, undefined, model.handler);
-    expect(response.status).toBe(200);
-    const result = await response.json();
-    expect(result.assistantDebug).toMatchObject({ failedCalls: 0, outcome: "committed", attempts: [{ outcome: "applied" }] });
+    // The debug summary is only returned when enabled. Do not depend on a local .env.
+    vi.stubEnv("QUOTE_AI_DEBUG", "true");
+    try {
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Ajoute un forfait de 486,50 CHF pour le réglage de volets.", locale: "fr" }, undefined, model.handler);
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.assistantDebug).toMatchObject({ failedCalls: 0, outcome: "committed", attempts: [{ outcome: "applied" }] });
+    } finally {
+      vi.unstubAllEnvs();
+    }
     const reopened = await (await request(undefined, detail.id)).json();
     expect(reopened.draft.lines).toEqual([expect.objectContaining({ description: "Réglage de volets", mode: "fixed", amount: "486.50" })]);
   });

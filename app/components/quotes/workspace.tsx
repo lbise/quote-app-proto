@@ -32,6 +32,8 @@ import type { QuoteAIDisclosure } from '../../lib/quote-ai-disclosure';
 import { useBlocker, useRouteLoaderData } from 'react-router';
 
 const clone = <T,>(value: T): T => structuredClone(value);
+// A line's first control can be a missing-field warning. Focus returns to its Edit button.
+const lineEditButton = '.qp-line-actions button';
 const formatMoney = (value: number | null) => value === null ? '—' : money(value).replace(/\u202f/g, '’').replace(/\u00a0CHF$/, '');
 
 export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: { initial: QuoteRecord; locale: 'en' | 'fr'; onList: () => void; onLanguage: (locale: 'en' | 'fr') => void }) {
@@ -123,7 +125,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     setModal(null); setEditLine(null);
     setTimeout(() => {
       const target = returnFocus.current;
-      const lineTarget = returnLineId.current && document.getElementById(`line-${returnLineId.current}`)?.querySelector<HTMLElement>('button');
+      const lineTarget = returnLineId.current && document.getElementById(`line-${returnLineId.current}`)?.querySelector<HTMLElement>(lineEditButton);
       returnLineId.current = null;
       if (target?.isConnected && target.getClientRects().length > 0) target.focus({ preventScroll: true });
       else if (lineTarget) lineTarget.focus({ preventScroll: true });
@@ -140,7 +142,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     setTimeout(() => {
       const target = document.getElementById(`line-${id}`);
       target?.scrollIntoView({ block: 'center' });
-      if (focusEdit) target?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+      if (focusEdit) target?.querySelector<HTMLElement>(lineEditButton)?.focus({ preventScroll: true });
     }, 0);
   }
   function revealField(field: string) {
@@ -177,7 +179,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     if (i < 0 || j < 0 || j >= next.lines.length || next.lines[j].sectionId !== line.sectionId) return;
     [next.lines[i], next.lines[j]] = [next.lines[j], next.lines[i]];
     apply(next, [line.id]);
-    setTimeout(() => document.getElementById(`line-${line.id}`)?.querySelector<HTMLButtonElement>('button')?.focus(), 0);
+    setTimeout(() => document.getElementById(`line-${line.id}`)?.querySelector<HTMLButtonElement>(lineEditButton)?.focus(), 0);
   }
   function addLine(sectionId: string) {
     edit({ id: quoteLineId(), sectionId, description: '', mode: 'quantity', quantity: '', unit: 'm²', unitPrice: '', amount: '' });
@@ -204,7 +206,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     apply(removeQuoteSection(quote, id, deleteLines));
     setSectionId(nextSection);
     setTimeout(() => {
-      const target = !deleteLines && firstLine ? document.getElementById(`line-${firstLine}`)?.querySelector<HTMLElement>('button') : null;
+      const target = !deleteLines && firstLine ? document.getElementById(`line-${firstLine}`)?.querySelector<HTMLElement>(lineEditButton) : null;
       (target ?? (nextSection ? document.getElementById(`section-${nextSection}`)?.querySelector<HTMLElement>('.qp-section-rename-trigger') : null) ?? document.querySelector<HTMLElement>('.qp-add-section button'))?.focus({ preventScroll: true });
     }, 0);
   }
@@ -214,7 +216,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     apply({ ...quote, lines: remaining });
     setTimeout(() => {
       const next = remaining[Math.min(index, remaining.length - 1)];
-      const target = next ? document.getElementById(`line-${next.id}`)?.querySelector<HTMLButtonElement>('button') : document.querySelector<HTMLButtonElement>('.qp-add-line button');
+      const target = next ? document.getElementById(`line-${next.id}`)?.querySelector<HTMLButtonElement>(lineEditButton) : document.querySelector<HTMLButtonElement>('.qp-add-line button');
       target?.focus();
     }, 0);
   }

@@ -16,6 +16,7 @@ const copy = {
     edit: "Edit line 4",
     clarification: "Do you mean the unit price of the cladding in Séjour, line 1, Chambre, line 2, or both? No changes applied.",
     copyExplanation: "Copied Chambre to Bureau. Kept the cladding unit m² and unit price CHF 40.00, left its quantity blank because the wall area is unknown, and kept the tablet's fixed amount of CHF 150.00.",
+    quantityMissing: "Quantity missing",
     changeExplanation: "Changed the unit prices on lines 1 and 2 from CHF 40.00 to CHF 45.00 per m². Kept quantities of 12 m² and 8 m². Line 3 is unchanged.",
     undoNote: "Last change undone. Earlier messages describe the previous state.",
     fallback: "Nothing from this turn was saved. Delete the work manually instead.",
@@ -29,6 +30,7 @@ const copy = {
     edit: "Modifier la ligne 4",
     clarification: "Voulez-vous passer le prix unitaire de l'habillage à 45 CHF dans Séjour, ligne 1, dans Chambre, ligne 2, ou dans les deux ? Aucune modification appliquée.",
     copyExplanation: "Chambre copiée dans Bureau. Unité m² et prix unitaire de l'habillage de 40.00 CHF conservés, quantité laissée vide car la surface est inconnue, et forfait de la tablette de 150.00 CHF conservé.",
+    quantityMissing: "Quantité manquante",
     changeExplanation: "Prix unitaires des lignes 1 et 2 passés de 40.00 CHF à 45.00 CHF par m². Quantités conservées : 12 m² et 8 m². La ligne 3 est inchangée.",
     undoNote: "Dernière modification annulée. Les messages précédents décrivent l'état antérieur.",
     fallback: "Aucune modification de ce tour n’a été enregistrée. Supprimez les travaux avec les contrôles manuels."
@@ -133,7 +135,8 @@ for (const locale of ["en", "fr"] as const) {
     await expect(composer).toBeFocused();
     await expect(page.getByText(`2 ${copy[locale].changedCount}`, { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Bureau/ })).toBeVisible();
-    await expect(page.getByTestId("quote-line").nth(3)).toContainText("— m²");
+    // The unknown wall area stays visibly missing next to the retained unit.
+    await expect(page.getByTestId("quote-line").nth(3)).toContainText(`${copy[locale].quantityMissing} m²`);
     await expect(page.getByTestId("quote-line").nth(3)).toContainText("40.00");
     await expect(page.getByTestId("quote-line").nth(4)).toContainText("150.00");
     await expect(page.getByText("Sous-total partiel HT", { exact: true })).toBeVisible();
