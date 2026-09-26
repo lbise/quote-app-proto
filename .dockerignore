@@ -10,7 +10,9 @@ coverage
 npm-debug.log*
 *.log
 tests
-docs
+# The assistant tool contract is imported by application code; other docs stay out.
+docs/*
+!docs/assistant-contract
 eval
 .eval-artifacts
 scripts/eval-*
