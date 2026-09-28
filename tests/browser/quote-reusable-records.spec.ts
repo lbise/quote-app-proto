@@ -5,16 +5,20 @@ test("using a Customer record copies it into the Working Draft without later rec
   const { page } = artisan;
 
   await page.goto(`/quotes?id=${seeded.id}`);
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  await expect(page.getByRole("heading", { name: "Customers and defaults" })).toBeVisible();
-
-  const customerRecord = page.getByRole("region", { name: "Customer record" });
-  await customerRecord.getByRole("textbox", { name: "Name", exact: true }).fill("Camille Réutilisable");
-  await customerRecord.getByRole("textbox", { name: "Address", exact: true }).fill("Rue du Lac 10\n1000 Lausanne");
+  await page.getByRole("link", { name: "Customers" }).click();
+  await expect(page).toHaveURL(/\/customers$/);
+  await expect(page.getByRole("heading", { name: "Customers", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "New Customer", exact: true }).click();
+  const record = page.getByRole("region", { name: "New Customer" });
+  await record.getByRole("textbox", { name: "Name", exact: true }).fill("Camille Réutilisable");
+  await record.getByRole("textbox", { name: "Address", exact: true }).fill("Rue du Lac 10\n1000 Lausanne");
   await page.getByRole("button", { name: "Create Customer" }).click();
-  await expect(page.getByText("Customer created. This Quote is unchanged.")).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Customer created.");
+  await expect(page.getByRole("heading", { name: "Camille Réutilisable", level: 2 })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Camille Réutilisable/ })).toHaveAttribute("aria-current", "true");
+
+  await page.goto(`/quotes?id=${seeded.id}`);
   await expect(page.locator(".qp-paper").getByText("Rue du Lac 10")).toHaveCount(0);
-  await page.getByRole("button", { name: "Close" }).click();
   await page.getByRole("article").getByRole("button", { name: "Choose or edit Customer" }).click();
   const quoteCustomer = page.getByRole("dialog", { name: "Quote Customer" });
   const saved = quoteCustomer.getByLabel("Saved Customer");
@@ -24,16 +28,51 @@ test("using a Customer record copies it into the Working Draft without later rec
   await expect(page.getByRole("status")).toContainText("Saved");
   await expect(page.getByText("Rue du Lac 10")).toBeVisible();
 
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  const selectedOption = page.getByLabel("Choose a Customer").getByRole("option", { name: /Camille Réutilisable/ });
-  await page.getByLabel("Choose a Customer").selectOption(await selectedOption.getAttribute("value") ?? "");
-  await page.getByRole("region", { name: "Customer record" }).getByRole("textbox", { name: "Address", exact: true }).fill("Rue du Lac 12\n1000 Lausanne");
+  await page.getByRole("link", { name: "Customers" }).click();
+  await page.getByRole("link", { name: /Camille Réutilisable/ }).click();
+  await page.getByRole("textbox", { name: "Address", exact: true }).fill("Rue du Lac 12\n1000 Lausanne");
   await page.getByRole("button", { name: "Update Customer" }).click();
-  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("status")).toHaveText("Customer updated. Existing Quotes are unchanged.");
 
-  await page.reload();
+  await page.goto(`/quotes?id=${seeded.id}`);
   await expect(page.getByText("Rue du Lac 10")).toBeVisible();
   await expect(page.getByText("Rue du Lac 12")).toHaveCount(0);
+});
+
+test("the Customers page validates records, searches accent-insensitively and guards unsaved edits", async ({ artisan }) => {
+  const { page } = artisan;
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Customers" }).click();
+  await expect(page.getByRole("link", { name: "Customers" })).toHaveAttribute("aria-current", "page");
+  await page.getByRole("link", { name: "New Customer", exact: true }).click();
+  await page.getByRole("textbox", { name: "Contact person" }).fill("Noé");
+  await page.getByRole("button", { name: "Create Customer" }).click();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveAccessibleDescription("Enter the Customer name.");
+  await expect(page.getByRole("textbox", { name: "Address", exact: true })).toHaveAccessibleDescription("Enter the Customer address.");
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill("Épicerie du Pré");
+  await page.getByRole("textbox", { name: "Address", exact: true }).fill("Chemin du Pré 3");
+  await page.getByRole("button", { name: "Create Customer" }).click();
+  await expect(page.getByRole("status")).toHaveText("Customer created.");
+
+  await page.getByLabel("Search Customers").fill("zzzz-no-match");
+  await expect(page.getByText("No Customers match your search.")).toBeVisible();
+  await page.getByLabel("Search Customers").fill("epicerie du pre");
+  await expect(page.getByRole("link", { name: /Épicerie du Pré/ })).toHaveCount(1);
+
+  await page.getByRole("textbox", { name: "Contact person" }).fill("Autre contact");
+  await expect(page.getByRole("status")).toHaveText("Unsaved changes");
+  await page.getByRole("link", { name: "New Customer", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Discard unsaved record edits?" });
+  await expect(confirmation.getByRole("button", { name: "Keep editing" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(confirmation).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Contact person" })).toHaveValue("Autre contact");
+  await page.getByRole("link", { name: "New Customer", exact: true }).click();
+  await confirmation.getByRole("button", { name: "Discard changes" }).click();
+  await expect(page).toHaveURL(/id=new/);
+  await expect(page.getByRole("heading", { name: "New Customer", level: 2 })).toBeVisible();
+  await page.getByRole("link", { name: /Épicerie du Pré/ }).click();
+  await expect(page.getByRole("textbox", { name: "Contact person" })).toHaveValue("Noé");
 });
 
 test('retrying Customer creation after a lost response creates only one reusable record', async ({ artisan }) => {
@@ -75,18 +114,18 @@ for (const locale of ["en", "fr"] as const) {
     await setInterfaceLanguage(page, locale);
     await page.goto(`/quotes?id=${seeded.id}`);
     const copy = locale === "en"
-      ? { opener: "Customers and defaults", heading: "Customers and defaults", name: "Name", address: "Address", create: "Create Customer", customer: "Choose or edit Customer", dialog: "Quote Customer", search: "Search Customers", saved: "Saved Customer", localAddress: "Customer address", apply: "Apply to Quote", newCustomer: "New Customer (clear fields)", noMatch: "No Customers match your search." }
-      : { opener: "Clients et valeurs par défaut", heading: "Clients et valeurs par défaut", name: "Nom", address: "Adresse", create: "Créer le client", customer: "Choisir ou modifier le client", dialog: "Client du devis", search: "Rechercher un client", saved: "Client enregistré", localAddress: "Adresse du client", apply: "Appliquer au devis", newCustomer: "Nouveau client (effacer les champs)", noMatch: "Aucun client ne correspond à la recherche." };
-    await page.getByRole("button", { name: copy.opener }).click();
-    await expect(page.getByRole("heading", { name: copy.heading })).toBeVisible();
-    const customerRecord = page.getByRole("region", { name: locale === "en" ? "Customer record" : "Fiche client" });
+      ? { opener: "Customers", heading: "Customers", newRecord: "New Customer", name: "Name", address: "Address", create: "Create Customer", customer: "Choose or edit Customer", dialog: "Quote Customer", search: "Search Customers", saved: "Saved Customer", localAddress: "Customer address", apply: "Apply to Quote", newCustomer: "New Customer (clear fields)", noMatch: "No Customers match your search." }
+      : { opener: "Clients", heading: "Clients", newRecord: "Nouveau client", name: "Nom", address: "Adresse", create: "Créer le client", customer: "Choisir ou modifier le client", dialog: "Client du devis", search: "Rechercher un client", saved: "Client enregistré", localAddress: "Adresse du client", apply: "Appliquer au devis", newCustomer: "Nouveau client (effacer les champs)", noMatch: "Aucun client ne correspond à la recherche." };
+    await page.getByRole("link", { name: copy.opener }).click();
+    await expect(page.getByRole("heading", { name: copy.heading, level: 1 })).toBeVisible();
+    await page.getByRole("link", { name: copy.newRecord, exact: true }).click();
     const uniqueName = locale === "en" ? "École de l'Orme" : "Maison de l'Érable";
-    await customerRecord.getByRole("textbox", { name: copy.name, exact: true }).fill(uniqueName);
-    await customerRecord.getByRole("textbox", { name: copy.address, exact: true }).fill("Rue des Tilleuls 22\n1000 Lausanne");
+    await page.getByRole("textbox", { name: copy.name, exact: true }).fill(uniqueName);
+    await page.getByRole("textbox", { name: copy.address, exact: true }).fill("Rue des Tilleuls 22\n1000 Lausanne");
     await page.getByRole("button", { name: copy.create }).click();
-    await expect(page.getByText(locale === "en" ? "Customer created. This Quote is unchanged." : "Client créé. Ce devis est inchangé.")).toBeVisible();
+    await expect(page.getByRole("status")).toHaveText(locale === "en" ? "Customer created." : "Client créé.");
+    await page.goto(`/quotes?id=${seeded.id}`);
     await expect(page.locator(".qp-paper")).toContainText("Maison des Tilleuls SA");
-    await page.getByRole("button", { name: locale === "en" ? "Close" : "Fermer", exact: true }).click();
 
     await page.getByRole("article").getByRole("button", { name: copy.customer }).click();
     const editor = page.getByRole("dialog", { name: copy.dialog });

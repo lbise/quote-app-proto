@@ -36,15 +36,19 @@ test("an Artisan can open and edit Quotes without the secure-context UUID API", 
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Customers and defaults" }).click();
-    const customer = page.getByRole("region", { name: "Customer record" });
-    await customer.getByRole("textbox", { name: "Name", exact: true }).fill("HTTP Customer fixture");
-    await customer.getByRole("textbox", { name: "Address", exact: true }).fill("Rue Exemple 1");
+    const quoteUrl = page.url();
+    await page.getByRole("link", { name: "Customers" }).click();
+    await page.getByRole("link", { name: "New Customer", exact: true }).click();
+    await page.getByLabel("Name", { exact: true }).fill("HTTP Customer fixture");
+    await page.getByLabel("Address", { exact: true }).fill("Rue Exemple 1");
     await page.getByRole("button", { name: "Create Customer" }).click();
-    const customerOption = page.getByLabel("Choose a Customer").getByRole("option", { name: /HTTP Customer fixture/ });
-    await page.getByLabel("Choose a Customer").selectOption(await customerOption.getAttribute("value") ?? "");
-    await page.getByRole("button", { name: "Use for this Quote" }).click();
-    await page.getByRole("button", { name: "Replace in this Quote" }).click();
+    await expect(page.getByRole("status")).toHaveText("Customer created.");
+    await page.goto(quoteUrl);
+    await page.getByRole("article").getByRole("button", { name: "Choose or edit Customer" }).click();
+    const quoteCustomer = page.getByRole("dialog", { name: "Quote Customer" });
+    const saved = quoteCustomer.getByLabel("Saved Customer");
+    await saved.selectOption(await saved.getByRole("option", { name: /HTTP Customer fixture/ }).getAttribute("value") ?? "");
+    await quoteCustomer.getByRole("button", { name: "Apply to Quote" }).click();
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText("HTTP Customer fixture", { exact: true })).toBeVisible();

@@ -37,11 +37,11 @@ Local edits do not survive a browser crash or closure unless the server accepted
 
 ## Business defaults and copied details
 
-Use **Customers & business** to save reusable business name, address, contact details, terms and VAT settings. These defaults apply only when creating a new Quote. Use **Details & terms** to edit an existing Working Draft's copy, including a draft created before defaults were available. Those edits autosave and use Quote Undo. Saving defaults does neither.
+Use **Settings** (`/settings`) to save reusable business name, address, contact details and logo (Business), VAT settings (VAT) and default terms (Quote defaults). These defaults apply only when creating a new Quote. The Account section shows the signed-in email, switches the interface language and signs out. Reusable Customer records live on their own **Customers** page (`/customers`); choose one for a Quote from the Quote's Customer block. Use **Details & terms** to edit an existing Working Draft's copy, including a draft created before defaults were available. Those edits autosave and use Quote Undo. Saving defaults does neither.
 
 VAT registration has three states: To confirm, Yes and No. Saving registered defaults requires a nonblank VAT identifier. Artisans can save incomplete business details and leave registration at To confirm. Business setup never blocks starting a Quote. A Working Draft may also retain registered status with a missing identifier. Its editor explains that it is incomplete, and Publication still requires the missing details. Registered Quotes support only current standard-rate work. This flow does not change the existing calculation rules.
 
-Save defaults reports success only after the server accepts the request. A load failure disables the forms and offers Retry. A save failure keeps the entries and offers Retry without refreshing any Quote. Saving a Customer does not reset pending default edits. Closing with unsaved default edits asks whether to discard them, with Keep editing focused first.
+Save defaults reports success only after the server accepts the request. A load failure disables the forms and offers Retry. A save failure keeps the entries and offers Retry without refreshing any Quote. Each Settings section saves on its own. Leaving a section or the page with unsaved edits asks whether to discard them, with Keep editing focused first. The Customers page asks the same before switching records or leaving with unsaved record edits.
 
 The business logo uploads and is removed at once, separately from Save defaults. It appears on the PDFs of new Quotes. **Restore from business settings** in a Working Draft copies the current logo too.
 

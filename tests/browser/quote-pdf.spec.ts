@@ -72,12 +72,10 @@ test("a Draft Preview notes that an assistant proposal still in progress is not 
   release();
 });
 
-test("an Artisan adds, replaces and removes the business logo in the business defaults", async ({ artisan }) => {
-  const seeded = await createCompleteQuote(artisan);
+test("an Artisan adds, replaces and removes the business logo in the business settings", async ({ artisan }) => {
   const { page } = artisan;
-  await page.goto(`/quotes?id=${seeded.id}`);
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  const dialog = page.getByRole("dialog");
+  await page.goto("/settings/business");
+  const dialog = page.getByRole("region", { name: "Your business" });
 
   await dialog.getByLabel("Logo").setInputFiles({ name: "logo.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"/>") });
   await expect(dialog.getByText("Choose a PNG or JPEG image.")).toBeVisible();

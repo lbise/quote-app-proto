@@ -12,8 +12,8 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import QuoteWorkspace from '../components/quotes/workspace';
 import { quoteRequest, type QuoteList, type QuoteRecord } from '../components/quotes/use-quote';
 import { QuoteHeader } from '../components/quotes/quote-header';
-import { RecordsEditor } from '../components/quotes/records-editor';
 import '../components/quotes/quotes.css';
+import '../components/quotes/app-pages.css';
 
 export async function loader({ request }: Route.LoaderArgs) {
   const access = await requireApprovedArtisan(request);
@@ -37,7 +37,6 @@ export default function Quotes() {
   const [creating, setCreating] = useState(false);
   const [createId, setCreateId] = useState(() => randomUUID());
   const [filter, setFilter] = useState('');
-  const [recordsOpen, setRecordsOpen] = useState(false);
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
 
   useEffect(() => {
@@ -65,8 +64,8 @@ export default function Quotes() {
     finally { setCreating(false); }
   }
   if (record && id === record.id) return <QuoteWorkspace key={record.id} initial={record} locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} />;
-  return <div className="qp-app qp-variant-b" lang={locale}>
-    <QuoteHeader locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} onRecords={() => setRecordsOpen(true)} />
+  return <div className="qp-app qp-page qp-variant-b" lang={locale}>
+    <QuoteHeader current="quotes" locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} />
     <main className="qp-quote-list">
       <div className="qp-list-heading"><div><p>{t('Votre atelier', 'Your workshop')}</p><h1>{t('Mes devis', 'My Quotes')}</h1></div><Button disabled={creating} onClick={() => void create()}><Plus data-icon="inline-start" />{t('Nouveau devis', 'New Quote')}</Button></div>
       {error && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{t('Chargement impossible', 'Could not load')}</AlertTitle><AlertDescription>{t('Vérifiez votre connexion puis réessayez.', 'Check your connection and retry.')}<Button variant="outline" onClick={() => setAttempt(v => v + 1)}>{t('Réessayer', 'Retry')}</Button></AlertDescription></Alert>}
@@ -75,6 +74,5 @@ export default function Quotes() {
         {!list.quotes.length ? <div className="qp-list-empty"><FileText /><h2>{t('Votre premier devis commence ici.', 'Your first Quote starts here.')}</h2><p>{t('Décrivez les travaux. Les coordonnées pourront attendre.', 'Describe the work. Contact details can wait.')}</p><Button disabled={creating} onClick={() => void create()}>{t('Créer un devis', 'Create a Quote')}</Button></div> : <div className="qp-list-rows">{list.quotes.filter(q => `${q.reference} ${q.title} ${q.customerName}`.toLowerCase().includes(filter.toLowerCase())).map(q => <button className="qp-list-row" key={q.id} onClick={() => navigate(`/quotes?id=${encodeURIComponent(q.id)}`)}><FileText /><div><strong>{q.title || t('Nouveau devis', 'New Quote')}</strong><span>{q.customerName || t('Sans destinataire', 'No Customer')} · {q.reference}</span></div><Badge variant="outline">{q.hasDraft ? t('Brouillon', 'Draft') : t(`Révision ${q.revision}`, `Revision ${q.revision}`)}</Badge><ArrowRight /></button>)}</div>}
       </>}
     </main>
-    {recordsOpen && <RecordsEditor quote={null} locale={locale} onApplyCustomer={async () => false} onClose={() => setRecordsOpen(false)} />}
   </div>;
 }

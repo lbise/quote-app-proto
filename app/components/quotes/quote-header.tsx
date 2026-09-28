@@ -1,18 +1,41 @@
-import { ArrowLeft, Settings2 } from 'lucide-react';
+import { ArrowLeft, FileText, Settings, UsersRound } from 'lucide-react';
+import { Link } from 'react-router';
 import { Button } from '../ui/button';
 import type { QuoteData } from '../../lib/quote';
 
-export function QuoteHeader({ locale, onLanguage, onList, quote, onRecords }: {
+export type AppSection = 'quotes' | 'customers' | 'settings';
+
+/**
+ * Application header. Inside a Quote it keeps the back link and Quote heading,
+ * with compact links to Customers and Settings. Elsewhere it shows the three
+ * destinations as navigation.
+ */
+export function QuoteHeader({ locale, onLanguage, onList, quote, current }: {
   locale: 'fr' | 'en'; onLanguage: (locale: 'fr' | 'en') => void; onList: () => void;
-  quote?: QuoteData; onRecords: () => void;
+  quote?: QuoteData; current?: AppSection;
 }) {
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
-  return <header className="qp-app-header">
+  const destinations = [
+    { id: 'quotes' as const, to: '/quotes', icon: FileText, label: t('Devis', 'Quotes') },
+    { id: 'customers' as const, to: '/customers', icon: UsersRound, label: t('Clients', 'Customers') },
+    { id: 'settings' as const, to: '/settings', icon: Settings, label: t('Paramètres', 'Settings') },
+  ];
+  const language = <select aria-label="Interface language / Langue de l’interface" value={locale} onChange={e => onLanguage(e.target.value as 'en' | 'fr')}><option value="fr">FR</option><option value="en">EN</option></select>;
+
+  if (quote) return <header className="qp-app-header">
     <div className="qp-brand-group"><button className="qp-wordmark" onClick={onList}>easy<span>quote</span><span className="qp-brand-dot">.</span></button><span className="qp-header-divider" /><Button variant="ghost" onClick={onList} aria-label={t('Mes devis', 'My Quotes')}><ArrowLeft data-icon="inline-start" /><span className="qp-back-label">{t('Mes devis', 'My Quotes')}</span></Button></div>
-    {quote && <div className="qp-project-heading"><span>{quote.reference}</span><strong>{quote.title || t('Nouveau devis', 'New Quote')}</strong></div>}
+    <div className="qp-project-heading"><span>{quote.reference}</span><strong>{quote.title || t('Nouveau devis', 'New Quote')}</strong></div>
     <div className="qp-header-end">
-      <Button variant="ghost" size="icon-sm" onClick={onRecords} aria-label={t('Clients et valeurs par défaut', 'Customers and defaults')} title={t('Clients et valeurs par défaut', 'Customers and defaults')}><Settings2 /></Button>
-      <select aria-label="Interface language / Langue de l’interface" value={locale} onChange={e => onLanguage(e.target.value as 'en' | 'fr')}><option value="fr">FR</option><option value="en">EN</option></select>
+      {destinations.slice(1).map(({ id, to, icon: Icon, label }) => <Button key={id} asChild variant="ghost" size="icon-sm"><Link to={to} aria-label={label} title={label}><Icon /></Link></Button>)}
+      {language}
     </div>
+  </header>;
+
+  return <header className="qp-app-header qp-app-header-nav">
+    <Link className="qp-wordmark" to="/quotes">easy<span>quote</span><span className="qp-brand-dot">.</span></Link>
+    <nav className="qp-app-nav" aria-label={t('Navigation principale', 'Main navigation')}>
+      {destinations.map(({ id, to, icon: Icon, label }) => <Link key={id} to={to} aria-current={current === id ? 'page' : undefined}><Icon />{label}</Link>)}
+    </nav>
+    <div className="qp-header-end">{language}</div>
   </header>;
 }

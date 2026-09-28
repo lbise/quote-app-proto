@@ -3,6 +3,8 @@ import { index, route, type RouteConfig } from "@react-router/dev/routes";
 export default [
   index("routes/home.tsx"),
   route("quotes", "routes/quotes.tsx"),
+  route("customers", "routes/customers.tsx"),
+  route("settings/:section?", "routes/settings.tsx"),
   route("api/quotes", "routes/api.quotes.ts"),
   route("api/quotes/:id/revisions/:number/document", "routes/api.quote-pdf.ts", { id: "quote-document-pdf" }),
   route("api/quotes/:id/draft-preview", "routes/api.quote-pdf.ts", { id: "quote-draft-preview-pdf" }),

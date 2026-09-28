@@ -16,7 +16,7 @@ test.afterEach(async ({ artisan }) => {
   })).ok()).toBe(true);
 });
 
-test("records load failure offers keyboard retry without enabling an empty defaults overwrite", async ({ artisan }) => {
+test("settings load failure offers keyboard retry without enabling an empty defaults overwrite", async ({ artisan }) => {
   const { page } = artisan;
   await expect(page.getByRole("textbox", { name: "Search Quotes" })).toBeVisible();
   let failLoad = true;
@@ -26,27 +26,25 @@ test("records load failure offers keyboard retry without enabling an empty defau
     }
     await route.continue();
   });
-  await page.getByRole("button", { name: "Customers and defaults" }).press("Enter");
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("alert")).toContainText("Could not load records. Try again.");
-  await expect(dialog.getByRole("button", { name: "Save defaults" })).toBeDisabled();
+  await page.getByRole("link", { name: "Settings" }).press("Enter");
+  await expect(page).toHaveURL(/\/settings\/business$/);
+  const section = page.getByRole("region", { name: "Your business" });
+  await expect(section.getByRole("alert")).toContainText("Could not load settings. Try again.");
+  await expect(section.getByLabel("Business name")).toBeDisabled();
+  await expect(section.getByRole("button", { name: "Save changes" })).toBeDisabled();
   failLoad = false;
-  await dialog.getByRole("button", { name: "Retry", exact: true }).press("Enter");
-  await expect(dialog.getByRole("button", { name: "Save defaults" })).toBeEnabled();
-  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await section.getByRole("button", { name: "Retry", exact: true }).press("Enter");
+  await expect(section.getByLabel("Business name")).toBeEnabled();
+  await expect(section.getByRole("alert")).toHaveCount(0);
 });
 
 test("defaults retain entries through a lost save response and announce success only after retry", async ({ artisan }) => {
   const seeded = await createCompleteQuote(artisan);
   const { page } = artisan;
   await page.setViewportSize({ width: 1280, height: 580 });
-  await page.goto(`/quotes?id=${seeded.id}`);
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  const dialog = page.getByRole("dialog");
-  const defaults = dialog.getByRole("region", { name: "Business defaults" });
-  await defaults.getByLabel("Business name").fill("Atelier des Érables");
-  await defaults.getByLabel("VAT registered").selectOption("no");
-  await defaults.getByLabel("Default terms").fill("Acompte de 20 %. Solde à 30 jours.\nLivraison en octobre. Garantie de 2 ans.");
+  await page.goto("/settings/business");
+  const business = page.getByRole("region", { name: "Your business" });
+  await business.getByLabel("Business name").fill("Atelier des Érables");
   let releaseResponse!: () => void;
   const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
   let loseResponse = true;
@@ -58,22 +56,35 @@ test("defaults retain entries through a lost save response and announce success 
     await responseGate;
     await route.fulfill({ status: 503, json: { error: "connection_failed" } });
   });
-  await defaults.getByRole("button", { name: "Save defaults" }).click();
-  await expect(dialog.getByRole("status")).toHaveText("Saving…");
-  await expect(defaults.getByRole("button", { name: "Save defaults" })).toBeDisabled();
+  await business.getByRole("button", { name: "Save changes" }).click();
+  await expect(business.getByRole("status")).toHaveText("Saving…");
+  await expect(business.getByRole("button", { name: "Save changes" })).toBeDisabled();
   releaseResponse();
-  await expect(dialog.getByRole("alert")).toContainText("Could not save the defaults. Your entries are kept. Try again.");
-  await expect(defaults.getByLabel("Business name")).toHaveValue("Atelier des Érables");
-  await dialog.getByRole("button", { name: "Retry", exact: true }).press("Enter");
-  await expect(dialog.getByRole("status")).toHaveText("Defaults saved for new Quotes. This Quote is unchanged.");
-  await expect(dialog.getByRole("status")).toBeInViewport({ ratio: 1 });
-  await dialog.getByRole("button", { name: "Close" }).press("Enter");
-  await page.reload();
+  await expect(business.getByRole("alert")).toContainText("Could not save. Your entries are kept. Try again.");
+  await expect(business.getByLabel("Business name")).toHaveValue("Atelier des Érables");
+  await business.getByRole("button", { name: "Retry", exact: true }).press("Enter");
+  await expect(business.getByRole("status")).toHaveText("Saved for new Quotes. Existing Quotes are unchanged.");
+  await expect(business.getByRole("status")).toBeInViewport({ ratio: 1 });
+
+  await page.getByRole("link", { name: /Quote defaults/ }).click();
+  const quoteDefaults = page.getByRole("region", { name: "Quote defaults" });
+  await quoteDefaults.getByLabel("Default terms").fill("Acompte de 20 %. Solde à 30 jours.\nLivraison en octobre. Garantie de 2 ans.");
+  await quoteDefaults.getByRole("button", { name: "Save changes" }).click();
+  await expect(quoteDefaults.getByRole("status")).toHaveText("Saved for new Quotes. Existing Quotes are unchanged.");
+
+  await page.goto(`/quotes?id=${seeded.id}`);
   await expect(page.getByRole("article").getByRole("strong").filter({ hasText: /^Atelier du Bois Sàrl$/ })).toBeVisible();
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  await expect(defaults.getByLabel("Business name")).toHaveValue("Atelier des Érables");
-  await expect(defaults.getByLabel("Default terms")).toHaveValue("Acompte de 20 %. Solde à 30 jours.\nLivraison en octobre. Garantie de 2 ans.");
+  await page.goto("/settings/business");
+  await expect(business.getByLabel("Business name")).toHaveValue("Atelier des Érables");
+  await page.goto("/settings/quotes");
+  await expect(quoteDefaults.getByLabel("Default terms")).toHaveValue("Acompte de 20 %. Solde à 30 jours.\nLivraison en octobre. Garantie de 2 ans.");
 });
+
+async function saveSettings(page: import("@playwright/test").Page, section: string) {
+  const region = page.getByRole("region", { name: section });
+  await region.getByRole("button", { name: "Save changes" }).click();
+  await expect(region.getByRole("status")).toHaveText("Saved for new Quotes. Existing Quotes are unchanged.");
+}
 
 test("new Quotes copy defaults without filling or refreshing existing drafts", async ({ artisan }) => {
   const { page, api, baseURL } = artisan;
@@ -82,18 +93,19 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await expect(page.getByRole("heading", { name: "Prepare a Quote" })).toBeAttached();
   const incompleteUrl = page.url();
   await expect(page.locator(".qp-business-name")).toHaveText("Entreprise à renseigner");
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  const defaults = page.getByRole("region", { name: "Business defaults" });
-  await expect(defaults.getByText("To change this Quote's business details, select the business block in the Quote.")).toBeVisible();
-  await defaults.getByLabel("Business name").fill("Atelier des Tilleuls");
-  await defaults.getByLabel("Address", { exact: true }).fill("Rue Exemple 4\n1000 Exemple");
-  await defaults.getByLabel("Contact details").fill("bonjour@example.test · 021 000 00 00");
-  await defaults.getByLabel("VAT registered").selectOption("no");
-  await defaults.getByLabel("Default terms").fill("Paiement à 30 jours. Livraison en octobre. Garantie de 2 ans.");
-  await defaults.getByRole("button", { name: "Save defaults" }).click();
-  await expect(page.getByRole("dialog").getByRole("status")).toContainText("This Quote is unchanged.");
-  await page.getByRole("button", { name: "Close", exact: true }).click();
-  await page.reload();
+  await page.getByRole("link", { name: "Settings" }).click();
+  const business = page.getByRole("region", { name: "Your business" });
+  await business.getByLabel("Business name").fill("Atelier des Tilleuls");
+  await business.getByLabel("Address", { exact: true }).fill("Rue Exemple 4\n1000 Exemple");
+  await business.getByLabel("Contact details").fill("bonjour@example.test · 021 000 00 00");
+  await saveSettings(page, "Your business");
+  await page.getByRole("link", { name: /VAT/ }).click();
+  await page.getByLabel("VAT registered").selectOption("no");
+  await saveSettings(page, "VAT");
+  await page.getByRole("link", { name: /Quote defaults/ }).click();
+  await page.getByLabel("Default terms").fill("Paiement à 30 jours. Livraison en octobre. Garantie de 2 ans.");
+  await saveSettings(page, "Quote defaults");
+  await page.goto(incompleteUrl);
   await expect(page.locator(".qp-business-name")).toHaveText("Entreprise à renseigner");
   await page.getByRole("button", { name: "My Quotes", exact: true }).click();
   await page.getByRole("button", { name: "New Quote", exact: true }).click();
@@ -102,12 +114,11 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await expect(paper).toContainText("Rue Exemple 4");
   await expect(paper).toContainText("bonjour@example.test · 021 000 00 00");
   await expect(paper).toContainText("Paiement à 30 jours. Livraison en octobre. Garantie de 2 ans.");
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  await defaults.getByLabel("Business name").fill("Atelier des Tilleuls actualisé");
-  await defaults.getByRole("button", { name: "Save defaults" }).click();
-  await expect(page.getByRole("dialog").getByRole("status")).toContainText("This Quote is unchanged.");
-  await page.getByRole("button", { name: "Close", exact: true }).click();
-  await page.reload();
+  const copiedUrl = page.url();
+  await page.getByRole("link", { name: "Settings" }).click();
+  await business.getByLabel("Business name").fill("Atelier des Tilleuls actualisé");
+  await saveSettings(page, "Your business");
+  await page.goto(copiedUrl);
   await expect(paper).toContainText("Atelier des Tilleuls");
   await expect(paper).not.toContainText("Atelier des Tilleuls actualisé");
   await page.goto(incompleteUrl);
@@ -144,14 +155,12 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await terms.getByLabel("Terms", { exact: true }).fill("Acompte convenu de 15 %. Solde à 45 jours.");
   await terms.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  const defaults = page.getByRole("region", { name: "Business defaults" });
+  await page.getByRole("link", { name: "Settings" }).click();
+  const defaults = page.getByRole("region", { name: "Your business" });
   await expect(defaults.getByLabel("Business name")).toHaveValue("Atelier des Tilleuls");
   await defaults.getByLabel("Business name").fill("Atelier des Tilleuls actualisé");
-  await defaults.getByRole("button", { name: "Save defaults" }).click();
-  await expect(page.getByRole("dialog").getByRole("status")).toContainText("This Quote is unchanged.");
-  await page.getByRole("button", { name: "Close", exact: true }).click();
-  await page.reload();
+  await saveSettings(page, "Your business");
+  await page.goto(`/quotes?id=${seeded.id}`);
   await expect(paper).toContainText("Atelier local au devis");
   await expect(paper).toContainText("Acompte convenu de 15 %. Solde à 45 jours.");
   await paper.getByRole("button", { name: "Edit business details" }).click();
@@ -171,35 +180,46 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await expect(paper.getByText("Total CHF", { exact: true })).toBeVisible();
 });
 
-test("saving a Customer does not discard pending defaults, and closing asks before discarding them", async ({ artisan }) => {
-  const seeded = await createCompleteQuote(artisan);
+test("leaving a settings section with unsaved changes asks first, with Keep editing focused", async ({ artisan }) => {
   const { page } = artisan;
-  await page.goto(`/quotes?id=${seeded.id}`);
-  await page.getByRole("button", { name: "Customers and defaults" }).click();
-  const dialog = page.getByRole("dialog");
-  const defaults = dialog.getByRole("region", { name: "Business defaults" });
-  await expect(defaults.getByLabel("Business name")).toBeEnabled();
-  const originalName = await defaults.getByLabel("Business name").inputValue();
-  await defaults.getByLabel("Business name").fill("Valeur non enregistrée");
-  const customer = dialog.getByRole("region", { name: "Customer record" });
-  await customer.getByLabel("Name", { exact: true }).fill("Maison du Saule");
-  await customer.getByLabel("Address", { exact: true }).fill("Rue Exemple 7");
-  await customer.getByRole("button", { name: "Create Customer" }).click();
-  const savedCustomerOption = customer.getByLabel("Choose a Customer").getByRole("option", { name: /Maison du Saule/ });
-  await expect(savedCustomerOption).toHaveCount(1);
-  await expect(defaults.getByLabel("Business name")).toHaveValue("Valeur non enregistrée");
-  await customer.getByLabel("Choose a Customer").selectOption(await savedCustomerOption.getAttribute("value") ?? "");
-  await dialog.getByRole("button", { name: "Use for this Quote" }).press("Enter");
-  const confirmation = page.getByRole("alertdialog", { name: "Discard unsaved default edits?", exact: true });
+  await page.goto("/settings/business");
+  const business = page.getByRole("region", { name: "Your business" });
+  await expect(business.getByLabel("Business name")).toBeEnabled();
+  const originalName = await business.getByLabel("Business name").inputValue();
+  await expect(business.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await business.getByLabel("Business name").fill("Valeur non enregistrée");
+  await expect(business.getByRole("status")).toHaveText("Unsaved changes");
+  await page.getByRole("link", { name: /VAT/ }).press("Enter");
+  const confirmation = page.getByRole("alertdialog", { name: "Discard unsaved changes?", exact: true });
   await expect(confirmation.getByRole("button", { name: "Keep editing" })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(confirmation).toHaveCount(0);
-  await expect(defaults.getByLabel("Business name")).toHaveValue("Valeur non enregistrée");
-  await page.keyboard.press("Escape");
-  await confirmation.getByRole("button", { name: "Discard edits", exact: true }).press("Enter");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Customers and defaults" }).press("Enter");
-  await expect(defaults.getByLabel("Business name")).toHaveValue(originalName);
+  await expect(page).toHaveURL(/\/settings\/business$/);
+  await expect(business.getByLabel("Business name")).toHaveValue("Valeur non enregistrée");
+  await page.getByRole("link", { name: "Customers" }).click();
+  await confirmation.getByRole("button", { name: "Discard changes", exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/customers$/);
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(business.getByLabel("Business name")).toHaveValue(originalName);
+  await expect(page.getByRole("link", { name: /Business/ })).toHaveAttribute("aria-current", "page");
+});
+
+test("Settings is reachable from a Quote and the Account section switches the interface language", async ({ artisan }) => {
+  const seeded = await createCompleteQuote(artisan);
+  const { page, email } = artisan;
+  await page.goto(`/quotes?id=${seeded.id}`);
+  await page.getByRole("article").getByRole("button", { name: "Edit business details" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Manage defaults" }).click();
+  await expect(page).toHaveURL(/\/settings\/business$/);
+  await expect(page.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+  await page.getByRole("link", { name: /Account/ }).click();
+  const account = page.getByRole("region", { name: "Account" });
+  await expect(account).toContainText(email);
+  await expect(account.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await account.getByRole("radio", { name: "Français" }).click();
+  await expect(page.getByRole("heading", { name: "Paramètres", level: 1 })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Compte" }).getByRole("radio", { name: "Français" })).toHaveAttribute("aria-checked", "true");
 });
 
 for (const locale of ["en", "fr"] as const) {
@@ -230,10 +250,9 @@ for (const locale of ["en", "fr"] as const) {
     const reset = await api.post("/api/quotes", { headers: { origin: baseURL }, data: { action: "defaults-save", defaults: {} } });
     expect(reset.ok()).toBe(true);
     await page.getByLabel("Interface language / Langue de l’interface").selectOption(locale);
-    const opener = page.getByRole("button", { name: locale === "en" ? "Customers and defaults" : "Clients et valeurs par défaut" });
-    await opener.press("Enter");
-    const dialog = page.getByRole("dialog");
-    const defaults = dialog.getByRole("region", { name: locale === "en" ? "Business defaults" : "Valeurs par défaut de l'entreprise" });
+    await expect(page.locator(".qp-app")).toHaveAttribute("lang", locale);
+    await page.goto("/settings/vat");
+    const defaults = page.getByRole("region", { name: locale === "en" ? "VAT" : "TVA" });
     const registration = defaults.getByLabel(locale === "en" ? "VAT registered" : "Assujetti à la TVA");
     await expect(registration).toHaveValue("unknown");
     await registration.focus();
@@ -242,7 +261,7 @@ for (const locale of ["en", "fr"] as const) {
     const identifier = defaults.getByLabel(locale === "en" ? "VAT identifier" : "Numéro TVA");
     await expect(identifier).toBeFocused();
     await identifier.fill("   ");
-    const save = defaults.getByRole("button", { name: locale === "en" ? "Save defaults" : "Enregistrer les valeurs par défaut" });
+    const save = defaults.getByRole("button", { name: locale === "en" ? "Save changes" : "Enregistrer" });
     await save.focus();
     await page.keyboard.press("Enter");
     await expect(identifier).toBeFocused();
@@ -255,13 +274,10 @@ for (const locale of ["en", "fr"] as const) {
     await expect(identifier).toHaveAttribute("aria-invalid", "false");
     await save.focus();
     await page.keyboard.press("Enter");
-    await expect(dialog.getByRole("status")).toContainText(locale === "en"
-      ? "Defaults saved for new Quotes."
-      : "Valeurs par défaut enregistrées pour les nouveaux devis.");
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
-    await expect(opener).toBeFocused();
-    await page.keyboard.press("Enter");
+    await expect(defaults.getByRole("status")).toHaveText(locale === "en"
+      ? "Saved for new Quotes. Existing Quotes are unchanged."
+      : "Enregistré pour les nouveaux devis. Les devis existants sont inchangés.");
+    await page.reload();
     await expect(identifier).toHaveValue("CHE-000.000.000 TVA");
     await expect(registration).toHaveValue("yes");
   });

@@ -18,7 +18,6 @@ import { addQuoteSection, duplicateQuoteSection, moveQuoteSection, removeQuoteSe
 import { LineEditor } from './manual-editor';
 import { BusinessQuoteEditor, DiscountQuoteEditor, QuoteMetadataPopover, SiteQuoteEditor, TermsQuoteEditor } from './quote-detail-editors';
 import { CustomerQuoteEditor } from './customer-quote-editor';
-import { RecordsEditor } from './records-editor';
 import { AddSectionControl, SectionHeading } from './section-preview-controls';
 import { useQuote, type QuoteRecord } from './use-quote';
 import { downloadPdf } from './pdf-download';
@@ -29,7 +28,7 @@ import { AssistantMarkdown } from './assistant-markdown';
 import { problemLabel } from './problem-label';
 import { MissingWarning, QuoteField } from './quote-validation';
 import type { QuoteAIDisclosure } from '../../lib/quote-ai-disclosure';
-import { useBlocker, useRouteLoaderData } from 'react-router';
+import { useBlocker, useNavigate, useRouteLoaderData } from 'react-router';
 
 const clone = <T,>(value: T): T => structuredClone(value);
 // A line's first control can be a missing-field warning. Focus returns to its Edit button.
@@ -39,12 +38,13 @@ const formatMoney = (value: number | null) => value === null ? '—' : money(val
 export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: { initial: QuoteRecord; locale: 'en' | 'fr'; onList: () => void; onLanguage: (locale: 'en' | 'fr') => void }) {
   const state = useQuote(initial);
   const { quoteAI } = useRouteLoaderData('root') as { quoteAI: QuoteAIDisclosure };
-  const { record, save, ai, error, debug, toolDebug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, lastRequest } = state;
+  const { record, save, ai, error, debug, toolDebug, changed, changedFields, busy, apply, flush, mutate, lastRequest } = state;
+  const navigate = useNavigate();
   const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
   const [input, setInput] = useState('');
   const [editLine, setEditLine] = useState<QuoteLine | null>(null);
   const [focusField, setFocusField] = useState<string | undefined>();
-  const [modal, setModal] = useState<'business' | 'customer' | 'site' | 'discount' | 'terms' | 'publish' | 'published' | 'records' | 'privacy' | null>(null);
+  const [modal, setModal] = useState<'business' | 'customer' | 'site' | 'discount' | 'terms' | 'publish' | 'published' | 'privacy' | null>(null);
   const [pdf, setPdf] = useState<'idle' | 'preparing' | 'failed'>('idle');
   const [previewExcludedProposal, setPreviewExcludedProposal] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -402,7 +402,7 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
 
 
   return <div className="qp-app qp-variant-b" data-narrow-panel={narrowPanel} data-assistant-collapsed={assistantCollapsed} lang={locale}>
-    <QuoteHeader locale={locale} onLanguage={onLanguage} onList={onList} quote={quote} onRecords={() => openModal('records')} />
+    <QuoteHeader locale={locale} onLanguage={onLanguage} onList={onList} quote={quote} />
     {error && <Alert variant="destructive" className="qp-request-error"><TriangleAlert /><AlertTitle>{t('Action non enregistrée', 'Action not saved')}</AlertTitle><AlertDescription>{error === 'reference_in_use' ? t('Cette référence appartient déjà à un autre devis. Modifiez-la dans la référence du devis.', 'Another Quote already uses this reference. Change it in the Quote reference.') : error.includes('conflict') || error.includes('stale') ? t('Ce devis a changé dans une autre fenêtre. Vos modifications restent visibles. Copiez-les avant de recharger.', 'This Quote changed in another window. Your edits remain visible. Copy them before reloading.') : t('Vos modifications restent visibles. Vérifiez les valeurs et votre connexion, puis réessayez.', 'Your edits remain visible. Check the values and your connection, then retry.')}</AlertDescription></Alert>}
     <main className="qp-workspace"><h1 className="sr-only">{t('Préparer un devis', 'Prepare a Quote')}</h1>
       <ToggleGroup className="qp-narrow-tabs" type="single" value={narrowPanel} onValueChange={value => { if (value === 'chat' || value === 'quote') setNarrowPanel(value); }} aria-label={t('Espace de travail', 'Workspace view')}><ToggleGroupItem value="chat" aria-controls="qp-assistant"><MessageSquare data-icon="inline-start" />{t('Conversation', 'Conversation')}</ToggleGroupItem><ToggleGroupItem value="quote" aria-controls="qp-quote-document"><FileText data-icon="inline-start" />{t('Devis', 'Quote')}</ToggleGroupItem></ToggleGroup>
@@ -417,12 +417,11 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
           : appendQuoteLineToSection(quote.lines, line, quote.sections) };
       apply(next, [line.id]);
     }} />}
-    {modal === 'business' && !readOnly && <BusinessQuoteEditor quote={quote} locale={locale} focusField={focusField} onClose={closeModal} onApply={q => apply(q)} onSettings={() => setModal('records')} />}
+    {modal === 'business' && !readOnly && <BusinessQuoteEditor quote={quote} locale={locale} focusField={focusField} onClose={closeModal} onApply={q => apply(q)} onSettings={() => navigate('/settings/business')} />}
     {modal === 'customer' && !readOnly && <CustomerQuoteEditor quote={quote} locale={locale} focusField={focusField} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'site' && !readOnly && <SiteQuoteEditor quote={quote} locale={locale} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'discount' && !readOnly && <DiscountQuoteEditor quote={quote} locale={locale} focusField={focusField} onClose={closeModal} onApply={q => apply(q)} />}
     {modal === 'terms' && !readOnly && <TermsQuoteEditor quote={quote} locale={locale} onClose={closeModal} onApply={q => apply(q)} />}
-    {modal === 'records' && <RecordsEditor quote={readOnly ? null : quote} locale={locale} onApplyCustomer={applyCustomer} onClose={closeModal} />}
     {modal === 'privacy' && <AssistantDisclosure locale={locale} processing={quoteAI} onClose={closeModal} />}
     {modal === 'publish' && <Dialog open onOpenChange={open => { if (!open) closeModal(); }}><DialogContent className="qp-modal" showCloseButton={false}><DialogHeader><DialogTitle>{t('Relire avant publication', 'Review before publication')}</DialogTitle><DialogDescription>{t('La publication fige le contenu. Elle n’envoie pas le devis.', 'Publication freezes the content. It does not send the Quote.')}</DialogDescription></DialogHeader>
       <div className="qp-publication-summary"><FileText /><h2>{quote.title}</h2><p>{quote.customerName || t('Destinataire manquant', 'Missing Customer')}</p><strong>CHF {formatMoney(sum.total)}</strong><p>{quote.reference} · {t('Révision', 'Revision')} {revisions.length + 1}</p></div>
