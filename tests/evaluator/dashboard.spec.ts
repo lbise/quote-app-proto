@@ -136,10 +136,10 @@ test("read-only reports support themes without loading or exposing execution rou
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(browserRequests).toContain("/report-ui.js");
   expect(browserRequests.filter(path => /^\/(execution\.js|models|sessions)(\/|$)/.test(path))).toEqual([]);
-  for (const path of ["/execution.js", "/models", "/sessions/browser-session"]) {
+  for (const path of ["/execution.js", "/models", "/sessions/browser-session", "/sessions/browser-session/delete", "/runs/browser-run/delete"]) {
     expect((await request.get(`${reviewUrl}${path}`)).status()).toBe(404);
   }
-  for (const path of ["/sessions", "/sessions/browser-session/stop"]) {
+  for (const path of ["/sessions", "/sessions/browser-session/stop", "/sessions/browser-session/delete", "/runs/browser-run/delete"]) {
     expect((await request.post(`${reviewUrl}${path}`, { headers: { origin: reviewUrl }, form: {} })).status()).toBe(404);
   }
 });

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { EvaluationSessionPlan, EvaluationSessionRecord, EvaluationSessionState } from "./types";
+import type { EvaluationSessionDeletion, EvaluationSessionPlan, EvaluationSessionRecord, EvaluationSessionState } from "./types";
 import { withoutCredentials } from "./artifacts";
 
 export class ActiveEvaluationSessionError extends Error {
@@ -14,7 +14,13 @@ const unfinished = new Set<EvaluationSessionState["status"]>(["starting", "runni
 function safe(id: string) { if (!idPattern.test(id)) throw new Error("Invalid session identifier."); return id; }
 function flush(path: string) { const fd = openSync(path, "r"); try { fsyncSync(fd); } finally { closeSync(fd); } }
 function location(root: string) { const dir = join(resolve(root), "sessions"); mkdirSync(dir, { recursive: true, mode: 0o700 }); return dir; }
-function file(dir: string, id: string, kind: "plan" | "state") { return join(dir, `${safe(id)}.${kind}.json`); }
+function file(dir: string, id: string, kind: "plan" | "state" | "deleted") { return join(dir, `${safe(id)}.${kind}.json`); }
+function deletedIds(dir: string) { return new Set(readdirSync(dir).filter(name => name.endsWith(".deleted.json")).map(name => name.slice(0, -13))); }
+/** Plans of permanently deleted sessions are ignored even if a crash left files behind. */
+function planIds(dir: string) {
+  const deleted = deletedIds(dir);
+  return readdirSync(dir).filter(name => name.endsWith(".plan.json")).map(name => name.slice(0, -10)).filter(id => idPattern.test(id) && !deleted.has(id));
+}
 function saveState(dir: string, id: string, state: EvaluationSessionState) {
   const destination = file(dir, id, "state");
   const temporary = `${destination}.${randomUUID()}.tmp`;
@@ -51,9 +57,10 @@ function acquire(root: string) {
   }
 }
 function interrupt(dir: string) {
-  for (const name of readdirSync(dir).filter(item => item.endsWith(".plan.json"))) {
-    const id = name.slice(0, -10);
-    const record = read(dir, id);
+  for (const id of planIds(dir)) {
+    let record: EvaluationSessionRecord;
+    try { record = read(dir, id); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
     if (!unfinished.has(record.state.status)) continue;
     const state = record.state;
     if (record.plan.mode === "live") {
@@ -106,14 +113,72 @@ export function listEvaluationSessions(root: string): EvaluationSessionRecord[] 
 }
 function storedSessions(root: string): EvaluationSessionRecord[] {
   const dir = location(root);
-  return readdirSync(dir).filter(name => name.endsWith(".plan.json"))
-    .map(name => read(dir, name.slice(0, -10)))
-    .sort((a, b) => Date.parse(b.plan.createdAt) - Date.parse(a.plan.createdAt) || a.plan.id.localeCompare(b.plan.id));
+  return planIds(dir).flatMap(id => {
+    try { return [read(dir, id)]; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
+  }).sort((a, b) => Date.parse(b.plan.createdAt) - Date.parse(a.plan.createdAt) || a.plan.id.localeCompare(b.plan.id));
 }
 
 /** A request already has durable evidence. Matching retries may return its ID. */
 export class ExistingEvaluationRequest extends Error {
   constructor(readonly record: EvaluationSessionRecord) { super("This browser request already has a session."); }
+}
+
+/** A retried launch request whose session was permanently deleted must not start again. */
+export class DeletedEvaluationRequest extends Error {
+  constructor() { super("This launch request belongs to a deleted session. Reload the launch form to start a new evaluation."); }
+}
+
+export function deletedEvaluationSessions(root: string): EvaluationSessionDeletion[] {
+  const dir = location(root);
+  return [...deletedIds(dir)].filter(id => idPattern.test(id)).flatMap(id => {
+    try { return [JSON.parse(readFileSync(file(dir, id, "deleted"), "utf8")) as EvaluationSessionDeletion]; }
+    catch { return [{ format: "quote-evaluation-session-deletion/v1" as const, id, deletedAt: "unknown" }]; }
+  });
+}
+
+/**
+ * Deletion helpers. Callers hold the artifact lock and have verified the session
+ * is not executing. Finished sessions have no other state writer.
+ */
+export function markScenarioRunDeleted(root: string, sessionId: string, workId: string) {
+  const dir = location(root);
+  const { state } = read(dir, sessionId);
+  if (unfinished.has(state.status)) throw new ActiveEvaluationSessionError();
+  // Keep call and reservation totals: deleting evidence never refunds spend.
+  state.work = state.work.map(item => item.id === workId ? { id: item.id, status: "deleted", deletedAt: new Date().toISOString() } : item);
+  saveState(dir, sessionId, state);
+}
+/** Durable before any file removal, so a crash finishes the deletion on reopening. */
+export function recordSessionDeletion(root: string, record: EvaluationSessionRecord) {
+  const dir = location(root);
+  const destination = file(dir, record.plan.id, "deleted");
+  const temporary = `${destination}.${randomUUID()}.tmp`;
+  const deletion: EvaluationSessionDeletion = { format: "quote-evaluation-session-deletion/v1", id: record.plan.id, deletedAt: new Date().toISOString(),
+    ...(record.plan.browserRequest ? { browserRequest: record.plan.browserRequest } : {}) };
+  try {
+    writeFileSync(temporary, JSON.stringify(deletion, null, 2) + "\n", { mode: 0o600, flag: "wx", flush: true });
+    renameSync(temporary, destination);
+    flush(dir);
+  } finally { rmSync(temporary, { force: true }); }
+}
+/** The plan goes first: a state file without a plan is never listed or reconciled. */
+export function removeSessionFiles(root: string, id: string) {
+  const dir = location(root);
+  rmSync(file(dir, id, "plan"), { force: true });
+  rmSync(file(dir, id, "state"), { force: true });
+  flush(dir);
+}
+/** Reads plans of deleted sessions whose removal a crash interrupted. */
+export function pendingSessionDeletions(root: string): { id: string; work: string[] }[] {
+  const dir = location(root);
+  return [...deletedIds(dir)].filter(id => idPattern.test(id)).map(id => {
+    try { return { id, work: (JSON.parse(readFileSync(file(dir, id, "plan"), "utf8")) as EvaluationSessionPlan).work.map(item => item.id) }; }
+    catch { return { id, work: [] }; }
+  });
+}
+export function deletedWork(root: string): { sessionId: string; id: string }[] {
+  return storedSessions(root).flatMap(record => record.state.work.filter(item => item.status === "deleted").map(item => ({ sessionId: record.plan.id, id: item.id })));
 }
 
 /** Owns the cross-process lock until the session finishes. All state writes are atomic and flushed. */
@@ -125,6 +190,7 @@ export function beginEvaluationSession(root: string, plan: EvaluationSessionPlan
     if (plan.browserRequest) {
       const existing = storedSessions(root).find(record => record.plan.browserRequest?.id === plan.browserRequest!.id);
       if (existing) throw new ExistingEvaluationRequest(existing);
+      if (deletedEvaluationSessions(root).some(deletion => deletion.browserRequest?.id === plan.browserRequest!.id)) throw new DeletedEvaluationRequest();
     }
     const state: EvaluationSessionState = { status: "starting", startedAt: null, finishedAt: null,
       work: plan.work.map(item => ({ id: item.id, status: "missing" })), calls: 0, reservedUsd: 0 };

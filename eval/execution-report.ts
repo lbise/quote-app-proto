@@ -67,19 +67,31 @@ export function sessionCost(session: EvaluationSessionRecord, runs: EvaluationRu
   return { estimatedUsageUsd: priced.reduce((sum, run) => sum + run!.cost.estimatedUsd!, 0), estimateComplete: priced.length === found.length };
 }
 
+/**
+ * Completeness for history and comparison consumers. Deleted runs keep their
+ * planned slot, so surviving results never look like a complete session.
+ */
+export function sessionEvidence(session: EvaluationSessionRecord, runs: EvaluationRun[]) {
+  const deleted = new Set(session.state.work.filter(item => item.status === "deleted").map(item => item.id));
+  const savedRuns = session.plan.work.filter(work => !deleted.has(work.id)
+    && runs.some(run => run.id === work.id && run.sessionId === session.plan.id && run.scenarioHash === work.scenarioHash)).length;
+  return { plannedRuns: session.plan.work.length, savedRuns, deletedRuns: deleted.size, incomplete: savedRuns < session.plan.work.length };
+}
+
 export function sessionProgress(session: EvaluationSessionRecord, runs: EvaluationRun[] = []): string {
   const { plan, state } = session;
   const active = plan.work.find(work => work.id === state.activeWorkId);
   const running = ["starting", "running"].includes(state.status);
   const cost = sessionCost(session, runs);
+  const deleted = state.work.filter(work => work.status === "deleted").length;
   return `<section id="session-progress" data-session-id="${h(plan.id)}"><div class="page-heading"><div><h1>Evaluation progress</h1><p class="muted">${h(plan.model.provider)} / ${h(plan.model.id)}</p></div><a href="/">All sessions</a></div>
-    <div class="progress-overview"><div role="status"><p>Execution: <strong id="execution-state" class="status">${h(state.status)}</strong></p><p id="completed-count">${state.work.filter(work => work.status === "completed").length} / ${plan.work.length} Scenario Runs completed</p><p id="active-scenario" class="muted">${active ? `Active scenario: ${h(active.scenarioId)} · repetition ${active.repetition}` : "No active scenario."}</p></div>
-    <div class="toolbar"><a class="button secondary" href="/?reuse=${encodeURIComponent(plan.id)}">Reuse selection and settings</a><form id="stop-form" method="post" action="/sessions/${encodeURIComponent(plan.id)}/stop"><button type="submit" class="secondary"${running ? "" : " disabled"}>Stop</button></form></div></div>
+    <div class="progress-overview"><div role="status"><p>Execution: <strong id="execution-state" class="status">${h(state.status)}</strong></p><p id="completed-count">${state.work.filter(work => work.status === "completed").length} / ${plan.work.length} Scenario Runs completed${deleted ? ` · ${deleted} deleted; evidence incomplete` : ""}</p><p id="active-scenario" class="muted">${active ? `Active scenario: ${h(active.scenarioId)} · repetition ${active.repetition}` : "No active scenario."}</p></div>
+    <div class="toolbar"><a class="button secondary" href="/?reuse=${encodeURIComponent(plan.id)}">Reuse selection and settings</a><form id="stop-form" method="post" action="/sessions/${encodeURIComponent(plan.id)}/stop"><button type="submit" class="secondary"${running ? "" : " disabled"}>Stop</button></form><a id="delete-session" class="danger-link" href="/sessions/${encodeURIComponent(plan.id)}/delete"${running ? " hidden" : ""}>Delete session</a></div></div>
     <p id="execution-reason" class="failure">${h(state.reason)}</p>
     <p id="progress-error" class="failure" role="alert"></p>
     <h2>Scenario Runs</h2><ol id="progress-work" class="progress-work">${plan.work.map(work => {
       const result = state.work.find(item => item.id === work.id);
-      return `<li><span>${h(work.scenarioId)} <small>Repetition ${work.repetition}</small></span><span class="status">${h(result?.status ?? "missing")}</span>${result?.runId ? `<a href="/?run=${encodeURIComponent(result.runId)}">View result</a>` : ""}</li>`;
+      return `<li><span>${h(work.scenarioId)} <small>Repetition ${work.repetition}</small></span><span class="status">${h(result?.status ?? "missing")}</span>${result?.runId ? `<a href="/?run=${encodeURIComponent(result.runId)}">View result</a>${running ? "" : `<a class="danger-link" href="/runs/${encodeURIComponent(result.runId)}/delete">Delete run<span class="sr-only"> ${h(work.scenarioId)} repetition ${h(work.repetition)}</span></a>`}` : ""}</li>`;
     }).join("")}</ol>
     <details class="evidence-panel"><summary>Settings and usage</summary><p>Reasoning: ${h(plan.model.effective.reasoning ?? "not recorded")} · Output-token limit: ${h(plan.model.effective.maxOutputTokens ?? "not recorded")}</p>
     <p id="session-usage">${state.calls} provider calls · USD ${h(state.reservedUsd)} reserved · Estimated usage cost: USD ${h(cost.estimatedUsageUsd)}${cost.estimateComplete ? "" : " (incomplete)"}</p>

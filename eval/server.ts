@@ -3,10 +3,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { BlockList } from "node:net";
 import { networkInterfaces } from "node:os";
-import { listRuns, readReviews, saveReview, withoutCredentials, type ReviewInput } from "./artifacts";
-import { renderReport } from "./report";
-import { sessionCost } from "./execution-report";
-import { ActiveEvaluationSessionError, beginEvaluationSession, listEvaluationSessions } from "./sessions";
+import { listRuns, MissingScenarioRunError, readReviews, saveReview, withoutCredentials, type ReviewInput } from "./artifacts";
+import { readableDate, renderReport } from "./report";
+import { sessionCost, sessionEvidence } from "./execution-report";
+import { ActiveEvaluationSessionError, beginEvaluationSession, deletedEvaluationSessions, listEvaluationSessions } from "./sessions";
+import { completePendingDeletions, deleteEvaluationSession, deleteScenarioRun, DeletionProblem } from "./deletion";
+import { deletedNotices, deletionFailure, runDeletionConfirmation, sessionDeletionConfirmation } from "./deletion-report";
 import { createEvaluationPlan, selectEvaluationScenarios, startEvaluation } from "./execution";
 import { assertLivePricing, createLiveSession } from "./live";
 import { parseSpendUsd } from "../app/lib/spend-usd";
@@ -134,6 +136,9 @@ export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAcc
       if (closing) throw new FormProblem("The evaluator is shutting down. Restart it before launching.", 503);
       const input = browserSelection(form);
       const previousId = () => {
+        if (deletedEvaluationSessions(root).some(deletion => deletion.browserRequest?.id === input.browserRequest.id)) {
+          throw new FormProblem("This launch request belongs to a deleted session. Reload the launch form to start a new evaluation.", 409);
+        }
         const previous = listEvaluationSessions(root).find(record => record.plan.browserRequest?.id === input.browserRequest.id);
         if (!previous) return;
         if (previous.plan.browserRequest?.fingerprint !== input.browserRequest.fingerprint) throw new FormProblem("This requestId already authorized different settings. Reload the launch form for a new request.", 409);
@@ -210,7 +215,16 @@ export function createEvaluatorServer({ root, scenarios, databaseUrl, networkAcc
 }
 
 export function createReviewServer(options: ReportServerOptions) { return createReportServer(options); }
+/** Deletion accepts only its own confirmation field, echoing the identifier from the URL. */
+async function deletionConfirmed(request: IncomingMessage, id: string) {
+  const form = await formBody(request);
+  if ([...form.keys()].some(key => key !== "confirm") || form.getAll("confirm").length !== 1 || form.get("confirm") !== id) {
+    throw new FormProblem("Deletion requires its confirmation form. Open the delete page again and confirm.");
+  }
+}
 function createReportServer({ root, scenarios, networkAccess = false, dashboardStatus, execution }: ReportServerOptions & { execution?: ExecutionControl }) {
+  // Finish any deletion a crash interrupted before serving its evidence.
+  completePendingDeletions(root);
   // Exact local interface addresses prevent accepting arbitrary DNS Host names.
   const allowedAddresses = ["127.0.0.1", "localhost", "[::1]", ...(networkAccess ? privateReviewAddresses() : [])];
   return createServer(async (request, response) => {
@@ -249,13 +263,51 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
       if (execution && request.method === "POST" && url.pathname === "/sessions") {
         json(202, { id: await execution.launch(await formBody(request)) }); return;
       }
+      const page = (status: number, main: string) => {
+        response.writeHead(status, { "content-type": "text/html; charset=utf-8" }).end(renderReport({ scenarios, runs: [], reviews: [], executionEnabled: true, confirmation: main }));
+      };
+      const deletionRoute = /^\/(runs|sessions)\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})\/delete$/.exec(url.pathname);
+      if (execution && deletionRoute && ["GET", "HEAD", "POST"].includes(request.method ?? "")) {
+        const [, kind, id] = deletionRoute;
+        try {
+          if (request.method === "POST") {
+            await deletionConfirmed(request, id);
+            if (kind === "runs") {
+              const { sessionId } = deleteScenarioRun(root, id);
+              response.writeHead(303, { location: sessionId ? `/?session=${encodeURIComponent(sessionId)}&deleted=run` : "/?deleted=run" }).end(); return;
+            }
+            deleteEvaluationSession(root, id);
+            response.writeHead(303, { location: "/?deleted=session" }).end(); return;
+          }
+          const sessions = listEvaluationSessions(root).map(publicSession);
+          const runs = await listRuns(root);
+          const executing = (record?: EvaluationSessionRecord) => Boolean(record && ["starting", "running"].includes(record.state.status));
+          if (kind === "runs") {
+            const run = runs.find(item => item.id === id);
+            if (!run) throw new DeletionProblem(new MissingScenarioRunError().message, 404);
+            const session = sessions.find(record => record.plan.id === run.sessionId && record.plan.work.some(work => work.id === run.id));
+            const active = sessions.some(record => executing(record) && record.plan.work.some(work => work.id === run.id));
+            page(active ? 409 : 200, runDeletionConfirmation({ run, session, reviews: (await readReviews(root, id)).length, date: readableDate })); return;
+          }
+          const session = sessions.find(record => record.plan.id === id);
+          if (!session) throw new DeletionProblem("Evaluation Session not found. It may have been deleted.", 404);
+          const saved = session.plan.work.filter(work => runs.some(run => run.id === work.id && run.sessionId === id) && session.state.work.find(item => item.id === work.id)?.status !== "deleted");
+          const reviews = (await Promise.all(saved.map(work => readReviews(root, work.id)))).reduce((sum, items) => sum + items.length, 0);
+          page(executing(session) ? 409 : 200, sessionDeletionConfirmation({ session, savedRuns: saved.length, reviews, date: readableDate })); return;
+        } catch (error) {
+          if (error instanceof DeletionProblem || error instanceof FormProblem) { page(error.status, deletionFailure(error.message)); return; }
+          if (error instanceof ActiveEvaluationSessionError) { page(409, deletionFailure("This session is executing. Stop it or wait for it to end before deleting its evidence.")); return; }
+          throw error;
+        }
+      }
       const sessionRoute = /^\/sessions\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})(\/stop)?$/.exec(url.pathname);
       if (execution && sessionRoute) {
         const [, id, stop] = sessionRoute;
         if (request.method === "GET" && !stop) {
           const record = listEvaluationSessions(root).find(record => record.plan.id === id);
           if (!record) throw new FormProblem("Session not found.", 404);
-          json(200, { ...publicSession(record), ...sessionCost(record, await listRuns(root)) }); return;
+          const runs = await listRuns(root);
+          json(200, { ...publicSession(record), ...sessionCost(record, runs), evidence: sessionEvidence(record, runs) }); return;
         }
         if (request.method === "POST" && stop) {
           if ((await formBody(request)).size) throw new FormProblem("Stop accepts an empty form only.");
@@ -276,7 +328,7 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
       if (request.method !== "GET" || url.pathname !== "/") { response.writeHead(404).end("Not found."); return; }
       const runs = await listRuns(root);
       const runId = url.searchParams.get("run") ?? undefined;
-      if (runId && !runs.some(run => run.id === runId)) { response.writeHead(404).end("Run not found."); return; }
+      if (runId && !runs.some(run => run.id === runId)) { response.writeHead(404).end(new MissingScenarioRunError().message); return; }
       response.setHeader("content-type", "text/html; charset=utf-8");
       const libraryView = !runId && url.searchParams.get("view") === "library";
       const historyView = !libraryView && !runId && (!url.searchParams.has("scenario") || url.searchParams.has("outcome") || url.searchParams.has("mode") || url.searchParams.get("view") === "history");
@@ -291,12 +343,15 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
       const executionInput = execution ? { executionEnabled: true, launchView, reuseSession, sessionId, launchRequestId: launchView ? randomUUID() : undefined,
         providerProblem: execution.providerProblem(), modelChoices, googleProblem: execution.googleProblem(),
         routerProblem: modelChoices ? modelChoices.error : "Set OPENROUTER_API_KEY on the evaluator server to browse OpenRouter models. Never enter credentials in the browser." } : {};
-      response.end(renderReport({ scenarios, runs, sessions, ...executionInput, dashboardStatus: typeof dashboardStatus === "function" ? await dashboardStatus() : dashboardStatus, runId, scenarioId: url.searchParams.get("scenario") ?? undefined,
+      const deleted = url.searchParams.get("deleted");
+      const deletedNotice = execution && (deleted === "run" || deleted === "session") ? deletedNotices[deleted] : undefined;
+      response.end(renderReport({ scenarios, runs, sessions, ...executionInput, deletedNotice, dashboardStatus: typeof dashboardStatus === "function" ? await dashboardStatus() : dashboardStatus, runId, scenarioId: url.searchParams.get("scenario") ?? undefined,
         outcome: url.searchParams.get("outcome") ?? undefined, mode: url.searchParams.get("mode") ?? undefined,
         historyView, libraryView, reviewsByRun,
         reviews: runId ? await readReviews(root, runId) : [] }));
     } catch (error) {
       // Only locally authored validation messages may cross this boundary.
+      if (error instanceof MissingScenarioRunError) { response.writeHead(404).end(error.message); return; }
       if (error instanceof FormProblem || error instanceof ActiveEvaluationSessionError) {
         response.writeHead(error instanceof ActiveEvaluationSessionError ? 409 : error.status, { "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ error: error.message })); return;
       }

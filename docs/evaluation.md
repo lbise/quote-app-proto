@@ -32,6 +32,19 @@ Start returns a session ID while the server continues execution. Its progress pa
 
 **Reuse selection and settings** opens a new launch form. Check the current scenario versions and settings, then click Start explicitly. This creates a fresh session and allowance, not a retry inside the previous budget. Human reviews and approvals are never copied. All scenarios and repetitions in the new session still share a budget and deadline; each Scenario Run has its own call cap.
 
+## Permanently delete saved evidence
+
+The evaluator started by `eval:start` can delete one Evaluation Session or one Scenario Run. Use **Delete session** on a session card or its progress page, **Delete run** beside a saved run in history or on the progress page, or **Delete this Scenario Run** in a run report. Older runs without a saved session have the same **Delete run** link. The read-only `eval:review` server has no deletion routes.
+
+Each link opens a confirmation page naming the scenario, repetition, model, session and identifiers, with the number of human reviews that will be removed. Deletion happens only after **Permanently delete** on that page. This confirmation is separate from launch authorization: it cannot start, stop or authorize an evaluation. There is no bulk deletion, trash, recovery or hidden backup.
+
+- **One Scenario Run:** removes its report and all its append-only human reviews. Other runs in the session stay. The session state replaces the run's entry with a `deleted` marker and deletion time. No report content or review content is kept. The session still counts every planned Scenario Run. History, the progress page and `GET /sessions/<id>` (`evidence: { plannedRuns, savedRuns, deletedRuns, incomplete }`) show the session as incomplete. The estimated usage cost becomes incomplete as well, so surviving results never look like a complete evaluation.
+- **Whole session:** removes its plan, state, reports and reviews. A minimal `sessions/<id>.deleted.json` record keeps only the ID, deletion time and browser request key. A retried launch with that key is rejected rather than starting again.
+
+Spending records stay. Deletion never changes `live-sessions/<id>.jsonl` or the session's recorded calls and reserved USD. It does not refund budget, reset a limit or change what a provider may charge.
+
+A session that is starting or running cannot be deleted, and neither can any of its runs. Stop it or let it end first. Other finished evidence stays deletable while a session runs. Identifiers come only from the URL, are validated against saved artifacts and never map to browser-supplied paths. Deletion uses the same Host and same-origin checks as other writes. Review saves and deletions share a cross-process artifact lock, so a stale review form cannot recreate reviews for a deleted run. If the process stops mid-deletion, the next evaluator or review server start finishes it.
+
 ## Browse without making calls
 
 ```sh

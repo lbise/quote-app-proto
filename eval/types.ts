@@ -123,10 +123,13 @@ export type EvaluationSessionState = {
   finishedAt: string | null;
   reason?: string;
   activeWorkId?: string;
-  work: { id: string; status: "missing" | "running" | "completed" | "interrupted" | "skipped"; runId?: string }[];
+  /** A deleted Scenario Run keeps only this marker, preserving the planned denominator. */
+  work: { id: string; status: "missing" | "running" | "completed" | "interrupted" | "skipped" | "deleted"; runId?: string; deletedAt?: string }[];
   calls: number;
   reservedUsd: number;
 };
+/** Minimal durable record of a permanently deleted session. It holds no report or review content. */
+export type EvaluationSessionDeletion = { format: "quote-evaluation-session-deletion/v1"; id: string; deletedAt: string; browserRequest?: { id: string; fingerprint: string } };
 export type EvaluationSessionRecord = { plan: EvaluationSessionPlan; state: EvaluationSessionState };
 export type EvaluationRun = {
   format: "quote-evaluation/v1";

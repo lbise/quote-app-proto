@@ -57,8 +57,8 @@ it.runIf(Boolean(privateAddress))("serves the report on a private interface with
     request.on("error", reject); request.end("runId=missing");
   });
   expect(await post("http://attacker.example")).toBe(403);
-  // A same-origin submission reaches form validation rather than the origin guard.
-  expect(await post(url)).toBe(400);
+  // A same-origin submission reaches review validation (a missing run) rather than the origin guard.
+  expect(await post(url)).toBe(404);
   const invalidHost = await new Promise<number | undefined>((resolve, reject) => {
     get(url, { headers: { host: `203.0.113.9:${port}` } }, response => { response.resume(); resolve(response.statusCode); }).on("error", reject);
   });

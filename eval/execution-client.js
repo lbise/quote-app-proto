@@ -155,7 +155,9 @@ if (progress) {
   function display({ plan, state, estimatedUsageUsd, estimateComplete }) {
     const running = ["starting", "running"].includes(state.status);
     document.querySelector("#execution-state").textContent = state.status;
-    document.querySelector("#completed-count").textContent = `${state.work.filter(work => work.status === "completed").length} / ${plan.work.length} Scenario Runs completed`;
+    const deleted = state.work.filter(work => work.status === "deleted").length;
+    document.querySelector("#completed-count").textContent = `${state.work.filter(work => work.status === "completed").length} / ${plan.work.length} Scenario Runs completed${deleted ? ` · ${deleted} deleted; evidence incomplete` : ""}`;
+    document.querySelector("#delete-session").hidden = running;
     const active = plan.work.find(work => work.id === state.activeWorkId);
     document.querySelector("#active-scenario").textContent = active ? `Active scenario: ${active.scenarioId} · repetition ${active.repetition}` : "No active scenario.";
     document.querySelector("#session-usage").textContent = `${state.calls} provider calls · USD ${state.reservedUsd} reserved · Estimated usage cost: USD ${estimatedUsageUsd ?? 0}${estimateComplete ? "" : " (incomplete)"}`;
@@ -182,6 +184,17 @@ if (progress) {
         link.href = `/?run=${encodeURIComponent(result.runId)}`;
         link.textContent = "View result";
         row.append(link);
+        if (!running) {
+          const remove = document.createElement("a");
+          remove.className = "danger-link";
+          remove.href = `/runs/${encodeURIComponent(result.runId)}/delete`;
+          remove.textContent = "Delete run";
+          const label = document.createElement("span");
+          label.className = "sr-only";
+          label.textContent = ` ${work.scenarioId} repetition ${work.repetition}`;
+          remove.append(label);
+          row.append(remove);
+        }
       }
       return row;
     });
