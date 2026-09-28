@@ -31,9 +31,12 @@ const reservationFor = (maxOutputTokens: number) => 200_000 * 1001 + maxOutputTo
 const usage = { prompt_tokens: 1000, completion_tokens: 20, total_tokens: 1020 };
 const estimate = 1000 * 1001 + 20 * 2001 + 1;
 
+// Every Quote AI variable is explicit: this file imports db.server, which loads
+// a developer's .env, and production-path tests read process.env.
 const env = {
   QUOTE_AI_PROVIDER: "openrouter", QUOTE_AI_MODEL: id, OPENROUTER_API_KEY: key,
   QUOTE_AI_SPEND_LIMIT_USD: "5", GEMINI_API_KEY: googleKey,
+  QUOTE_AI_REASONING: "", QUOTE_AI_MAX_OUTPUT_TOKENS: "", QUOTE_AI_TIMEOUT_MS: "",
 };
 
 type Chunk = Record<string, unknown>;
@@ -177,6 +180,18 @@ describe("production OpenRouter Quote AI", () => {
     const error = await productionFailure({ ...env, OPENROUTER_API_KEY: "" });
     expect(error.diagnostic).toEqual({ phase: "model", code: "provider_configuration_invalid" });
     expect(JSON.stringify(error)).not.toContain(googleKey);
+  });
+
+  it("stops before sending when the spending ledger is unavailable", async () => {
+    const saved = globalThis.fetch;
+    const api = openRouter({ responses: [sse(...text("unused"))] });
+    globalThis.fetch = api.fetch;
+    try {
+      // Never depend on a developer's .env: without a database nothing can be reserved.
+      const error = await productionFailure({ ...env, DATABASE_URL: "" });
+      expect(error.diagnostic).toMatchObject({ phase: "model", code: "spend_ledger_unavailable" });
+      expect(api.requests).toHaveLength(0);
+    } finally { globalThis.fetch = saved; }
   });
 
   it("checks metadata again after a failure and after the cache expires", async () => {

@@ -104,6 +104,19 @@ function googleModel(env: Environment): { model: Model<Api>; streamFn: StreamFn 
   return { model, streamFn };
 }
 
+/**
+ * Connects only when a call reserves spend, so configuration and generation
+ * errors never depend on the database. Importing the database module lazily
+ * also avoids its .env side effect for callers that never reach it.
+ */
+function deploymentSpendLedger(): QuoteAISpendLedger {
+  const ledger = async () => databaseSpendLedger((await import("./db.server")).getDatabase());
+  return {
+    reserve: async (nanoUsd, limitNanoUsd) => (await ledger()).reserve(nanoUsd, limitNanoUsd),
+    release: async (nanoUsd) => (await ledger()).release(nanoUsd),
+  };
+}
+
 function openRouterSettings(env: Environment) {
   const apiKey = required(env, registeredProviders.openrouter.credential);
   const modelId = required(env, "QUOTE_AI_MODEL");
@@ -139,8 +152,7 @@ export async function configuredQuoteAI(env: Environment = process.env, dependen
   const settings = openRouterSettings(env);
   const boundary = await openRouterBoundary({
     ...settings, timeoutMs, generation: requested,
-    // Loaded lazily: importing the database module reads .env as a side effect.
-    ledger: dependencies.ledger ?? databaseSpendLedger((await import("./db.server")).getDatabase()),
+    ledger: dependencies.ledger ?? deploymentSpendLedger(),
     fetch: dependencies.fetch ?? globalThis.fetch,
     now: dependencies.now ?? Date.now,
   });
