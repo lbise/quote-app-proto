@@ -82,8 +82,14 @@ describe("Quote AI configuration", () => {
   });
 
   it("always discloses the configured provider without exposing credentials", () => {
-    expect(quoteAIDisclosure(google)).toEqual({ providerName: "Google Gemini Developer API" });
+    expect(quoteAIDisclosure(google)).toEqual({ providerName: "Google Gemini Developer API", transcriptionProviderName: "Google Gemini Developer API" });
     expect(quoteAIDisclosure(openrouter)).toEqual({ providerName: "OpenRouter" });
     expect(JSON.stringify(quoteAIDisclosure(openrouter))).not.toContain("openrouter-test-key");
+  });
+
+  it("validates transcription configuration at startup", () => {
+    expect(() => assertQuoteAIConfiguration({ ...google, QUOTE_STT_MODEL: "not-a-gemini-model" })).toThrow("QUOTE_STT_MODEL is not registered");
+    expect(quoteAIDisclosure({ ...openrouter, GEMINI_API_KEY: "k", QUOTE_STT_PROVIDER: "google", QUOTE_STT_MODEL: "gemini-2.5-flash" }))
+      .toEqual({ providerName: "OpenRouter", transcriptionProviderName: "Google Gemini Developer API" });
   });
 });

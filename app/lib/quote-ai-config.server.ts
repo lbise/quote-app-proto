@@ -6,8 +6,10 @@ import { isOpenRouterModelId } from "./openrouter-models.server";
 import { quoteAIThinkingLevels, resolveQuoteAIGeneration, type QuoteAIGenerationOptions } from "./quote-ai-generation";
 import type { QuoteAIDisclosure } from "./quote-ai-disclosure";
 import { openRouterBoundary } from "./quote-ai-openrouter.server";
-import { databaseSpendLedger, type QuoteAISpendLedger } from "./quote-ai-spend.server";
+import { registeredProviders, type ProviderId } from "./quote-ai-providers.server";
+import { deploymentSpendLedger, type QuoteAISpendLedger } from "./quote-ai-spend.server";
 import { parseSpendUsd } from "./spend-usd";
+import { assertTranscriptionConfiguration, transcriptionProviderName } from "./transcription.server";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MIN_TIMEOUT_MS = 1_000;
@@ -15,13 +17,6 @@ const MAX_TIMEOUT_MS = 45_000;
 
 type Environment = NodeJS.ProcessEnv | Record<string, string | undefined>;
 
-// Adding a provider requires an intentional registration here. Environment
-// variables may select a registered provider, never a custom endpoint.
-const registeredProviders = {
-  google: { credential: "GEMINI_API_KEY", publicName: "Google Gemini Developer API" },
-  openrouter: { credential: "OPENROUTER_API_KEY", publicName: "OpenRouter" },
-} as const;
-type ProviderId = keyof typeof registeredProviders;
 
 export type QuoteAIConfiguration = {
   model: Model<Api>;
@@ -104,19 +99,6 @@ function googleModel(env: Environment): { model: Model<Api>; streamFn: StreamFn 
   return { model, streamFn };
 }
 
-/**
- * Connects only when a call reserves spend, so configuration and generation
- * errors never depend on the database. Importing the database module lazily
- * also avoids its .env side effect for callers that never reach it.
- */
-function deploymentSpendLedger(): QuoteAISpendLedger {
-  const ledger = async () => databaseSpendLedger((await import("./db.server")).getDatabase());
-  return {
-    reserve: async (nanoUsd, limitNanoUsd) => (await ledger()).reserve(nanoUsd, limitNanoUsd),
-    release: async (nanoUsd) => (await ledger()).release(nanoUsd),
-  };
-}
-
 function openRouterSettings(env: Environment) {
   const apiKey = required(env, registeredProviders.openrouter.credential);
   const modelId = required(env, "QUOTE_AI_MODEL");
@@ -133,11 +115,9 @@ export function assertQuoteAIConfiguration(env: Environment = process.env): void
   const provider = selectedProvider(env);
   timeout(env);
   const requested = generation(env);
-  if (provider === "openrouter") {
-    openRouterSettings(env);
-    return;
-  }
-  resolveQuoteAIGeneration(googleModel(env).model, requested);
+  if (provider === "openrouter") openRouterSettings(env);
+  else resolveQuoteAIGeneration(googleModel(env).model, requested);
+  assertTranscriptionConfiguration(env);
 }
 
 /**
@@ -174,5 +154,6 @@ export function configuredGoogleQuoteAI(env: Environment = process.env): QuoteAI
 
 /** Returns safe server-to-browser information, never credentials. */
 export function quoteAIDisclosure(env: Environment = process.env): QuoteAIDisclosure {
-  return { providerName: registeredProviders[selectedProvider(env)].publicName };
+  const transcription = transcriptionProviderName(env);
+  return { providerName: registeredProviders[selectedProvider(env)].publicName, ...(transcription ? { transcriptionProviderName: transcription } : {}) };
 }

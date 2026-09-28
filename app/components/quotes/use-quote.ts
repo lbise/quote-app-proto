@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { QuoteCalculation, QuoteData } from "../../lib/quote";
 import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest, QuoteAssistantSuccessDebug } from "../../lib/quote-assistant-debug";
 import { randomUUID } from "../../lib/random-id";
+import type { DictationMetadata } from "../../lib/dictation";
 
 export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
 export type QuoteRecord = {
@@ -105,7 +106,7 @@ export function useQuote(initial: QuoteRecord) {
   const queue = useRef<SaveAction[]>([]);
   const saving = useRef<Promise<boolean> | null>(null);
   const alive = useRef(true);
-  const lastRequest = useRef<{ text: string; requestId: string; baseVersion: number; locale?: 'fr' | 'en' } | null>(initial.assistantRequest ?? null);
+  const lastRequest = useRef<{ text: string; requestId: string; baseVersion: number; locale?: 'fr' | 'en'; dictation?: DictationMetadata } | null>(initial.assistantRequest ?? null);
   const actionRetry = useRef<{ action: string; requestId: string; version: number; customerId?: string } | null>(null);
   const rejectedSave = useRef(false);
 
@@ -218,7 +219,8 @@ export function useQuote(initial: QuoteRecord) {
     } finally { if (alive.current) setBusy(false); }
   }
 
-  async function runAssistant(text: string, locale: "fr" | "en", retry = false) {
+  /** `dictation` marks a dictated Artisan message; a retry keeps the original request's value. */
+  async function runAssistant(text: string, locale: "fr" | "en", retry = false, dictation?: DictationMetadata) {
     if (!text.trim() || ai === "processing" || busy || !current.current.draft) return null;
     if (!(await flush())) return null;
     const start = sequence.current;
@@ -228,11 +230,12 @@ export function useQuote(initial: QuoteRecord) {
     const requestId = replay ? previous.requestId : randomUUID();
     const baseVersion = replay ? previous.baseVersion : current.current.version;
     const requestLocale = replay ? previous.locale ?? locale : locale;
-    lastRequest.current = { text, requestId, baseVersion, locale: requestLocale };
+    const requestDictation = retry ? previous?.dictation : dictation;
+    lastRequest.current = { text, requestId, baseVersion, locale: requestLocale, ...(requestDictation ? { dictation: requestDictation } : {}) };
     setAi("processing"); setError(null); setDebug(null); setToolDebug(null);
     if (!retry || ai === 'stale') setRecord(previous => ({ ...previous, messages: [...previous.messages, { role: 'artisan', fr: text, en: text }] }));
     try {
-      const next = await quoteRequest<QuoteRecord>({ action: "assistant", id: initial.id, expectedVersion: baseVersion, requestId, text, locale: requestLocale });
+      const next = await quoteRequest<QuoteRecord>({ action: "assistant", id: initial.id, expectedVersion: baseVersion, requestId, text, locale: requestLocale, ...(requestDictation ? { dictation: requestDictation } : {}) });
       if (sequence.current !== start) {
         // A local edit may not yet have reached the server. Never replace it with an AI result.
         if (next.version > current.current.version) accept(next, false);

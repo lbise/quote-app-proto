@@ -14,7 +14,7 @@ export type QuoteAISpendLedger = {
   release(nanoUsd: number): Promise<void>;
 };
 
-/** One allowance per deployment database for OpenRouter production requests. */
+/** One allowance per deployment database, shared by OpenRouter assistant calls and transcription. */
 const scope = "openrouter";
 
 export function databaseSpendLedger(database: Database): QuoteAISpendLedger {
@@ -35,6 +35,19 @@ export function databaseSpendLedger(database: Database): QuoteAISpendLedger {
         .set({ reservedNanoUsd: sql`${quoteAISpend.reservedNanoUsd} - ${nanoUsd}::bigint`, updatedAt: new Date() })
         .where(and(eq(quoteAISpend.scope, scope), sql`${quoteAISpend.reservedNanoUsd} >= ${nanoUsd}::bigint`));
     },
+  };
+}
+
+/**
+ * Connects only when a call reserves spend, so configuration and generation
+ * errors never depend on the database. Importing the database module lazily
+ * also avoids its .env side effect for callers that never reach it.
+ */
+export function deploymentSpendLedger(): QuoteAISpendLedger {
+  const ledger = async () => databaseSpendLedger((await import("./db.server")).getDatabase());
+  return {
+    reserve: async (nanoUsd, limitNanoUsd) => (await ledger()).reserve(nanoUsd, limitNanoUsd),
+    release: async (nanoUsd) => (await ledger()).release(nanoUsd),
   };
 }
 

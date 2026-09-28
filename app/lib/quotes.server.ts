@@ -17,7 +17,7 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Store = Database | Transaction;
 type Message = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
 type Action = "create" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "customer-apply" | "defaults-save";
-type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; customer?: unknown; customerId?: unknown; defaults?: unknown };
+type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; dictation?: unknown; customer?: unknown; customerId?: unknown; defaults?: unknown };
 export type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: { id: string; email: string; emailVerified: boolean } } | null> } };
 type QuoteDetail = Awaited<ReturnType<typeof readDetail>>;
 
@@ -75,6 +75,17 @@ function requestKey(value: unknown): string {
   return key;
 }
 
+/** A dictated message carries only its transcript edit ratio, from 0 (sent unchanged) to 1. */
+function dictation(value: unknown): { dictated: boolean; dictationEditRatio: number | null } {
+  if (value === undefined) return { dictated: false, dictationEditRatio: null };
+  const record = valueRecord(value);
+  const ratio = record?.editRatio;
+  if (!record || Object.keys(record).length !== 1 || typeof ratio !== "number" || !Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+    throw new RequestFailure(400, "invalid_dictation");
+  }
+  return { dictated: true, dictationEditRatio: ratio };
+}
+
 function expectedVersion(value: unknown): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new RequestFailure(400, "invalid_expected_version");
   return value as number;
@@ -95,7 +106,7 @@ function stable(value: unknown, depth = 0): string {
 function payloadHash(body: Body): string {
   return createHash("sha256").update(stable({
     action: body.action, id: body.id, expectedVersion: body.expectedVersion, quote: body.quote,
-    text: body.text, locale: body.locale, customer: body.customer, customerId: body.customerId, defaults: body.defaults,
+    text: body.text, locale: body.locale, dictation: body.dictation, customer: body.customer, customerId: body.customerId, defaults: body.defaults,
   })).digest("hex");
 }
 
@@ -539,6 +550,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
   const hash = payloadHash(body);
   const locale = body.locale === "en" ? "en" : "fr";
   const text = identifier(body.text, "text", MAX_TEXT).trim();
+  const entry = dictation(body.dictation);
   let input: QuoteAIInput | undefined;
   let baseVersion = 0;
   let completed: QuoteDetail | undefined;
@@ -562,7 +574,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
     if (existing) await transaction.update(quoteRequest).set({ status: "pending", baseVersion: record.version, updatedAt: now }).where(eq(quoteRequest.id, existing.id));
     else await recordRequest(transaction, { businessId, quoteId: id, action: "assistant", requestId, status: "pending", baseVersion: record.version, payloadHash: hash, now });
-    if (!existing) await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "artisan", fr: text, en: text, requestId });
+    if (!existing) await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "artisan", fr: text, en: text, requestId, ...entry });
     await transaction.update(quote).set({ pending: true, pendingVersion: record.version, pendingRequestId: requestId, pendingExpiresAt: new Date(now.getTime() + AI_LEASE_MS), updatedAt: now }).where(eq(quote.id, id));
     baseVersion = record.version;
     input = {

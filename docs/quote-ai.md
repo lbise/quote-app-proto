@@ -19,6 +19,8 @@ The server owns the provider, model, credential, generation settings, and reques
 | `QUOTE_AI_SPEND_LIMIT_USD` | Required for OpenRouter. Cumulative spending ceiling for the deployment, with at most 9 decimals |
 | `QUOTE_AI_TIMEOUT_MS` | Optional integer from `1000` through `45000`, default `20000` |
 | `QUOTE_AI_DEBUG` | Optional `true`; exposes safe failure diagnostics in the authenticated Quote UI |
+| `QUOTE_STT_PROVIDER` | Optional transcription provider for dictation. Defaults to `QUOTE_AI_PROVIDER`. Only `google` is implemented |
+| `QUOTE_STT_MODEL` | Optional transcription model. Defaults to `QUOTE_AI_MODEL`. Required when `QUOTE_STT_PROVIDER` differs from `QUOTE_AI_PROVIDER` |
 
 Copy `.env.example` to `.env` and put the key in the local file or shell environment. Never commit the key. The server validates this configuration at startup, without network calls, and refuses to start when it is incomplete or invalid. Only the selected provider's key is used; the other key is never sent.
 
@@ -42,11 +44,26 @@ This is an interim policy until #38 records the final spending decision.
 - **Exhaustion**: when the next reservation would exceed `QUOTE_AI_SPEND_LIMIT_USD`, the turn stops before anything is sent, staged changes are discarded, and the chat tells the Artisan that the limit is reached.
 - **Reset**: none. The operator raises `QUOTE_AI_SPEND_LIMIT_USD` to allow more spending. The reserved total is in the `quote_ai_spend` table.
 
-This is an application-side bound under published rates. It is not an invoice or an account-wide guarantee; configure OpenRouter account limits separately. Direct Google has no application spending limit (#38).
+This is an application-side bound under published rates. It is not an invoice or an account-wide guarantee; configure OpenRouter account limits separately. Direct Google assistant calls have no application spending limit (#38). Dictation transcription counts against the same allowance whenever `QUOTE_AI_SPEND_LIMIT_USD` is set, including with direct Google; see [Dictation](#dictation).
+
+## Dictation
+
+The conversation composer has a microphone button. The Artisan records up to five minutes, the server transcribes the audio, and the transcript is appended to the composer. The Artisan reviews it and sends it as a normal Artisan message. Nothing is sent automatically.
+
+- **Upload**: the browser posts the raw recording to the authenticated `POST /api/transcriptions`, in its native format: webm/opus on Chrome and Android, mp4/aac on iOS Safari, ogg/opus on Firefox. The server identifies the format from the bytes and rejects anything else, and anything over 5 MiB.
+- **Boundary**: `app/lib/transcription.server.ts` takes audio and format and returns transcript text and cost. It uses `QUOTE_STT_PROVIDER`/`QUOTE_STT_MODEL`, falling back to the assistant's provider and model. Direct Gemini is the only implementation. It sends the audio inline in one `generateContent` call, because pi's message content supports only text and images. When the assistant uses OpenRouter and no `QUOTE_STT_*` setting is present, dictation is unavailable and the microphone button is hidden. An explicit setting the server cannot honour stops startup.
+- **Prompt**: plain transcription in the spoken language, with punctuation, filler words kept, and numbers written as spoken. The prompt forbids answering, following, translating or summarizing the dictated content. `gemini-3.5-flash-lite` sometimes still writes spoken numbers and units as digits and symbols, for example "75 m²".
+- **Spending**: when `QUOTE_AI_SPEND_LIMIT_USD` is set, each transcription reserves the most it can cost before sending: a full context window of audio input and every output token. After a response with complete usage, the reservation is reduced to the estimated cost. After an error, timeout, cancellation or missing usage, the full reservation stays. pi's catalog lists only text input rates, so audio input is priced at 7 times the text rate, the highest audio-to-text ratio in Google's published Gemini pricing. This overstates spend rather than understating it. Without a limit, direct Google transcription has no application spending limit.
+- **Retention**: audio stays in server memory for one request and is never stored or logged. The transcript is not logged. In the browser, a failed recording stays in the tab's memory for Retry until the tab is closed or reloaded. There is no offline storage.
+- **Quality measurement**: `quote_message.dictated` records whether an Artisan message was dictated. For dictated messages, `quote_message.dictation_edit_ratio` records the character edit distance between the returned transcript and the sent text, divided by the longer length (0 means sent unchanged). Text typed before the first dictation is not counted as an edit. No audio or transcript text is stored.
+
+Direct Gemini transcription is for development and testing only: your own voice and invented Quotes. Before any real Artisan or Customer audio is sent, the transcription provider must offer zero data retention and no training on inputs. Choosing the production transcription model is tracked in #43.
 
 ## Data sharing and review
 
 Before the first model call, the application may send the current Artisan message, bounded recent conversation, complete current Working Draft, and authoritative calculation. The draft can include copied Customer and business details, VAT information, reference and dates, project and work-site details, terms, discounts, every line and section, and calculated amounts.
+
+Dictated audio is sent to the configured transcription provider, not to the assistant model. Easy Quote does not keep it.
 
 It excludes unrelated Quotes, older Published Revisions, reusable-record directories, credentials, ownership IDs, and account configuration. The provider may retain or use submitted data under its terms. This documentation does not approve real-data use.
 
@@ -80,7 +97,8 @@ Check the current terms for the account and region before using real Artisan Bus
 
 1. Choose the provider and plan and verify its current data-use, retention, and regional terms. For OpenRouter, this includes the upstream providers it may route to (#38).
 2. Verify the account or project settings for the intended data handling.
-3. Record the review in the deployment change and update this document and the disclosure if the provider or terms differ.
-4. Complete configured-provider rehearsal and release acceptance in [#21](https://github.com/lbise/quote-app-proto/issues/21).
+3. For dictation, choose a transcription provider with zero data retention and no training on inputs (#43). Direct Gemini transcription does not meet this.
+4. Record the review in the deployment change and update this document and the disclosure if the provider or terms differ.
+5. Complete configured-provider rehearsal and release acceptance in [#21](https://github.com/lbise/quote-app-proto/issues/21).
 
 The assistant is intentionally always configured. Authorization remains separate: verified sessions, the explicit `AUTH_ALLOWED_EMAILS` allowlist, trusted origins, business-scoped database access, and server-side mutation validation still apply.

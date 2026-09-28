@@ -10,6 +10,7 @@ export default [
   route("api/quotes/:id/draft-preview", "routes/api.quote-pdf.ts", { id: "quote-draft-preview-pdf" }),
   route("api/business-logo", "routes/api.business-logo.ts", { id: "business-logo-upload" }),
   route("api/business-logo/:logoId", "routes/api.business-logo.ts", { id: "business-logo" }),
+  route("api/transcriptions", "routes/api.transcriptions.ts"),
   ...(process.env.NODE_ENV !== "production" ? [route("quote-layout-prototype", "routes/quote-layout-prototype.tsx")] : []),
   route("sign-in", "routes/sign-in.tsx"),
   route("sign-up", "routes/sign-up.tsx"),

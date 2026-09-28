@@ -28,6 +28,9 @@ import { AssistantMarkdown } from './assistant-markdown';
 import { problemLabel } from './problem-label';
 import { MissingWarning, QuoteField } from './quote-validation';
 import type { QuoteAIDisclosure } from '../../lib/quote-ai-disclosure';
+import { appendTranscript, dictationForSend, trackTranscript, type DictationTracking } from '../../lib/dictation';
+import { useDictation } from './use-dictation';
+import { DictationButton, DictationPanel, DictationProgress } from './dictation-control';
 import { useBlocker, useNavigate, useRouteLoaderData } from 'react-router';
 
 const clone = <T,>(value: T): T => structuredClone(value);
@@ -42,6 +45,18 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
   const navigate = useNavigate();
   const [readRevision, setReadRevision] = useState<number | null>(initial.draft ? null : initial.revisions.length - 1);
   const [input, setInput] = useState('');
+  const inputValue = useRef('');
+  inputValue.current = input;
+  // What the composer would hold had no transcript been edited; null for a typed message.
+  const dictationTracking = useRef<DictationTracking | null>(null);
+  const dictation = useDictation(transcript => {
+    const current = inputValue.current;
+    dictationTracking.current = trackTranscript(dictationTracking.current, current, transcript);
+    inputValue.current = appendTranscript(current, transcript);
+    setInput(inputValue.current);
+  });
+  const dictationActive = dictation.state.status === 'requesting' || dictation.state.status === 'recording' || dictation.state.status === 'transcribing';
+  const canDictate = Boolean(quoteAI.transcriptionProviderName);
   const [editLine, setEditLine] = useState<QuoteLine | null>(null);
   const [focusField, setFocusField] = useState<string | undefined>();
   const [modal, setModal] = useState<'business' | 'customer' | 'site' | 'discount' | 'terms' | 'publish' | 'published' | 'privacy' | null>(null);
@@ -221,8 +236,10 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     }, 0);
   }
   async function sendMessage(text: string, retry = false) {
+    const dictated = retry ? undefined : dictationForSend(dictationTracking.current, text);
+    dictationTracking.current = null;
     setInput('');
-    const next = await state.runAssistant(text, locale, retry);
+    const next = await state.runAssistant(text, locale, retry, dictated);
     showAssistantResult(next);
   }
   function showAssistantResult(next: QuoteRecord | null) {
@@ -298,9 +315,15 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
     </MessageScroller></MessageScrollerProvider>
     <div className="qp-compose-area">
       {readOnly ? <div className="qp-chat-locked"><LockKeyhole /><p>{t('Cette révision est figée. Créez un brouillon pour poursuivre.', 'This revision is frozen. Create a draft to continue.')}</p></div> : <>
-        <form className="qp-composer" onSubmit={e => { e.preventDefault(); void sendMessage(input); }}>
+        {canDictate && <DictationPanel dictation={dictation} t={t} />}
+        <form className="qp-composer" onSubmit={e => { e.preventDefault(); if (!dictationActive) void sendMessage(input); }}>
           <label htmlFor="assistant-message">{t('Votre message', 'Your message')}</label>
-          <Textarea id="assistant-message" placeholder={t('Ajoutez une précision, un prix, une correction…', 'Add a detail, a price, a correction…')} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => {
+          <Textarea id="assistant-message" placeholder={dictation.state.status === 'transcribing' ? t('Transcription…', 'Transcription…') : t('Ajoutez une précision, un prix, une correction…', 'Add a detail, a price, a correction…')} value={input} readOnly={dictation.state.status === 'transcribing'} aria-busy={dictation.state.status === 'transcribing'} onChange={e => {
+            setInput(e.target.value);
+            // A cleared composer starts a new message; a later transcript starts new tracking.
+            if (!e.target.value) dictationTracking.current = null;
+          }} onKeyDown={e => {
+            if (dictation.state.status === 'transcribing') return;
             if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
             if (e.shiftKey || e.ctrlKey || e.metaKey) {
               e.preventDefault();
@@ -312,9 +335,9 @@ export default function QuoteWorkspace({ initial, locale, onList, onLanguage }: 
               return;
             }
             e.preventDefault();
-            if (input.trim() && ai !== 'processing') void sendMessage(input);
+            if (input.trim() && ai !== 'processing' && !dictationActive) void sendMessage(input);
           }} />
-          <div className="qp-composer-footer"><span>{t('Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne', 'Enter to send · Shift + Enter for a new line')}</span><Button type="submit" disabled={!input.trim() || ai === 'processing'} aria-label={t('Envoyer le message', 'Send message')}><ArrowUp /></Button></div>
+          <div className="qp-composer-footer">{canDictate && dictationActive ? <DictationProgress dictation={dictation} t={t} /> : <span>{t('Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne', 'Enter to send · Shift + Enter for a new line')}</span>}<div className="qp-composer-actions">{canDictate && <DictationButton dictation={dictation} t={t} />}<Button type="submit" disabled={!input.trim() || ai === 'processing' || dictationActive} aria-label={t('Envoyer le message', 'Send message')}><ArrowUp /></Button></div></div>
         </form>
       </>}
     </div>

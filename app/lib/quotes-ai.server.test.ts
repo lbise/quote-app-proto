@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 
 import { createAuthForDatabase } from "./auth.server";
 import { connectDatabase } from "./db.server";
-import { user } from "./db/schema";
+import { quoteMessage, user } from "./db/schema";
 import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
 import { createQuoteHandler } from "./quotes.server";
 
@@ -108,6 +108,28 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     }
     const reopened = await (await request(undefined, detail.id)).json();
     expect(reopened.draft.lines).toEqual([expect.objectContaining({ description: "Réglage de volets", mode: "fixed", amount: "486.50" })]);
+  });
+
+  it("records whether an Artisan message was dictated and its edit ratio, without extra text", async () => {
+    const detail = await createDraft();
+    const model = scriptedModel([fauxAssistantMessage("Noté."), fauxAssistantMessage("Noté.")]);
+    const dictated = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Trois portes.", locale: "fr", dictation: { editRatio: 0.125 } }, undefined, model.handler);
+    expect(dictated.status).toBe(200);
+    const afterDictation = await dictated.json();
+    const typed = await request({ action: "assistant", id: detail.id, expectedVersion: afterDictation.version, requestId: crypto.randomUUID(), text: "Deux fenêtres.", locale: "fr" }, undefined, model.handler);
+    expect(typed.status).toBe(200);
+
+    const rows = await connection.db.select().from(quoteMessage).where(and(eq(quoteMessage.quoteId, detail.id), eq(quoteMessage.role, "artisan"))).orderBy(asc(quoteMessage.sequence));
+    expect(rows.map((row) => [row.fr, row.dictated, row.dictationEditRatio])).toEqual([["Trois portes.", true, 0.125], ["Deux fenêtres.", false, null]]);
+  });
+
+  it("rejects malformed dictation metadata", async () => {
+    const detail = await createDraft();
+    for (const dictation of [{ editRatio: -0.1 }, { editRatio: 1.5 }, { editRatio: "0.1" }, { editRatio: Number.NaN }, { transcript: "Trois portes.", editRatio: 0 }, true]) {
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Trois portes.", locale: "fr", dictation });
+      expect(response.status, JSON.stringify(dictation)).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_dictation" });
+    }
   });
 
   it("tells the Artisan when the spending limit stops a turn and saves none of its staged changes", async () => {

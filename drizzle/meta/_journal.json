@@ -64,6 +64,13 @@
       "when": 1770000008000,
       "tag": "0008_demo_account",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1770000009000,
+      "tag": "0009_quote_message_dictation",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  doublePrecision,
   check,
   customType,
   integer,
@@ -216,12 +217,20 @@ export const quoteMessage = pgTable(
     en: text("en").notNull(),
     changed: jsonb("changed").$type<string[] | { lines: string[]; fields: string[] }>(),
     requestId: text("request_id"),
+    // Whether an Artisan message was entered by dictation, and the character
+    // edit ratio between the returned transcript and the sent text. Measures
+    // transcript quality; no audio or transcript text is stored.
+    dictated: boolean("dictated").default(false).notNull(),
+    dictationEditRatio: doublePrecision("dictation_edit_ratio"),
     // Timestamps can tie. This identity gives the persisted conversation a
     // durable order without relying on UUID ordering.
     sequence: integer("sequence").generatedAlwaysAsIdentity().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("quote_message_quote_sequence_idx").on(table.quoteId, table.sequence)],
+  (table) => [
+    index("quote_message_quote_sequence_idx").on(table.quoteId, table.sequence),
+    check("quote_message_dictation_edit_ratio", sql`(${table.dictated} AND ${table.dictationEditRatio} BETWEEN 0 AND 1) OR (NOT ${table.dictated} AND ${table.dictationEditRatio} IS NULL)`),
+  ],
 );
 
 export const quoteRequest = pgTable(

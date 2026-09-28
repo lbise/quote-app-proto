@@ -17,7 +17,8 @@ test("the assistant data warning is available from the chat header without block
   await expect(privacy).toBeVisible();
   await privacy.click();
   await expect(page.getByRole("heading", { name: "Assistant data processing" })).toBeVisible();
-  await expect(page.getByText("Google Gemini Developer API")).toBeVisible();
+  await expect(page.getByText("complete current Working Draft to Google Gemini Developer API")).toBeVisible();
+  await expect(page.getByText("Dictation sends the recorded audio to Google Gemini Developer API for transcription. Easy Quote does not keep the audio.")).toBeVisible();
   await expect(page.getByText("This is broader sharing than the earlier work-only context.")).toBeVisible();
   await expect(page.getByText("The assistant sends your current message, recent conversation and the complete current Working Draft")).toBeVisible();
   await expect(page.getByRole("link", { name: "Gemini API terms" })).toBeVisible();
