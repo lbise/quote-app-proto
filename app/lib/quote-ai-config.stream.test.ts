@@ -28,8 +28,8 @@ const google = {
 };
 
 describe("configured Quote AI stream", () => {
-  it("pins the selected credential and provider environment on models.streamSimple", () => {
-    const configured = configuredQuoteAI(google);
+  it("pins the selected credential and provider environment on models.streamSimple", async () => {
+    const configured = await configuredQuoteAI(google);
     const context = { messages: [] };
     const options = { apiKey: "ambient-key", env: { GEMINI_API_KEY: "ambient-key" }, maxTokens: 100 };
 

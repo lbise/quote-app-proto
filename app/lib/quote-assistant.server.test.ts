@@ -45,8 +45,9 @@ describe("pi Quote assistant model boundary", () => {
 
   it("rejects off and unsupported output limits for Gemini 3.5 Flash-Lite", () => {
     const { boundary } = modelBoundary([]);
-    const gemini = { ...boundary.model, provider: "google", api: "google-generative-ai", id: "gemini-3.5-flash-lite", reasoning: true, maxTokens: 65_536 };
-    expect(resolveQuoteAIGeneration(gemini)).toEqual({ reasoning: "off", maxOutputTokens: 4096 }); // Production remains unchanged.
+    const gemini = { ...boundary.model, provider: "google", api: "google-generative-ai", id: "gemini-3.5-flash-lite", reasoning: true, maxTokens: 65_536, thinkingLevelMap: { off: null } };
+    // The SDK would silently send MINIMAL for off, so production must choose explicitly too.
+    expect(() => resolveQuoteAIGeneration(gemini)).toThrow("requires an explicit reasoning setting");
     expect(() => resolveQuoteAIGeneration(gemini, { reasoning: "off", maxOutputTokens: 1024 })).toThrow("off is not supported");
     expect(() => resolveQuoteAIGeneration(gemini, { reasoning: "minimal", maxOutputTokens: 65_537 })).toThrow("1 through 65536");
     expect(resolveQuoteAIGeneration(gemini, { reasoning: "medium", maxOutputTokens: 1024 })).toEqual({ reasoning: "medium", maxOutputTokens: 1024 });

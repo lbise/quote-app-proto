@@ -1,7 +1,7 @@
 import { caseGroups, groupsFor } from "./case-groups";
 import { escapeHtml as h } from "./html";
 import type { EvaluationRun, EvaluationSessionRecord, Scenario } from "./types";
-import type { OpenRouterListing } from "./openrouter-models";
+import type { OpenRouterListing } from "../app/lib/openrouter-models.server";
 
 export type ExecutionView = {
   executionEnabled?: boolean;

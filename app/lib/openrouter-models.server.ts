@@ -2,6 +2,8 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 
 const base = "https://openrouter.ai/api/v1";
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9._~-]*\/[a-zA-Z0-9][a-zA-Z0-9._:~-]*$/;
+/** Syntax only. A well-formed ID still needs `resolveOpenRouterModel` before use. */
+export function isOpenRouterModelId(id: string): boolean { return idPattern.test(id); }
 const levels = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const priceKeys = ["prompt", "completion", "input_cache_read", "input_cache_write", "internal_reasoning", "request"] as const;
 // Public schemas: https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model

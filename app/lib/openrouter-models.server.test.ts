@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { Model } from "@earendil-works/pi-ai";
-import { discoverOpenRouterModels, resolveOpenRouterModel } from "./openrouter-models";
+import { discoverOpenRouterModels, resolveOpenRouterModel } from "./openrouter-models.server";
 
 const id = "example/new-text-model";
 const model = { id, name: "New text model", context_length: 8192,

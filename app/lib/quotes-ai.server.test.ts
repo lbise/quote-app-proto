@@ -110,6 +110,35 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
     expect(reopened.draft.lines).toEqual([expect.objectContaining({ description: "Réglage de volets", mode: "fixed", amount: "486.50" })]);
   });
 
+  it("tells the Artisan when the spending limit stops a turn and saves none of its staged changes", async () => {
+    const detail = await createDraft();
+    const model = scriptedModel([
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Titre non enregistré" } })], { stopReason: "toolUse" }),
+    ]);
+    let calls = 0;
+    let failure: string | undefined;
+    const handler = createQuoteHandler({ database: connection.db, auth, modelBoundary: {
+      ...model.modelBoundary,
+      failure: () => failure,
+      streamFn: async (...args: Parameters<typeof model.modelBoundary.streamFn>) => {
+        // The follow-up call is refused before anything would be sent.
+        if (++calls > 1) { failure = "spend_limit_reached"; throw new Error("Spending limit reached."); }
+        return model.modelBoundary.streamFn(...args);
+      },
+    } });
+    vi.stubEnv("QUOTE_AI_DEBUG", "false");
+    try {
+      const response = await request({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Change the title.", locale: "en" }, undefined, handler);
+      expect(response.status).toBe(502);
+      expect(await response.json()).toMatchObject({ error: "assistant_unavailable", details: { diagnostic: { phase: "model", code: "spend_limit_reached", outcome: "later_budget_exhausted" } } });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    const reopened = await (await request(undefined, detail.id)).json();
+    expect(reopened.draft.title).toBe(detail.draft.title);
+    expect(reopened.version).toBe(detail.version);
+  });
+
   it("edits details and a manual line, saves the result, and undoes the whole turn", async () => {
     let detail = await createDraft();
     detail = await (await request({ action: "save", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), quote: complete(detail.draft.reference) })).json();

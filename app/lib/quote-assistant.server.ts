@@ -1,9 +1,10 @@
-import { Agent, type StreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import { calculateQuote, type QuoteData } from "./quote";
 import type { QuoteAssistantAttemptOutcome, QuoteAssistantDiagnostic, QuoteAssistantLlmRequest, QuoteAssistantSuccessDebug, QuoteAssistantToolAttempt, QuoteAssistantToolCall } from "./quote-assistant-debug";
 import { configuredQuoteAI } from "./quote-ai-config.server";
+import { QuoteAIGenerationError, resolveQuoteAIGeneration, type QuoteAIGeneration, type QuoteAIGenerationOptions } from "./quote-ai-generation";
 import { quoteDraftLimit } from "./quote-limits";
 import { createQuoteTools, type CopyFact } from "./quote-tools.server";
 
@@ -16,6 +17,8 @@ export type QuoteAIInput = {
   locale: "fr" | "en";
 };
 
+export { QuoteAIGenerationError, resolveQuoteAIGeneration, type QuoteAIGeneration, type QuoteAIGenerationOptions };
+
 export type QuoteAIResult = {
   quote: QuoteData | null;
   message: string;
@@ -26,55 +29,15 @@ export type QuoteAIResult = {
   debug?: QuoteAssistantSuccessDebug;
 };
 
-/** Evaluation-only overrides. Production omits this and retains its existing defaults. */
-export type QuoteAIGenerationOptions = {
-  /** Untrusted configuration is validated before it reaches Agent. */
-  reasoning?: string;
-  maxOutputTokens?: number;
-};
-
-export type QuoteAIGeneration = {
-  reasoning: ThinkingLevel;
-  maxOutputTokens: number;
-};
-
-const productGeneration: QuoteAIGeneration = Object.freeze({ reasoning: "off", maxOutputTokens: 4096 });
-const thinkingLevels = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-const geminiFlashLiteReasoning = new Set<ThinkingLevel>(["minimal", "low", "medium", "high"]);
-
-function isGeminiFlashLite(model: Model<Api>) {
-  return model.provider === "google" && model.api === "google-generative-ai" && model.id === "gemini-3.5-flash-lite";
-}
-
-/**
- * Resolves an explicit evaluation generation request before it reaches Agent.
- * Gemini 3.5 Flash-Lite cannot disable thinking: sending `off` makes the SDK
- * substitute MINIMAL, which would misstate the requested configuration.
- */
-export function resolveQuoteAIGeneration(model: Model<Api>, requested?: QuoteAIGenerationOptions, requireExplicitWhenOffUnsupported = false): QuoteAIGeneration {
-  // Do not change production's established defaults through evaluation-only validation.
-  if (!requested && !requireExplicitWhenOffUnsupported) return { ...productGeneration };
-  if (!requested && requireExplicitWhenOffUnsupported && isGeminiFlashLite(model)) {
-    throw new Error("Gemini 3.5 Flash-Lite requires an explicit supported evaluation reasoning setting; off is not supported.");
-  }
-  const reasoning = requested?.reasoning ?? productGeneration.reasoning;
-  const maxOutputTokens = requested?.maxOutputTokens ?? productGeneration.maxOutputTokens;
-  if (!thinkingLevels.has(reasoning as ThinkingLevel)) throw new Error("Unsupported reasoning setting.");
-  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > model.maxTokens) {
-    throw new Error(`maxOutputTokens must be an integer from 1 through ${model.maxTokens}.`);
-  }
-  const generation: QuoteAIGeneration = { reasoning: reasoning as ThinkingLevel, maxOutputTokens };
-  if (isGeminiFlashLite(model) && !geminiFlashLiteReasoning.has(generation.reasoning)) {
-    throw new Error("Gemini 3.5 Flash-Lite supports evaluation reasoning minimal, low, medium, or high; off is not supported.");
-  }
-  if (generation.reasoning !== "off" && !model.reasoning) {
-    throw new Error(`Reasoning is not supported by ${model.provider}/${model.id}.`);
-  }
-  return generation;
-}
-
 /** Server-only injection at the model transport, never at the tool executor. */
-export type QuoteAIModelBoundary = { model: Model<Api>; streamFn: StreamFn; timeoutMs: number; generation?: QuoteAIGenerationOptions };
+export type QuoteAIModelBoundary = {
+  model: Model<Api>;
+  streamFn: StreamFn;
+  timeoutMs: number;
+  generation?: QuoteAIGenerationOptions;
+  /** A bounded failure code recorded by the transport (for example, a spend refusal), never provider text. */
+  failure?: () => string | undefined;
+};
 
 export class QuoteAIError extends Error {
   constructor(readonly diagnostic: QuoteAssistantDiagnostic, message = "The Quote assistant could not complete this request.") {
@@ -212,7 +175,10 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   let config: QuoteAIModelBoundary;
   try {
     config = modelBoundary ?? await configuredQuoteAI();
-  } catch {
+  } catch (error) {
+    if (error instanceof QuoteAIGenerationError) {
+      throw new QuoteAIError({ phase: "validation", code: "invalid_generation_settings" }, "Quote AI generation settings are invalid.");
+    }
     throw new QuoteAIError({ phase: "model", code: "provider_configuration_invalid" }, "Quote AI configuration is invalid.");
   }
   let generation: QuoteAIGeneration;
@@ -221,6 +187,10 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   } catch {
     throw new QuoteAIError({ phase: "validation", code: "invalid_generation_settings" }, "Quote AI generation settings are invalid.");
   }
+  const boundaryDiagnostic = (): QuoteAssistantDiagnostic | undefined => {
+    const code = config.failure?.();
+    return code && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? { phase: "model", code, outcome: "later_budget_exhausted" } : undefined;
+  };
   let failed = false;
   let rounds = 0;
   let toolCalls = 0;
@@ -383,11 +353,12 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     failed = true;
     agent.abort();
     if (timedOut) diagnostic = { phase: "model", code: "timeout", outcome: "later_budget_exhausted" };
-    else if (diagnostic.code === "assistant_failed") diagnostic = { phase: "model", code: "provider_request_failed", outcome: "later_budget_exhausted" };
+    else if (diagnostic.code === "assistant_failed") diagnostic = boundaryDiagnostic() ?? { phase: "model", code: "provider_request_failed", outcome: "later_budget_exhausted" };
     throw new QuoteAIError(diagnosticWithRequest(diagnostic));
   } finally {
     clearTimeout(timer);
   }
+  if (diagnostic.code === "assistant_failed") diagnostic = boundaryDiagnostic() ?? diagnostic;
   const last = agent.state.messages.at(-1);
   if (failed || !last || last.role !== "assistant" || last.stopReason !== "stop") throw new QuoteAIError(diagnosticWithRequest(diagnostic));
   const modelMessage = last.content.filter((part) => part.type === "text").map((part) => part.text).join("\n").trim();

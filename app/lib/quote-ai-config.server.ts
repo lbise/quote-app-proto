@@ -2,7 +2,12 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createModels, type Api, type Model } from "@earendil-works/pi-ai";
 import { googleProvider } from "@earendil-works/pi-ai/providers/google";
 
+import { isOpenRouterModelId } from "./openrouter-models.server";
+import { quoteAIThinkingLevels, resolveQuoteAIGeneration, type QuoteAIGenerationOptions } from "./quote-ai-generation";
 import type { QuoteAIDisclosure } from "./quote-ai-disclosure";
+import { openRouterBoundary } from "./quote-ai-openrouter.server";
+import { databaseSpendLedger, type QuoteAISpendLedger } from "./quote-ai-spend.server";
+import { parseSpendUsd } from "./spend-usd";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MIN_TIMEOUT_MS = 1_000;
@@ -10,26 +15,28 @@ const MAX_TIMEOUT_MS = 45_000;
 
 type Environment = NodeJS.ProcessEnv | Record<string, string | undefined>;
 
-type RegisteredProvider = {
-  credential: string;
-  publicName: string;
-  create: () => ReturnType<typeof googleProvider>;
-};
-
 // Adding a provider requires an intentional registration here. Environment
-// variables may select a registered catalog entry, never a custom endpoint.
-const registeredProviders: Record<string, RegisteredProvider> = {
-  google: {
-    credential: "GEMINI_API_KEY",
-    publicName: "Google Gemini Developer API",
-    create: googleProvider,
-  },
-};
+// variables may select a registered provider, never a custom endpoint.
+const registeredProviders = {
+  google: { credential: "GEMINI_API_KEY", publicName: "Google Gemini Developer API" },
+  openrouter: { credential: "OPENROUTER_API_KEY", publicName: "OpenRouter" },
+} as const;
+type ProviderId = keyof typeof registeredProviders;
 
 export type QuoteAIConfiguration = {
   model: Model<Api>;
   streamFn: StreamFn;
   timeoutMs: number;
+  /** Deployment-requested settings; validated against the model before any request. */
+  generation?: QuoteAIGenerationOptions;
+  failure?: () => string | undefined;
+};
+
+/** Server-side collaborators, injectable for tests. */
+export type QuoteAIDependencies = {
+  fetch?: typeof fetch;
+  ledger?: QuoteAISpendLedger;
+  now?: () => number;
 };
 
 function required(env: Environment, name: string): string {
@@ -51,21 +58,40 @@ function timeout(env: Environment): number {
   return parsed;
 }
 
-function selectedProvider(env: Environment): [string, RegisteredProvider] {
-  const id = required(env, "QUOTE_AI_PROVIDER");
-  const provider = Object.hasOwn(registeredProviders, id) ? registeredProviders[id] : undefined;
-  if (!provider) throw new Error("QUOTE_AI_PROVIDER must name a registered provider.");
-  return [id, provider];
+/** Syntax only; support for a level or token limit depends on the model. */
+function generation(env: Environment): QuoteAIGenerationOptions | undefined {
+  const reasoning = env.QUOTE_AI_REASONING?.trim() || undefined;
+  const maxOutputTokens = env.QUOTE_AI_MAX_OUTPUT_TOKENS?.trim() || undefined;
+  if (reasoning !== undefined && !(quoteAIThinkingLevels as readonly string[]).includes(reasoning)) {
+    throw new Error(`QUOTE_AI_REASONING must be one of ${quoteAIThinkingLevels.join(", ")}.`);
+  }
+  if (maxOutputTokens !== undefined && !/^[1-9]\d{0,6}$/.test(maxOutputTokens)) {
+    throw new Error("QUOTE_AI_MAX_OUTPUT_TOKENS must be a positive integer.");
+  }
+  if (reasoning === undefined && maxOutputTokens === undefined) return undefined;
+  return { ...(reasoning ? { reasoning } : {}), ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}) };
 }
 
-function selectedModel(env: Environment): { model: Model<Api>; streamFn: StreamFn } {
-  const [providerId, provider] = selectedProvider(env);
-  const credential = required(env, provider.credential);
+function spendLimitNanoUsd(env: Environment): number {
+  const value = env.QUOTE_AI_SPEND_LIMIT_USD?.trim();
+  if (!value) throw new Error("QUOTE_AI_SPEND_LIMIT_USD is required for OpenRouter Quote AI.");
+  try { return parseSpendUsd(value).nanoUsd; }
+  catch { throw new Error("QUOTE_AI_SPEND_LIMIT_USD must be a positive USD amount up to 1000000 with at most 9 decimal places."); }
+}
+
+function selectedProvider(env: Environment): ProviderId {
+  const id = required(env, "QUOTE_AI_PROVIDER");
+  if (!Object.hasOwn(registeredProviders, id)) throw new Error("QUOTE_AI_PROVIDER must name a registered provider.");
+  return id as ProviderId;
+}
+
+function googleModel(env: Environment): { model: Model<Api>; streamFn: StreamFn } {
+  const credential = required(env, registeredProviders.google.credential);
   const models = createModels();
-  models.setProvider(provider.create());
+  models.setProvider(googleProvider());
   const modelId = required(env, "QUOTE_AI_MODEL");
-  const model = models.getModel(providerId, modelId);
-  if (!model) throw new Error(`QUOTE_AI_MODEL is not registered for provider ${providerId}.`);
+  const model = models.getModel("google", modelId);
+  if (!model) throw new Error("QUOTE_AI_MODEL is not registered for provider google.");
 
   const streamFn: StreamFn = (model, context, options) =>
     models.streamSimple(model, context, {
@@ -73,33 +99,68 @@ function selectedModel(env: Environment): { model: Model<Api>; streamFn: StreamF
       // The selected credential and provider environment win over process
       // state and Agent options. A request cannot drift to an ambient key.
       apiKey: credential,
-      env: { [provider.credential]: credential },
+      env: { GEMINI_API_KEY: credential },
     });
   return { model, streamFn };
 }
 
-/**
- * Validates outbound AI before requests can be made. This is pure and makes no
- * provider request, so it is safe to call during process startup.
- */
-export function assertQuoteAIConfiguration(env: Environment = process.env): void {
-  selectedProvider(env);
-  selectedModel(env);
-  timeout(env);
+function openRouterSettings(env: Environment) {
+  const apiKey = required(env, registeredProviders.openrouter.credential);
+  const modelId = required(env, "QUOTE_AI_MODEL");
+  if (!isOpenRouterModelId(modelId)) throw new Error("QUOTE_AI_MODEL must be an exact OpenRouter model ID such as author/model.");
+  return { apiKey, modelId, spendLimitNanoUsd: spendLimitNanoUsd(env) };
 }
 
 /**
- * Returns the server-owned model and bound pi stream function. It never reads
- * an endpoint from configuration and never falls back to a different model.
+ * Validates outbound AI before requests can be made. This is synchronous and
+ * makes no provider request, so it is safe to call during process startup.
+ * OpenRouter model metadata is checked before each request instead.
  */
-export function configuredQuoteAI(env: Environment = process.env): QuoteAIConfiguration {
-  assertQuoteAIConfiguration(env);
-  const { model, streamFn } = selectedModel(env);
-  return { model, streamFn, timeoutMs: timeout(env) };
+export function assertQuoteAIConfiguration(env: Environment = process.env): void {
+  const provider = selectedProvider(env);
+  timeout(env);
+  const requested = generation(env);
+  if (provider === "openrouter") {
+    openRouterSettings(env);
+    return;
+  }
+  resolveQuoteAIGeneration(googleModel(env).model, requested);
+}
+
+/**
+ * Returns the server-owned model and bound stream function. It never reads an
+ * endpoint from configuration and never falls back to a different provider,
+ * model, route, or generation setting.
+ */
+export async function configuredQuoteAI(env: Environment = process.env, dependencies: QuoteAIDependencies = {}): Promise<QuoteAIConfiguration> {
+  if (selectedProvider(env) === "google") return configuredGoogleQuoteAI(env);
+  const timeoutMs = timeout(env);
+  const requested = generation(env);
+  const settings = openRouterSettings(env);
+  const boundary = await openRouterBoundary({
+    ...settings, timeoutMs, generation: requested,
+    // Loaded lazily: importing the database module reads .env as a side effect.
+    ledger: dependencies.ledger ?? databaseSpendLedger((await import("./db.server")).getDatabase()),
+    fetch: dependencies.fetch ?? globalThis.fetch,
+    now: dependencies.now ?? Date.now,
+  });
+  return boundary;
+}
+
+/**
+ * Synchronous direct Google selection, for callers (such as the evaluator)
+ * that choose Google explicitly. Generation settings are validated later,
+ * against the requested settings of the caller.
+ */
+export function configuredGoogleQuoteAI(env: Environment = process.env): QuoteAIConfiguration {
+  if (selectedProvider(env) !== "google") throw new Error("QUOTE_AI_PROVIDER must be google for this configuration.");
+  const timeoutMs = timeout(env);
+  const requested = generation(env);
+  const { model, streamFn } = googleModel(env);
+  return { model, streamFn, timeoutMs, ...(requested ? { generation: requested } : {}) };
 }
 
 /** Returns safe server-to-browser information, never credentials. */
 export function quoteAIDisclosure(env: Environment = process.env): QuoteAIDisclosure {
-  const provider = selectedProvider(env)[1];
-  return { providerName: provider.publicName };
+  return { providerName: registeredProviders[selectedProvider(env)].publicName };
 }

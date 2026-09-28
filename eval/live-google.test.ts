@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, it, vi } from "vitest";
-import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
+import { configuredGoogleQuoteAI } from "../app/lib/quote-ai-config.server";
 import { emptyQuote } from "../app/lib/quote";
 import { generateQuoteChange } from "../app/lib/quote-assistant.server";
 import { createLiveSession } from "./live";
@@ -13,7 +13,7 @@ import type { Scenario } from "./types";
 it("records a bounded Google terminal reason before wrapping a provider error", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-google-terminal-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
-  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+  const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
   const live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
     maxCalls: 1, maxElapsedMs: 10_000, maxSpendUsd: 1, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 4096 } });
   const network = vi.fn(async () => new Response(`data: ${JSON.stringify({ candidates: [{ finishReason: "SAFETY" }],
@@ -40,7 +40,7 @@ it("records a bounded Google terminal reason before wrapping a provider error", 
 it("records MAX_TOKENS on a complete zero-output Google completion", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-google-length-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
-  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+  const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
   const live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
     maxCalls: 1, maxElapsedMs: 10_000, maxSpendUsd: 1, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 4096 } });
   const network = vi.fn(async () => new Response(`data: ${JSON.stringify({ candidates: [{ finishReason: "MAX_TOKENS" }],
@@ -67,7 +67,7 @@ it("records MAX_TOKENS on a complete zero-output Google completion", async () =>
 it("rejects an over-cap follow-up locally and admits the next Scenario Run", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-run-cap-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
-  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+  const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
   const network = vi.fn(async () => new Response(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "No change." }] }, finishReason: "STOP" }],
     usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, totalTokenCount: 150 } })}\n\n`, { headers: { "content-type": "text/event-stream" } }));
   vi.stubGlobal("fetch", network);
@@ -100,7 +100,7 @@ it("rejects manual-only scenarios instead of labeling a zero-call case a live-mo
   const root = await mkdtemp(join(tmpdir(), "eval-manual-only-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
   try {
-    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
     const manual: Scenario = { ...scenarios[0], steps: [{ kind: "manual", note: "Manual edit only", quote: scenarios[0].startingQuote, assertions: [] }] };
     expect(() => createLiveSession({ modelBoundary: boundary, scenarios: [manual], approvedProviderDataReview: true,
       maxCalls: 1, maxElapsedMs: 1000, maxSpendUsd: 1, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 4096 } })).toThrow("Artisan message");
@@ -111,7 +111,7 @@ it("refuses an expired price review before creating a live session", async () =>
   const root = await mkdtemp(join(tmpdir(), "eval-expired-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-29T00:00:00Z"));
   try {
-    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
     expect(() => createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
       maxCalls: 1, maxElapsedMs: 1000, maxSpendUsd: 1, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 4096 } })).toThrow("pricing review has expired");
   } finally { clock.mockRestore(); await rm(root, { recursive: true, force: true }); }
@@ -120,7 +120,7 @@ it("refuses an expired price review before creating a live session", async () =>
 it("passes explicit evaluation generation through Agent to the Google request", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-google-generation-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
-  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+  const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
   const live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
     maxCalls: 1, maxElapsedMs: 10_000, maxSpendUsd: 1, artifactRoot: root, generation: { reasoning: "high", maxOutputTokens: 1024 } });
   const network = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
@@ -161,7 +161,7 @@ it.each([
   vi.stubGlobal("fetch", network);
   let live: ReturnType<typeof createLiveSession> | undefined;
   try {
-    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
     live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
       maxCalls: 2, maxElapsedMs: 10000, maxSpendUsd, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 4096 } });
     const { boundary: wrapped } = live.forRun(scenarios[0], boundary);
@@ -180,7 +180,7 @@ it.each([
 it.each([0, -1, 1e-10, 1.0000000001, 1_000_000.000000001, NaN, Infinity])("rejects invalid numeric live cap %s without rounding it into an allowance", async maxSpendUsd => {
   const root = await mkdtemp(join(tmpdir(), "eval-google-invalid-limit-"));
   try {
-    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
     expect(() => createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
       maxCalls: 1, maxElapsedMs: 1000, maxSpendUsd, artifactRoot: root, generation: { reasoning: "minimal" } })).toThrow("USD must be a positive amount");
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -190,7 +190,7 @@ it("requires an explicit supported Gemini setting and never accepts off", async 
   const root = await mkdtemp(join(tmpdir(), "eval-google-settings-validation-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
   try {
-    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
     const create = (generation?: { reasoning?: "off" | "minimal"; maxOutputTokens?: number }) => createLiveSession({
       modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
       maxCalls: 1, maxElapsedMs: 1000, maxSpendUsd: 1, artifactRoot: root, generation,
@@ -205,7 +205,7 @@ it("exposes cancellation without releasing durable reservations", async () => {
   const root = await mkdtemp(join(tmpdir(), "eval-google-cancel-"));
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-22T12:00:00Z"));
   try {
-    const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
+    const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key" });
     const live = createLiveSession({ modelBoundary: boundary, scenarios: [scenarios[0]], approvedProviderDataReview: true,
       maxCalls: 1, maxElapsedMs: 1000, maxSpendUsd: 1, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 1024 } });
     live.cancel("user_stop");
@@ -226,7 +226,7 @@ it.runIf(Boolean(process.env.EVAL_DATABASE_URL)).each(["success", "http-error"])
       assertions: [{ label: "title", path: "quote.title", operator: "equals", expected: "SDK bounded" }] }],
     requiredClarification: [], forbiddenMutations: [], humanReview: [],
   };
-  const boundary = configuredQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key", QUOTE_AI_TIMEOUT_MS: "10000" });
+  const boundary = configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite", GEMINI_API_KEY: "controlled-test-key", QUOTE_AI_TIMEOUT_MS: "10000" });
   const live = createLiveSession({ modelBoundary: boundary, scenarios: [example], approvedProviderDataReview: true,
     maxCalls: 2, maxElapsedMs: 10_000, maxSpendUsd: 2, artifactRoot: root, generation: { reasoning: "minimal", maxOutputTokens: 4096 } });
   let requests = 0;

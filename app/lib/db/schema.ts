@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -231,4 +232,17 @@ export const quoteRequest = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [uniqueIndex("quote_request_business_request_idx").on(table.businessId, table.requestId)],
+);
+
+// One cumulative Quote AI spending allowance per deployment database, shared by
+// every Artisan and server process. Reservations are integer nanodollars and
+// never reset automatically; the operator raises the configured ceiling.
+export const quoteAISpend = pgTable(
+  "quote_ai_spend",
+  {
+    scope: text("scope").primaryKey(),
+    reservedNanoUsd: bigint("reserved_nano_usd", { mode: "number" }).default(0).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [check("quote_ai_spend_non_negative", sql`${table.reservedNanoUsd} >= 0`)],
 );

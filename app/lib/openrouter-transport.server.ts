@@ -1,6 +1,6 @@
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model, type OpenRouterRouting, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
-import type { QuoteAIGeneration } from "../app/lib/quote-assistant.server";
+import type { QuoteAIGeneration } from "./quote-ai-generation";
 
 export type OpenRouterEvidence = {
   status: "pending" | "complete" | "uncertain";
@@ -36,6 +36,8 @@ type ObjectValue = Record<string, unknown>;
 const object = (value: unknown): value is ObjectValue => !!value && typeof value === "object" && !Array.isArray(value);
 const count = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 const identity = (value: unknown): value is string => typeof value === "string" && /^[\w./:@-]{1,128}$/.test(value);
+/** Routed provider names can contain single inner spaces, for example "Google AI Studio". */
+const providerName = (value: unknown): value is string => typeof value === "string" && value.length <= 128 && /^[\w./:@-]+(?: [\w./:@-]+)*$/.test(value);
 
 function usageFrom(raw: unknown, maxOutputTokens: number, requireReasoningUsage: boolean): Pick<OpenRouterEvidence, "usage" | "reason" | "reportedCostUsd"> {
   if (!object(raw)) return { reason: "usage_missing" };
@@ -132,7 +134,7 @@ function observe(response: Response, state: { done: boolean; usage?: unknown; us
       if (!object(chunk)) { state.invalid = true; return; }
       for (const [field, target] of [["model", "routedModel"], ["provider", "routedProvider"], ["id", "responseId"]] as const) {
         if (chunk[field] !== undefined) {
-          if (!identity(chunk[field])) { state.invalid = true; continue; }
+          if (!(field === "provider" ? providerName : identity)(chunk[field])) { state.invalid = true; continue; }
           const previous = state[target];
           if (previous && previous !== chunk[field]) state.invalid = true;
           else state[target] = chunk[field];
@@ -253,7 +255,7 @@ export function createOpenRouterTransport(request: OpenRouterTransportRequest) {
         evidence.status = "uncertain";
         evidence.reason ??= "provider_error";
         const error: AssistantMessage = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
-          content: [], timestamp: Date.now(), stopReason: "error", errorMessage: `OpenRouter evaluation stopped: ${evidence.reason}.`,
+          content: [], timestamp: Date.now(), stopReason: "error", errorMessage: `OpenRouter request stopped: ${evidence.reason}.`,
           usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
         stream.push({ type: "error", reason: "error", error });
       }
@@ -261,7 +263,7 @@ export function createOpenRouterTransport(request: OpenRouterTransportRequest) {
       evidence.status = "uncertain";
       evidence.reason = "request_invalid";
       const error: AssistantMessage = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
-        content: [], timestamp: Date.now(), stopReason: "error", errorMessage: "OpenRouter evaluation request failed.",
+        content: [], timestamp: Date.now(), stopReason: "error", errorMessage: "OpenRouter request failed.",
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
       stream.push({ type: "error", reason: "error", error });
     } finally { stream.end(); }

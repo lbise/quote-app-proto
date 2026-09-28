@@ -9,9 +9,9 @@ import { sessionCost } from "./execution-report";
 import { ActiveEvaluationSessionError, beginEvaluationSession, listEvaluationSessions } from "./sessions";
 import { createEvaluationPlan, selectEvaluationScenarios, startEvaluation } from "./execution";
 import { assertLivePricing, createLiveSession } from "./live";
-import { parseSpendUsd } from "./spend";
-import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
-import { discoverOpenRouterModels, resolveOpenRouterModel } from "./openrouter-models";
+import { parseSpendUsd } from "../app/lib/spend-usd";
+import { configuredGoogleQuoteAI } from "../app/lib/quote-ai-config.server";
+import { discoverOpenRouterModels, resolveOpenRouterModel } from "../app/lib/openrouter-models.server";
 import { resolveEvaluationModel } from "./model-config";
 import { assertEvaluationControlUrl } from "./isolation";
 import pg from "pg";
@@ -95,7 +95,7 @@ function providerProblem(environment: Record<string, string | undefined>): strin
   if (provider && provider !== "google" && provider !== "openrouter"
     || provider !== "openrouter" && environment.QUOTE_AI_MODEL?.trim() && environment.QUOTE_AI_MODEL?.trim() !== "gemini-3.5-flash-lite") return providerProblems.model;
   if (!environment.GEMINI_API_KEY?.trim()) return providerProblems.credential;
-  try { configuredQuoteAI({ ...environment, QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite" }); } catch { return providerProblems.configuration; }
+  try { configuredGoogleQuoteAI({ ...environment, QUOTE_AI_PROVIDER: "google", QUOTE_AI_MODEL: "gemini-3.5-flash-lite" }); } catch { return providerProblems.configuration; }
   try { assertLivePricing(); } catch { return providerProblems.pricing; }
 }
 function publicSession(record: EvaluationSessionRecord): EvaluationSessionRecord {

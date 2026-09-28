@@ -1,8 +1,8 @@
 import { createModels } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
-import { configuredQuoteAI } from "../app/lib/quote-ai-config.server";
-import { resolveOpenRouterModel, type OpenRouterResolution } from "./openrouter-models";
+import { configuredGoogleQuoteAI } from "../app/lib/quote-ai-config.server";
+import { resolveOpenRouterModel, type OpenRouterResolution } from "../app/lib/openrouter-models.server";
 
 type Environment = Record<string, string | undefined>;
 type Selection = { provider: string; modelId: string; environment: Environment; fetchFn?: typeof fetch };
@@ -13,7 +13,7 @@ export async function resolveEvaluationModel({ provider, modelId, environment, f
   openRouter?: { resolution: OpenRouterResolution; apiKey: string };
 }> {
   if (provider === "google") {
-    return { boundary: configuredQuoteAI({ QUOTE_AI_PROVIDER: provider, QUOTE_AI_MODEL: modelId,
+    return { boundary: configuredGoogleQuoteAI({ QUOTE_AI_PROVIDER: provider, QUOTE_AI_MODEL: modelId,
       GEMINI_API_KEY: environment.GEMINI_API_KEY, QUOTE_AI_TIMEOUT_MS: environment.QUOTE_AI_TIMEOUT_MS }) };
   }
   if (provider !== "openrouter") throw new Error("Evaluation provider must name a registered provider: google or openrouter.");

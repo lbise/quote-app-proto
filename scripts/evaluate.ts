@@ -5,7 +5,7 @@ import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/provid
 
 import { selectEvaluationScenarios, startEvaluation } from "../eval/execution";
 import { createLiveSession } from "../eval/live";
-import { parseSpendUsd } from "../eval/spend";
+import { parseSpendUsd } from "../app/lib/spend-usd";
 import type { Scenario } from "../eval/types";
 
 const help = `Usage: npm run eval:run -- [options]

@@ -30,9 +30,10 @@ const defaultFields = ["businessName", "businessAddress", "businessContact", "va
 function assistantDiagnostic(error: unknown, requestId: string, fallback: QuoteAssistantDiagnostic): { diagnostic: QuoteAssistantDiagnostic } | undefined {
   const diagnostic = error instanceof QuoteAIError ? error.diagnostic : fallback;
   if (process.env.QUOTE_AI_DEBUG !== "true") {
-    return diagnostic.code === "destructive_scope_rejected"
-      ? { diagnostic: { phase: "tool", code: diagnostic.code, outcome: "discarded", requestId } }
-      : undefined;
+    if (diagnostic.code === "destructive_scope_rejected") return { diagnostic: { phase: "tool", code: diagnostic.code, outcome: "discarded", requestId } };
+    // The Artisan needs to know retrying cannot help until the operator raises the ceiling.
+    if (diagnostic.code === "spend_limit_reached") return { diagnostic: { phase: "model", code: diagnostic.code, outcome: "later_budget_exhausted", requestId } };
+    return undefined;
   }
   return { diagnostic: { ...diagnostic, requestId } };
 }

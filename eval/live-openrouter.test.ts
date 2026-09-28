@@ -7,7 +7,7 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { emptyQuote } from "../app/lib/quote";
 import { generateQuoteChange } from "../app/lib/quote-assistant.server";
 import { createLiveSession } from "./live";
-import { resolveOpenRouterModel } from "./openrouter-models";
+import { resolveOpenRouterModel } from "../app/lib/openrouter-models.server";
 import { scenarios } from "./scenarios";
 
 const id = "sample/plain-tools";

@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { createModels } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { createLiveSession } from "./live";
-import { resolveOpenRouterModel } from "./openrouter-models";
+import { resolveOpenRouterModel } from "../app/lib/openrouter-models.server";
 import { scenarios } from "./scenarios";
 
 it.each([{ caseName: "reported charge", prompt: 20, cost: 1, stopReason: "cost_exceeds_reservation" },

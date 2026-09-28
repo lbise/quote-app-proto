@@ -5,9 +5,10 @@ import { performance } from "node:perf_hooks";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { resolveQuoteAIGeneration, type QuoteAIGeneration, type QuoteAIGenerationOptions, type QuoteAIModelBoundary } from "../app/lib/quote-assistant.server";
 import { scenarioHash } from "./scenario-hash";
-import { createOpenRouterTransport, type OpenRouterEvidence } from "./openrouter-transport";
-import type { OpenRouterResolution } from "./openrouter-models";
-import { parseSpendUsd } from "./spend";
+import { createOpenRouterTransport, type OpenRouterEvidence } from "../app/lib/openrouter-transport.server";
+import type { OpenRouterResolution } from "../app/lib/openrouter-models.server";
+import { parseSpendUsd } from "../app/lib/spend-usd";
+import { conservativeBoundNanoUsd, openRouterNanoPricing } from "../app/lib/openrouter-pricing.server";
 import type { LiveCall, LiveEvidence, Scenario } from "./types";
 
 // Reviewed primary sources and SDK behavior: docs/research/evaluation-google-budget.md.
@@ -27,25 +28,15 @@ const googleThinkingLevel: Record<Exclude<QuoteAIGeneration["reasoning"], "off" 
   minimal: "MINIMAL", low: "LOW", medium: "MEDIUM", high: "HIGH",
 };
 function reservationFor(generation: QuoteAIGeneration, price: LiveEvidence["pricing"]) {
-  const inputRate = Math.max(price.inputNanoUsd, price.cacheReadNanoUsd ?? 0, price.cacheWriteNanoUsd ?? 0);
-  const bound = price.maxInputTokens * inputRate + generation.maxOutputTokens * (price.outputNanoUsd + (price.reasoningNanoUsd ?? 0)) + (price.requestNanoUsd ?? 0);
-  if (!Number.isSafeInteger(bound) || bound <= 0) throw new Error("No usable conservative price bound for this model.");
-  return bound;
+  return conservativeBoundNanoUsd(generation.maxOutputTokens, price);
 }
 function openRouterPricing(resolution: OpenRouterResolution): LiveEvidence["pricing"] {
-  if (!resolution.available || !resolution.model || !resolution.pricing || !resolution.endpoints.length) throw new Error("OpenRouter model has no verified price and routing metadata.");
-  const { pricing: rates, model } = resolution;
-  const nano = (rate: number) => {
-    if (!Number.isFinite(rate) || rate < 0 || !Number.isSafeInteger(Math.ceil(rate * 1_000_000_000) + 1)) throw new Error("OpenRouter price is unbounded.");
-    return Math.ceil(rate * 1_000_000_000) + 1;
-  };
-  return { id: `openrouter/${resolution.id}/${rates.checkedAt}`, checkedAt: rates.checkedAt,
-    expiresAt: new Date(Date.parse(rates.checkedAt) + 15 * 60_000).toISOString(), source: rates.source,
-    units: "nanodollars per token; request fee per call", routing: rates.routing,
-    endpoints: structuredClone(resolution.endpoints), maxInputTokens: model.contextWindow, maxOutputTokens: model.maxTokens,
-    inputNanoUsd: nano(rates.maxInputUsdPerToken), outputNanoUsd: nano(rates.maxOutputUsdPerToken),
-    cacheReadNanoUsd: nano(rates.maxCacheReadUsdPerToken), cacheWriteNanoUsd: nano(rates.maxCacheWriteUsdPerToken),
-    requestNanoUsd: nano(rates.maxRequestUsd), reasoningNanoUsd: nano(rates.maxReasoningUsdPerToken) };
+  const rates = openRouterNanoPricing(resolution);
+  const checkedAt = resolution.pricing!.checkedAt;
+  return { id: `openrouter/${resolution.id}/${checkedAt}`, checkedAt,
+    expiresAt: new Date(Date.parse(checkedAt) + 15 * 60_000).toISOString(), source: resolution.pricing!.source,
+    units: "nanodollars per token; request fee per call", routing: resolution.pricing!.routing,
+    endpoints: structuredClone(resolution.endpoints), ...rates };
 }
 
 function syncDirectoryTree(directory: string) {
@@ -191,7 +182,7 @@ export class LiveSession {
       if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > model.maxTokens) throw new Error("Unsupported OpenRouter output-token limit.");
       this.generation = { reasoning: reasoning as QuoteAIGeneration["reasoning"], maxOutputTokens };
     } else {
-      this.generation = resolveQuoteAIGeneration(model, requested, true);
+      this.generation = resolveQuoteAIGeneration(model, requested);
     }
     if (this.generation.maxOutputTokens > this.price.maxOutputTokens) {
       throw new Error(`Live pricing supports at most ${this.price.maxOutputTokens} output tokens per call.`);

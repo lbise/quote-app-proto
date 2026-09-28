@@ -50,6 +50,13 @@
       "when": 1770000006000,
       "tag": "0006_business_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770000007000,
+      "tag": "0007_quote_ai_spend",
+      "breakpoints": true
     }
   ]
 }
