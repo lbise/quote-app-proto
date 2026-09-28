@@ -6,7 +6,7 @@ import { networkInterfaces } from "node:os";
 import { listRuns, MissingScenarioRunError, readReviews, saveReview, withoutCredentials, type ReviewInput } from "./artifacts";
 import { readableDate, renderReport } from "./report";
 import { sessionCost, sessionEvidence } from "./execution-report";
-import { ActiveEvaluationSessionError, beginEvaluationSession, deletedEvaluationSessions, listEvaluationSessions } from "./sessions";
+import { ActiveEvaluationSessionError, beginEvaluationSession, deletedEvaluationSessions, executingSessionMessage, isExecuting, listEvaluationSessions } from "./sessions";
 import { completePendingDeletions, deleteEvaluationSession, deleteScenarioRun, DeletionProblem } from "./deletion";
 import { deletedNotices, deletionFailure, runDeletionConfirmation, sessionDeletionConfirmation } from "./deletion-report";
 import { createEvaluationPlan, selectEvaluationScenarios, startEvaluation } from "./execution";
@@ -281,22 +281,21 @@ function createReportServer({ root, scenarios, networkAccess = false, dashboardS
           }
           const sessions = listEvaluationSessions(root).map(publicSession);
           const runs = await listRuns(root);
-          const executing = (record?: EvaluationSessionRecord) => Boolean(record && ["starting", "running"].includes(record.state.status));
           if (kind === "runs") {
             const run = runs.find(item => item.id === id);
             if (!run) throw new DeletionProblem(new MissingScenarioRunError().message, 404);
             const session = sessions.find(record => record.plan.id === run.sessionId && record.plan.work.some(work => work.id === run.id));
-            const active = sessions.some(record => executing(record) && record.plan.work.some(work => work.id === run.id));
+            const active = sessions.some(record => isExecuting(record) && record.plan.work.some(work => work.id === run.id));
             page(active ? 409 : 200, runDeletionConfirmation({ run, session, reviews: (await readReviews(root, id)).length, date: readableDate })); return;
           }
           const session = sessions.find(record => record.plan.id === id);
           if (!session) throw new DeletionProblem("Evaluation Session not found. It may have been deleted.", 404);
           const saved = session.plan.work.filter(work => runs.some(run => run.id === work.id && run.sessionId === id) && session.state.work.find(item => item.id === work.id)?.status !== "deleted");
           const reviews = (await Promise.all(saved.map(work => readReviews(root, work.id)))).reduce((sum, items) => sum + items.length, 0);
-          page(executing(session) ? 409 : 200, sessionDeletionConfirmation({ session, savedRuns: saved.length, reviews, date: readableDate })); return;
+          page(isExecuting(session) ? 409 : 200, sessionDeletionConfirmation({ session, savedRuns: saved.length, reviews, date: readableDate })); return;
         } catch (error) {
           if (error instanceof DeletionProblem || error instanceof FormProblem) { page(error.status, deletionFailure(error.message)); return; }
-          if (error instanceof ActiveEvaluationSessionError) { page(409, deletionFailure("This session is executing. Stop it or wait for it to end before deleting its evidence.")); return; }
+          if (error instanceof ActiveEvaluationSessionError) { page(409, deletionFailure(executingSessionMessage)); return; }
           throw error;
         }
       }

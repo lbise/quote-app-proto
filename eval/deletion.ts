@@ -2,7 +2,7 @@ import { readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { MissingScenarioRunError, readRunSync, withArtifactLock } from "./artifacts";
 import {
-  deletedWork, listEvaluationSessions, markScenarioRunDeleted, pendingSessionDeletions, recordSessionDeletion, removeSessionFiles,
+  deletedWork, executingSessionMessage, isExecuting, listEvaluationSessions, markScenarioRunDeleted, pendingSessionDeletions, recordSessionDeletion, removeSessionFiles,
 } from "./sessions";
 import type { EvaluationSessionRecord } from "./types";
 
@@ -11,8 +11,7 @@ export class DeletionProblem extends Error {
   constructor(message: string, readonly status: 404 | 409) { super(message); }
 }
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
-const executing = (record: EvaluationSessionRecord) => ["starting", "running"].includes(record.state.status);
-const activeProblem = () => new DeletionProblem("This session is executing. Stop it or wait for it to end before deleting its evidence.", 409);
+const activeProblem = () => new DeletionProblem(executingSessionMessage, 409);
 
 function identifier(id: string) {
   if (!idPattern.test(id)) throw new DeletionProblem("Not found.", 404);
@@ -58,7 +57,7 @@ export function deleteScenarioRun(root: string, runId: string): { sessionId?: st
     if (!run) throw new DeletionProblem(new MissingScenarioRunError().message, 404);
     const sessions = listEvaluationSessions(root);
     // Any session planning this ID guards it, even before the run is linked.
-    if (sessions.some(record => executing(record) && record.plan.work.some(work => work.id === runId))) throw activeProblem();
+    if (sessions.some(record => isExecuting(record) && record.plan.work.some(work => work.id === runId))) throw activeProblem();
     const owner = ownerOf(sessions, runId, run.sessionId);
     if (owner) markScenarioRunDeleted(root, owner.plan.id, runId);
     return { sessionId: owner?.plan.id, removedReviews: removeRunEvidence(root, runId) };
@@ -71,7 +70,7 @@ export function deleteEvaluationSession(root: string, sessionId: string): { remo
   return withArtifactLock(root, () => {
     const record = listEvaluationSessions(root).find(item => item.plan.id === sessionId);
     if (!record) throw new DeletionProblem("Evaluation Session not found. It may have been deleted.", 404);
-    if (executing(record)) throw activeProblem();
+    if (isExecuting(record)) throw activeProblem();
     recordSessionDeletion(root, record);
     let removedRuns = 0;
     let removedReviews = 0;

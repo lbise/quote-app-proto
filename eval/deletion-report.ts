@@ -1,14 +1,14 @@
 import { escapeHtml as h } from "./html";
+import { executingSessionMessage, isExecuting as executing } from "./sessions";
 import type { EvaluationRun, EvaluationSessionRecord } from "./types";
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-const executing = (record?: EvaluationSessionRecord) => Boolean(record && ["starting", "running"].includes(record.state.status));
 const row = (label: string, value: string) => `<div><dt>${h(label)}</dt><dd>${value}</dd></div>`;
 const spending = (session: boolean) => `<p><strong>Spending records remain.</strong> ${session
   ? "The session's separate reservation ledger, recorded provider calls and reserved USD stay unchanged."
   : "Any separate spending ledger for this run stays unchanged."} Deletion does not refund budget, reset a limit or change what the provider may charge.</p>`;
 const authorization = '<p class="field-hint">This confirmation only deletes saved evidence. It does not start, stop or authorize an evaluation.</p>';
-const activeNotice = '<p class="failure notice" role="alert">This session is executing. Stop it or wait for it to end before deleting its evidence.</p>';
+const activeNotice = `<p class="failure notice" role="alert">${h(executingSessionMessage)}</p>`;
 
 /** Identifies one Scenario Run and states exactly what deletion removes and keeps. */
 export function runDeletionConfirmation({ run, session, reviews, date }: { run: EvaluationRun; session?: EvaluationSessionRecord; reviews: number; date: (value: string) => string }): string {

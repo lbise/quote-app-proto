@@ -5,12 +5,18 @@ import { join, resolve } from "node:path";
 import type { EvaluationSessionDeletion, EvaluationSessionPlan, EvaluationSessionRecord, EvaluationSessionState } from "./types";
 import { withoutCredentials } from "./artifacts";
 
+const unfinished = new Set<EvaluationSessionState["status"]>(["starting", "running"]);
+export const executingSessionMessage = "This session is executing. Stop it or wait for it to end before deleting its evidence.";
+/** Starting and running sessions own their evidence until they finish. */
+export function isExecuting(record?: EvaluationSessionRecord): boolean {
+  return Boolean(record && unfinished.has(record.state.status));
+}
+
 export class ActiveEvaluationSessionError extends Error {
   constructor() { super("An evaluation session is already active."); }
 }
 
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
-const unfinished = new Set<EvaluationSessionState["status"]>(["starting", "running"]);
 function safe(id: string) { if (!idPattern.test(id)) throw new Error("Invalid session identifier."); return id; }
 function flush(path: string) { const fd = openSync(path, "r"); try { fsyncSync(fd); } finally { closeSync(fd); } }
 function location(root: string) { const dir = join(resolve(root), "sessions"); mkdirSync(dir, { recursive: true, mode: 0o700 }); return dir; }

@@ -2,6 +2,7 @@ import { calculateQuote, money, type QuoteData } from "../app/lib/quote";
 import { withoutCredentials } from "./artifacts";
 import { escapeHtml } from "./html";
 export { escapeHtml } from "./html";
+import { isExecuting as executing } from "./sessions";
 import { launchForm, sessionEvidence, sessionProgress, type ExecutionView } from "./execution-report";
 import type { EvaluationRun, EvaluationSessionRecord, ExpectedCalculation, HumanReview, Scenario, TurnResult } from "./types";
 export type DashboardStatus = { database: "ready" | "unavailable"; provider: "available" | "unavailable" };
@@ -122,7 +123,6 @@ function executionStatus(session: EvaluationSessionRecord | undefined, run: Eval
   if (!session) return "unavailable (older run without a session)";
   return session.state.work.find(work => work.runId === run.id && session.plan.work.some(item => item.id === work.id && item.scenarioHash === run.scenarioHash))?.status ?? "unavailable";
 }
-const executing = (session: EvaluationSessionRecord) => ["starting", "running"].includes(session.state.status);
 function deleteRunLink(run: EvaluationRun, label: string): string {
   return `<a class="danger-link" href="/runs/${encodeURIComponent(run.id)}/delete">Delete run<span class="sr-only"> ${h(label)}</span></a>`;
 }
