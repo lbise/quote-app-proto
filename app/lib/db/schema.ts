@@ -81,6 +81,13 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Marks accounts created by `npm run seed:demo`. The seeder only resets or
+// skips marked accounts, so a real Artisan sharing an email is never touched.
+export const demoAccount = pgTable("demo_account", {
+  userId: text("user_id").primaryKey().references(() => user.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // The initial domain relationship is deliberately small: one Artisan belongs to
 // one Artisan Business. Customers and Quotes will reference businessId later.
 export const artisanBusiness = pgTable(

@@ -40,6 +40,10 @@ SMTP_USER=auth@voidstation.ch
 SMTP_FROM=auth@voidstation.ch
 ```
 
+Optional, for demo accounts (see [Demo accounts](#demo-accounts)):
+
+- `DEMO_ACCOUNTS`: space-separated `email:password` entries. Keep it as a runtime secret. Passwords are 8 to 128 characters and cannot contain spaces.
+
 For local development, `EMAIL_DELIVERY=fake` captures messages in memory and never sends mail. Do not use `AUTH_ALLOWED_EMAILS=*` outside disposable local development.
 
 This first slice runs one application replica. The container migrates before it serves traffic, so two replicas can race on migrations. Before scaling, move migrations into a one-shot release step or add a migration lock, and set the service to start only after that step succeeds.
@@ -111,6 +115,16 @@ Watch the Release workflow. A failed check leaves GHCR and Dokploy untouched. A 
 To roll back, choose the recorded digest of a known-good release and save that digest in the Dokploy Docker provider, then deploy it. The release workflow prints that digest in the deploy job. An image rollback does not roll back PostgreSQL. Take a database backup before releases that include migrations, use backward-compatible expand and contract migrations, and write a separate database recovery plan before any destructive migration.
 
 Before real data, prove persistence: create test data, redeploy the application, and verify the data remains. Also restore a PostgreSQL backup into an isolated database and verify the restored data. A volume surviving an application redeploy is necessary, but it is not a backup test.
+
+## Demo accounts
+
+`npm run seed:demo` creates verified demo accounts with an empty Artisan Business. It sends no email. Run it separately in each deployment (production and `dev.voidstation.ch`), because each has its own database.
+
+1. In the Dokploy application environment, set `DEMO_ACCOUNTS`, for example `demo1@voidstation.ch:first-password demo2@voidstation.ch:second-password`, and add the same emails to `AUTH_ALLOWED_EMAILS`. Redeploy so the container receives the new environment.
+2. Open the application's container terminal in Dokploy and run `npm run seed:demo`. It prints `created` or `unchanged` for each email, never a password.
+3. To empty the demo accounts again, for example before handing them to another prospect, run `npm run seed:demo -- --reset`. This deletes each listed demo account with its Customers, Quotes, settings and logo, signs out its sessions, and recreates it empty with the password currently in `DEMO_ACCOUNTS`. Change a demo password by editing `DEMO_ACCOUNTS`, redeploying, and resetting.
+
+The command marks the accounts it creates in the `demo_account` table and only ever resets marked accounts. If a listed email belongs to a real account, it stops before changing anything. Removing an email from `DEMO_ACCOUNTS` leaves the account in place; remove it from `AUTH_ALLOWED_EMAILS` to block sign-in.
 
 ## Local checks
 

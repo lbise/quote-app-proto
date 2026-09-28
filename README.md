@@ -40,6 +40,8 @@ This command refuses non-development `NODE_ENV` values, remote database hosts, d
 
 Do not edit `.env` or run another setup command while this command is running. It checks for changes before saving, but cannot lock out unrelated editors. It replaces `.env` atomically with owner-only permissions to avoid partial writes and protect the generated secret.
 
+To create shared demo accounts in a deployment, use `npm run seed:demo` instead. See [Demo accounts](docs/deployment.md#demo-accounts).
+
 Restart the development server after setup, then sign in with the credentials you chose. Exported shell variables take precedence over `.env`; unset conflicting auth settings if your changes do not take effect.
 
 ### Open the app
