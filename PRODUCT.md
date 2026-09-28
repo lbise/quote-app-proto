@@ -48,7 +48,7 @@ Speech input is a confirmed product goal, not a shipped capability. The current 
 
 ### Intended capabilities and open decisions
 
-- Support starting a Quote by speech on a phone at the job site. The speech-capture mechanism, recording retention and behavior with poor connectivity remain undecided.
+- Support starting a Quote by speech on a phone at the job site. Decided (#42): the Artisan dictates into the conversation composer, reviews the transcript and sends it manually as a normal Artisan message. Recordings are up to 5 minutes. Audio is transcribed by a hosted provider and never kept. Capture is online only: a failed transcription can be retried while the tab stays open, and there is no offline buffering. Sending automatically after transcription is deferred until transcript quality is measured. The production transcription provider is open (#43) and must offer zero data retention and no training before real audio is used.
 - Offer more Quote Layouts and layout options, chosen per Quote. The first release has only the standard layout.
 - Reduce the time needed to prepare Quotes. No numerical time-saving target or measured claim has been established.
 
