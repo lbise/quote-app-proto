@@ -43,6 +43,8 @@ export function useDictation(onTranscript: (text: string) => void) {
   const [now, setNow] = useState(() => Date.now());
   const recording = useRef<Recording | null>(null);
   const transcription = useRef<AbortController | null>(null);
+  // Set while the permission prompt is open, so a second tap cannot start a second recorder.
+  const starting = useRef(false);
   const alive = useRef(true);
   const deliver = useRef(onTranscript);
   deliver.current = onTranscript;
@@ -79,15 +81,17 @@ export function useDictation(onTranscript: (text: string) => void) {
   }, []);
 
   const start = useCallback(async () => {
-    if (recording.current || transcription.current) return;
-    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    if (starting.current || recording.current || transcription.current) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       update({ status: "idle", blocked: window.isSecureContext === false ? "insecure" : "unsupported" });
       return;
     }
     update({ status: "requesting" });
     let stream: MediaStream;
+    starting.current = true;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch (error) { update({ status: "idle", blocked: blockedReason(error) }); return; }
+    finally { starting.current = false; }
     if (!alive.current) { stream.getTracks().forEach((track) => track.stop()); return; }
 
     const mimeType = preferredAudioMimeType((type) => MediaRecorder.isTypeSupported(type));
