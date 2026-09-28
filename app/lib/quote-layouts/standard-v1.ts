@@ -1,5 +1,5 @@
-import geistLatin from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?inline";
-import geistLatinExt from "@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2?inline";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 import type { DocumentText, QuoteDocumentContent, QuoteDocumentGroup, QuoteDocumentLine } from "../quote-document";
 import type { PrintablePage } from "../pdf-renderer.server";
@@ -12,7 +12,7 @@ import type { PrintablePage } from "../pdf-renderer.server";
  */
 export function renderStandardV1(content: QuoteDocumentContent): PrintablePage {
   return {
-    html: `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escape(content.filename)}</title><style>${styles}</style></head><body>${body(content)}</body></html>`,
+    html: `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escape(content.filename)}</title><style>${styles()}</style></head><body>${body(content)}</body></html>`,
     headerTemplate: "<span></span>",
     footerTemplate: footer(content),
     margin: { top: "16mm", right: "16mm", bottom: "20mm", left: "20mm" },
@@ -95,9 +95,18 @@ function escape(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]!);
 }
 
-const styles = `
-@font-face { font-family: "Quote Sans"; src: url("${geistLatin}") format("woff2"); font-weight: 100 900; unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Quote Sans"; src: url("${geistLatinExt}") format("woff2"); font-weight: 100 900; unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+/**
+ * Embeds the installed Geist files as data URLs. Resolved at runtime, not with a
+ * Vite-only import, so Node processes such as the evaluator can load this module.
+ */
+function font(file: string): string {
+  const path = createRequire(import.meta.url).resolve(`@fontsource-variable/geist/files/${file}`);
+  return `data:font/woff2;base64,${readFileSync(path).toString("base64")}`;
+}
+let stylesheet: string | undefined;
+const styles = () => stylesheet ??= `
+@font-face { font-family: "Quote Sans"; src: url("${font("geist-latin-wght-normal.woff2")}") format("woff2"); font-weight: 100 900; unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Quote Sans"; src: url("${font("geist-latin-ext-wght-normal.woff2")}") format("woff2"); font-weight: 100 900; unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 @page { size: A4 portrait; }
 * { box-sizing: border-box; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
