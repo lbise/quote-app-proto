@@ -7,6 +7,7 @@ import { configuredQuoteAI } from "./quote-ai-config.server";
 import { QuoteAIGenerationError, resolveQuoteAIGeneration, type QuoteAIGeneration, type QuoteAIGenerationOptions } from "./quote-ai-generation";
 import { quoteDraftLimit } from "./quote-limits";
 import { createQuoteTools, type CopyFact } from "./quote-tools.server";
+import type { AssistantTurnRecord, TurnTraceModelCall } from "./turn-trace";
 
 export type QuoteAIInput = {
   quote: QuoteData;
@@ -27,6 +28,8 @@ export type QuoteAIResult = {
   changedFields?: string[];
   /** Transient tool activity; the request handler exposes this only in debug mode. */
   debug?: QuoteAssistantSuccessDebug;
+  /** What the turn sent to and received from the model, for its Turn Trace. Never sent to the browser. */
+  turn: AssistantTurnRecord;
 };
 
 /** Server-only injection at the model transport, never at the tool executor. */
@@ -40,6 +43,8 @@ export type QuoteAIModelBoundary = {
 };
 
 export class QuoteAIError extends Error {
+  /** What the turn sent to and received from the model before it failed, for its Turn Trace. */
+  turn?: AssistantTurnRecord;
   constructor(readonly diagnostic: QuoteAssistantDiagnostic, message = "The Quote assistant could not complete this request.") {
     super(message);
     this.name = "QuoteAIError";
@@ -121,14 +126,14 @@ function assistantCalculation(quote: QuoteData) {
   return calculationWithoutQuote;
 }
 
-function assistantContext(input: QuoteAIInput, history: ReturnType<typeof historyForProvider>) {
+function assistantContext(input: QuoteAIInput, history: ReturnType<typeof historyForProvider>, calculation = assistantCalculation(input.quote)) {
   return {
     contractVersion: "draft-tools-v1",
     locale: input.locale,
     currentWorkingDraft: input.quote,
     referenceLocked: input.referenceLocked ?? false,
     capturedLineIds: [...(input.capturedLineIds ?? [])],
-    calculation: assistantCalculation(input.quote),
+    calculation,
     history: history.history,
     historyOmitted: history.historyOmitted,
     omittedHistoryCount: history.omittedHistoryCount,
@@ -146,7 +151,41 @@ function statusText(outcome: "committed" | "committed_with_failed_calls" | "unch
   return texts[outcome][locale === "fr" ? 1 : 0];
 }
 
+/**
+ * The Turn Trace record of a turn that stopped before the assistant ran, for
+ * example on a stale or missing Working Draft: the system prompt and the
+ * application context that would have been sent.
+ */
+export function assistantTurnPreview(input: Omit<QuoteAIInput, "quote"> & { quote: QuoteData | null }): AssistantTurnRecord {
+  const locale = input.locale === "en" ? "en" : "fr";
+  let history: ReturnType<typeof historyForProvider>;
+  try { history = historyForProvider({ ...input, locale } as QuoteAIInput); }
+  catch { history = { history: [], historyOmitted: false, omittedHistoryCount: 0 }; }
+  let calculation: ReturnType<typeof assistantCalculation> | null = null;
+  try { if (input.quote) calculation = assistantCalculation(input.quote); } catch { /* Record the draft as it is. */ }
+  return {
+    systemPrompt: systemPrompt(locale),
+    applicationContext: assistantContext({ ...input, locale } as QuoteAIInput, history, calculation as ReturnType<typeof assistantCalculation>),
+    modelCalls: [],
+    toolCalls: [],
+  };
+}
+
+/** Runs one Assistant Turn. Its Turn Trace record is on the result, or on the thrown QuoteAIError. */
 export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: QuoteAIModelBoundary): Promise<QuoteAIResult> {
+  const turn: AssistantTurnRecord = { systemPrompt: systemPrompt(input.locale === "en" ? "en" : "fr"), modelCalls: [], toolCalls: [] };
+  try {
+    return await runTurn(input, modelBoundary, turn);
+  } catch (error) {
+    if (error instanceof QuoteAIError) {
+      error.turn = turn;
+      turn.assistantOutcome ??= error.diagnostic.outcome;
+    }
+    throw error;
+  }
+}
+
+async function runTurn(input: QuoteAIInput, modelBoundary: QuoteAIModelBoundary | undefined, turn: AssistantTurnRecord): Promise<QuoteAIResult> {
   if ((input.locale !== "en" && input.locale !== "fr") || typeof input.text !== "string" || !input.text.trim() || input.text.length > 8000 || !Array.isArray(input.messages)) {
     throw new QuoteAIError({ phase: "validation", code: "invalid_assistant_input" }, "Invalid Quote assistant input.");
   }
@@ -157,6 +196,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     throw new QuoteAIError({ phase: "validation", code: "invalid_conversation" }, "Invalid Quote conversation.");
   }
   const context = assistantContext(input, history);
+  turn.applicationContext = context;
   try {
     if (quoteDraftLimit(input.quote)) throw new Error("draft_context_too_large");
   } catch (error) {
@@ -181,6 +221,8 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     }
     throw new QuoteAIError({ phase: "model", code: "provider_configuration_invalid" }, "Quote AI configuration is invalid.");
   }
+  turn.provider = config.model.provider;
+  turn.model = config.model.id;
   let generation: QuoteAIGeneration;
   try {
     generation = resolveQuoteAIGeneration(config.model, config.generation);
@@ -204,6 +246,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   let lastModelRequest: QuoteAssistantLlmRequest | undefined;
   let modelResponse: QuoteAssistantDiagnostic["modelResponse"];
   const modelRequests: QuoteAssistantLlmRequest[] = [];
+  let openCall: { call: TurnTraceModelCall; started: number; sent: boolean } | undefined;
   let diagnostic: QuoteAssistantDiagnostic = { phase: "model", code: "assistant_failed" };
   const diagnosticWithRequest = (value: QuoteAssistantDiagnostic): QuoteAssistantDiagnostic => ({
     ...value,
@@ -218,16 +261,25 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     initialState: { model: config.model, systemPrompt: systemPrompt(input.locale), tools: staged.tools, thinkingLevel: generation.reasoning },
     toolExecution: "sequential",
     streamFn: (model, context, options) => {
-      const contextBytes = Buffer.byteLength(JSON.stringify(context));
+      const serializedContext = JSON.stringify(context);
+      const contextBytes = Buffer.byteLength(serializedContext);
       if (failed) throw new Error("The Quote assistant could not complete this request.");
       modelResponse = undefined;
+      // Until the provider builds its payload, the Turn Trace keeps the context that would have been sent.
+      const call: TurnTraceModelCall = {
+        sequence: turn.modelCalls.length + 1, provider: model.provider, model: model.id ?? "unknown", startedAt: new Date().toISOString(),
+        settings: { maxTokens: generation.maxOutputTokens, reasoning: generation.reasoning, timeoutMs: config.timeoutMs },
+        context: JSON.parse(serializedContext),
+      };
+      turn.modelCalls.push(call);
+      const notSent = (text: string): never => { call.error = text; throw new Error(text); };
       if (contextBytes > 600_000) {
         diagnostic = { phase: "model", code: "context_limit_exceeded", outcome: "later_budget_exhausted", notSent: true, applicationContext: context };
-        throw new Error("The Quote assistant context exceeded its safety limit.");
+        notSent("The Quote assistant context exceeded its safety limit.");
       }
       if (model.contextWindow && contextBytes + 4096 > model.contextWindow) {
         diagnostic = { phase: "model", code: "model_context_window_exceeded", outcome: "later_budget_exhausted", notSent: true, applicationContext: context };
-        throw new Error("The Quote assistant context does not fit the configured model.");
+        notSent("The Quote assistant context does not fit the configured model.");
       }
       lastModelRequest = {
         model: { provider: model.provider, id: model.id ?? "unknown" },
@@ -247,14 +299,26 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
         },
       };
       modelRequests.push(lastModelRequest);
-      return config.streamFn(model, context, {
+      const started = performance.now();
+      openCall = { call, started, sent: false };
+      const opened = openCall;
+      const stream = Promise.resolve(config.streamFn(model, context, {
         ...options, maxTokens: generation.maxOutputTokens, reasoning: generation.reasoning === "off" ? undefined : generation.reasoning, maxRetries: 0, cacheRetention: "none", timeoutMs: config.timeoutMs,
         onPayload: (payload) => {
-          if (Buffer.byteLength(JSON.stringify(payload)) > 600_000) {
+          const serializedPayload = JSON.stringify(payload);
+          call.payload = JSON.parse(serializedPayload);
+          delete call.context;
+          if (Buffer.byteLength(serializedPayload) > 600_000) {
             diagnostic = { phase: "model", code: "provider_payload_limit_exceeded", outcome: "later_budget_exhausted" };
+            call.error = "Quote AI payload limit exceeded.";
             throw new Error("Quote AI payload limit exceeded.");
           }
         },
+      }));
+      // A call refused before it reached the provider, such as by the spending limit, has no response.
+      return stream.then((value) => { opened.sent = true; return value; }, (error: unknown) => {
+        call.error ??= error instanceof Error ? error.message : "The model call failed.";
+        throw error;
       });
     },
     beforeToolCall: async () => {
@@ -288,6 +352,17 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   });
   let responseBytes = 0;
   agent.subscribe((event) => {
+    if (event.type === "message_end" && event.message.role === "assistant" && openCall) {
+      const { call, started, sent } = openCall;
+      openCall = undefined;
+      if (sent) {
+        const message = event.message;
+        call.response = JSON.parse(JSON.stringify(message));
+        call.latencyMs = Math.round(performance.now() - started);
+        call.usage = { input: message.usage.input, output: message.usage.output, cacheRead: message.usage.cacheRead, cacheWrite: message.usage.cacheWrite,
+          ...(message.usage.reasoning !== undefined ? { reasoning: message.usage.reasoning } : {}), totalTokens: message.usage.totalTokens, costUsd: message.usage.cost.total };
+      }
+    }
     if (event.type === "tool_execution_start") {
       lastToolName = event.toolName;
       toolCallsById.set(event.toolCallId, { name: event.toolName, arguments: event.args });
@@ -313,6 +388,8 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
       if (!event.isError && toolCall) successfulToolCalls.push(toolCall);
       if (event.isError) failedCalls += 1;
       stateSequence += 1;
+      turn.toolCalls.push({ toolCallId: event.toolCallId, name: event.toolName, arguments: toolCall?.arguments, outcome: event.isError ? "rejected" : "applied", result: event.result,
+        ...(event.isError ? { errorCode: staged.diagnostic()?.code ?? "tool_rejected" } : {}) });
       if (toolCall) attempts.push({ ...toolCall, result: event.result, outcome, validation: event.isError
         ? { outcome: "rejected", code: staged.diagnostic()?.code ?? "tool_rejected" }
         : { outcome: "accepted" }, stateSequence, failedCalls, failureLimit, ...(event.isError ? { errorCode: staged.diagnostic()?.code ?? "tool_rejected" } : {}) });
@@ -368,6 +445,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   const outcome = hasChanges
     ? failedCalls ? "committed_with_failed_calls" : "committed"
     : failedCalls ? "unchanged_with_failed_calls" : "unchanged";
+  turn.assistantOutcome = outcome;
   const applicationStatus = statusText(outcome, input.locale);
   const copyMessage = copyDisclosure(result.copyFacts ?? [], input.locale);
   const message = [applicationStatus, modelMessage, copyMessage].filter(Boolean).join("\n\n");
@@ -381,6 +459,7 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
     message,
     changed: hasChanges ? result.changed : [],
     ...(hasChanges && result.changedFields?.length ? { changedFields: result.changedFields } : {}),
+    turn,
     debug: { toolCalls: successfulToolCalls, attempts, failedCalls, failureLimit, outcome, finalValidation: { outcome: "accepted" }, ...(lastModelRequest ? { llmRequest: lastModelRequest } : {}), ...(modelRequests.length ? { llmRequests: modelRequests } : {}) },
   };
 }

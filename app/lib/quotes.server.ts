@@ -7,12 +7,13 @@ import { getAuth } from "./auth.server";
 import { artisan, artisanBusiness, businessDefaults, customer, quote, quoteMessage, quoteRequest, quoteRevision } from "./db/schema";
 import { type Database, getDatabase } from "./db.server";
 import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
-import { QuoteAIError, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
+import { QuoteAIError, assistantTurnPreview, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
 import type { QuoteAssistantDiagnostic, QuoteAssistantSuccessDebug } from "./quote-assistant-debug";
 import { quoteDraftLimit } from "./quote-limits";
 import { parseQuoteSource, workFromSource } from "./quote-start-from";
 import { currentQuoteLayout } from "./quote-layouts";
 import { BodyLimitError, readLimitedBody } from "./limited-body.server";
+import { recordTurnTrace, type TurnTraceInput } from "./turn-traces.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Store = Database | Transaction;
@@ -46,7 +47,14 @@ function assistantSuccessDebug(debug: QuoteAssistantSuccessDebug | undefined, re
   return { assistantDebug: { ...debug, requestId } };
 }
 
-export type QuoteHandlerDependencies = { database?: Database; auth?: SessionAuth; modelBoundary?: QuoteAIModelBoundary; now?: () => Date };
+export type QuoteHandlerDependencies = {
+  database?: Database;
+  auth?: SessionAuth;
+  modelBoundary?: QuoteAIModelBoundary;
+  now?: () => Date;
+  /** Stores a Turn Trace. Defaults to the database. */
+  recordTurnTrace?: (trace: TurnTraceInput) => Promise<void>;
+};
 
 export class RequestFailure extends Error {
   constructor(readonly status: number, readonly code: string, readonly details?: unknown) { super(code); }
@@ -213,6 +221,11 @@ function storedChanges(changed: string[], changedFields?: string[]): string[] | 
 
 /** Resolve the signed-in Artisan's business, or fail with 401/403. */
 export async function authorised(request: Request, auth: SessionAuth, database: Database): Promise<string> {
+  return (await authorisedArtisan(request, auth, database)).businessId;
+}
+
+/** The signed-in User and their Artisan Business, or fail with 401/403. */
+async function authorisedArtisan(request: Request, auth: SessionAuth, database: Database): Promise<{ businessId: string; userId: string }> {
   const current = await auth.api.getSession({ headers: request.headers });
   if (!current) throw new RequestFailure(401, "authentication_required");
   // Checked on every request as well: a session can survive a block that
@@ -220,7 +233,7 @@ export async function authorised(request: Request, auth: SessionAuth, database: 
   if (!hasApprovedAccess(current.user)) throw new RequestFailure(403, "access_denied");
   const [profile] = await database.select().from(artisan).where(eq(artisan.userId, current.user.id)).limit(1);
   if (!profile) throw new RequestFailure(403, "artisan_business_unavailable");
-  return profile.businessId;
+  return { businessId: profile.businessId, userId: current.user.id };
 }
 
 export function assertMutationOrigin(request: Request) {
@@ -383,10 +396,15 @@ export function createQuoteHandler(dependencies: QuoteHandlerDependencies = {}) 
   const database = dependencies.database ?? getDatabase();
   const auth = dependencies.auth ?? getAuth();
   const now = dependencies.now ?? (() => new Date());
+  const storeTrace = dependencies.recordTurnTrace ?? ((trace: TurnTraceInput) => recordTurnTrace(database, trace, now()));
+  // A Turn Trace that cannot be stored never changes the turn's own result.
+  const traceTurn = async (trace: TurnTraceInput) => {
+    try { await storeTrace(trace); } catch { console.error("A Turn Trace could not be recorded."); }
+  };
 
   return async function quoteHandler(request: Request): Promise<Response> {
     try {
-      const businessId = await authorised(request, auth, database);
+      const { businessId, userId } = await authorisedArtisan(request, auth, database);
       await reapExpired(database, businessId, now());
       if (request.method === "GET") {
         const id = new URL(request.url).searchParams.get("id");
@@ -398,7 +416,7 @@ export function createQuoteHandler(dependencies: QuoteHandlerDependencies = {}) 
       if (!actions.includes(body.action!)) throw new RequestFailure(400, "invalid_action");
       if (body.action === "customer-save") return json(await saveCustomer(database, businessId, body, now()));
       if (body.action === "defaults-save") return json(await saveDefaults(database, businessId, body, now()));
-      if (body.action === "assistant") return json(await assistant(database, businessId, body, dependencies.modelBoundary, now()));
+      if (body.action === "assistant") return json(await assistant(database, { businessId, userId }, body, { modelBoundary: dependencies.modelBoundary, traceTurn }, now()));
       if (body.action === "delete") return json(await deleteQuote(database, businessId, body, now()));
       if (body.action === "archive" || body.action === "restore") return json(await setArchived(database, businessId, body, now()));
       if (body.action === "create-from") return json(await createFrom(database, businessId, body, now()));
@@ -679,55 +697,82 @@ async function deleteQuote(database: Database, businessId: string, body: Body, n
   return readList(database, businessId);
 }
 
-async function assistant(database: Database, businessId: string, body: Body, modelBoundary: QuoteAIModelBoundary | undefined, now: Date): Promise<QuoteDetail> {
+type AssistantDependencies = { modelBoundary?: QuoteAIModelBoundary; traceTurn: (trace: TurnTraceInput) => Promise<void> };
+type TurnEnd = Pick<TurnTraceInput, "outcome" | "reason" | "resultVersion" | "message">;
+
+function failureCode(error: unknown, fallback: string): string {
+  return error instanceof RequestFailure ? error.code : fallback;
+}
+
+/**
+ * One Assistant Turn. Every turn that reaches its Quote leaves a Turn Trace,
+ * whether it commits, changes nothing, or is discarded before or after the
+ * model is called.
+ */
+async function assistant(database: Database, actor: { businessId: string; userId: string }, body: Body, dependencies: AssistantDependencies, now: Date): Promise<QuoteDetail> {
+  const { businessId, userId } = actor;
   const id = identifier(body.id, "quote_id");
   const requestId = requestKey(body.requestId);
   const hash = payloadHash(body);
   const locale = body.locale === "en" ? "en" : "fr";
   const text = identifier(body.text, "text", MAX_TEXT).trim();
   const entry = dictation(body.dictation);
+  const trace = (values: Omit<TurnTraceInput, "quoteId" | "businessId" | "userId" | "requestId" | "locale" | "text">) =>
+    dependencies.traceTurn({ quoteId: id, businessId, userId, requestId, locale, text, ...values });
   let input: QuoteAIInput | undefined;
   let baseVersion = 0;
   let completed: QuoteDetail | undefined;
+  // What the turn found, for the Turn Trace of a turn refused before the assistant ran.
+  let found: { preview: Parameters<typeof assistantTurnPreview>[0]; version: number } | undefined;
 
-  await database.transaction(async (transaction) => {
-    await lockRequest(transaction, businessId, requestId);
-    const existing = await findRequest(transaction, businessId, requestId);
-    if (existing) {
-      assertRequestBinding(existing, "assistant", id, hash);
-      if (existing.status === "complete") { completed = await readDetail(transaction, businessId, id); return; }
-      if (existing.status === "pending") throw new RequestFailure(409, "assistant_pending");
+  try {
+    await database.transaction(async (transaction) => {
+      await lockRequest(transaction, businessId, requestId);
+      const existing = await findRequest(transaction, businessId, requestId);
+      if (existing) {
+        assertRequestBinding(existing, "assistant", id, hash);
+        if (existing.status === "complete") { completed = await readDetail(transaction, businessId, id); return; }
+        if (existing.status === "pending") throw new RequestFailure(409, "assistant_pending");
+      }
+      await lockQuote(transaction, id);
+      const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
+      if (!record) throw new RequestFailure(404, "quote_not_found");
+      const revisions = await transaction.select({ id: quoteRevision.id }).from(quoteRevision).where(eq(quoteRevision.quoteId, id)).limit(1);
+      const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
+      const stored = (record.draft ?? null) as QuoteData | null;
+      const conversation = messages.map((message) => ({ role: message.role as Message["role"], fr: message.fr, en: message.en }));
+      const capturedLineIds = stored ? trustedCapturedLineIds(record.capturedLineIds, stored) : [];
+      found = { preview: { quote: stored, messages: conversation, text, locale, referenceLocked: revisions.length > 0, capturedLineIds }, version: record.version };
+      assertNotArchived(record);
+      checkVersion(record, body);
+      if (record.pending) throw new RequestFailure(409, "assistant_pending");
+      const draft = requireDraft(record);
+      assertQuoteBoundary(draft);
+      if (existing) await transaction.update(quoteRequest).set({ status: "pending", baseVersion: record.version, updatedAt: now }).where(eq(quoteRequest.id, existing.id));
+      else await recordRequest(transaction, { businessId, quoteId: id, action: "assistant", requestId, status: "pending", baseVersion: record.version, payloadHash: hash, now });
+      if (!existing) await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "artisan", fr: text, en: text, requestId, ...entry });
+      await transaction.update(quote).set({ pending: true, pendingVersion: record.version, pendingRequestId: requestId, pendingExpiresAt: new Date(now.getTime() + AI_LEASE_MS), updatedAt: now }).where(eq(quote.id, id));
+      baseVersion = record.version;
+      input = { quote: draft, messages: conversation, text, locale, referenceLocked: revisions.length > 0, capturedLineIds };
+    });
+  } catch (error) {
+    if (found) {
+      await trace({ outcome: "discarded", reason: failureCode(error, "request_failed"), baseVersion: found.version, resultVersion: found.version, turn: assistantTurnPreview(found.preview) });
     }
-    await lockQuote(transaction, id);
-    const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
-    if (!record) throw new RequestFailure(404, "quote_not_found");
-    assertNotArchived(record);
-    checkVersion(record, body);
-    if (record.pending) throw new RequestFailure(409, "assistant_pending");
-    const draft = requireDraft(record);
-    assertQuoteBoundary(draft);
-    const revisions = await transaction.select({ id: quoteRevision.id }).from(quoteRevision).where(eq(quoteRevision.quoteId, id)).limit(1);
-    const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
-    if (existing) await transaction.update(quoteRequest).set({ status: "pending", baseVersion: record.version, updatedAt: now }).where(eq(quoteRequest.id, existing.id));
-    else await recordRequest(transaction, { businessId, quoteId: id, action: "assistant", requestId, status: "pending", baseVersion: record.version, payloadHash: hash, now });
-    if (!existing) await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "artisan", fr: text, en: text, requestId, ...entry });
-    await transaction.update(quote).set({ pending: true, pendingVersion: record.version, pendingRequestId: requestId, pendingExpiresAt: new Date(now.getTime() + AI_LEASE_MS), updatedAt: now }).where(eq(quote.id, id));
-    baseVersion = record.version;
-    input = {
-      quote: draft,
-      messages: messages.map((entry) => ({ role: entry.role as Message["role"], fr: entry.fr, en: entry.en })),
-      text,
-      locale,
-      referenceLocked: revisions.length > 0,
-      capturedLineIds: trustedCapturedLineIds(record.capturedLineIds, draft),
-    };
-  });
+    throw error;
+  }
   if (completed) return completed;
   if (!input) throw new RequestFailure(500, "request_failed");
+  const discarded = (reason: string, turn: TurnTraceInput["turn"], diagnostic?: TurnTraceInput["diagnostic"]) =>
+    trace({ outcome: "discarded", reason, baseVersion, resultVersion: baseVersion, turn, ...(diagnostic ? { diagnostic } : {}) });
 
   let result: Awaited<ReturnType<typeof generateQuoteChange>>;
-  try { result = await generateQuoteChange(input, modelBoundary); } catch (error) {
-    await failAssistant(database, businessId, id, requestId, now);
+  try { result = await generateQuoteChange(input, dependencies.modelBoundary); } catch (error) {
+    const failure = error instanceof QuoteAIError ? error : undefined;
+    const diagnostic = failure && { phase: failure.diagnostic.phase, code: failure.diagnostic.code,
+      ...(failure.diagnostic.outcome ? { outcome: failure.diagnostic.outcome } : {}), ...(failure.diagnostic.tool ? { tool: failure.diagnostic.tool } : {}) };
+    try { await failAssistant(database, businessId, id, requestId, now); }
+    finally { await discarded(failure?.diagnostic.code ?? "assistant_failed", failure?.turn ?? assistantTurnPreview(input), diagnostic); }
     throw new RequestFailure(502, "assistant_unavailable", assistantDiagnostic(error, requestId, { phase: "model", code: "assistant_failed" }));
   }
   let next: QuoteData | null;
@@ -738,13 +783,15 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     changedFields = changedFieldsFrom(result);
     if (next) resultCapturedLineIds = capturedResultIds(result.capturedLineIds, input.quote, next, input.capturedLineIds);
   } catch (error) {
-    await failAssistant(database, businessId, id, requestId, now);
+    try { await failAssistant(database, businessId, id, requestId, now); }
+    finally { await discarded("invalid_assistant_result", result.turn); }
     throw new RequestFailure(502, "assistant_invalid_response", assistantDiagnostic(error, requestId, { phase: "validation", code: "invalid_assistant_result" }));
   }
 
   let detail: QuoteDetail | undefined;
   let stale = false;
   let archivedMeanwhile = false;
+  let ended: TurnEnd | undefined;
   try {
     await database.transaction(async (transaction) => {
     await lockRequest(transaction, businessId, requestId);
@@ -754,13 +801,17 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     if (!request || !record) throw new RequestFailure(404, "quote_not_found");
     if (request.status !== "pending" || record.pendingRequestId !== requestId || record.version !== baseVersion || record.archivedAt !== null) {
       // Archiving ends the turn and leaves its own note; otherwise note that this response is stale.
+      let note: { id: string; fr: string; en: string } | undefined;
       if (request.status === "pending") {
+        note = { id: crypto.randomUUID(), fr: "Réponse devenue obsolète; le brouillon a changé.", en: "Response was stale; the Working Draft changed." };
         await transaction.update(quoteRequest).set({ status: "stale", updatedAt: now }).where(eq(quoteRequest.id, request.id));
-        await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "note", fr: "Réponse devenue obsolète; le brouillon a changé.", en: "Response was stale; the Working Draft changed." });
+        await transaction.insert(quoteMessage).values({ quoteId: id, role: "note", ...note });
       }
       if (record.pendingRequestId === requestId) await transaction.update(quote).set({ pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now }).where(eq(quote.id, id));
       archivedMeanwhile = record.archivedAt !== null;
       stale = true;
+      ended = { outcome: "discarded", reason: archivedMeanwhile ? "quote_archived" : "stale", resultVersion: record.version,
+        ...(note ? { message: { id: note.id, role: "note" as const, text: note[locale] } } : {}) };
       return;
     }
     if (next?.reference !== undefined && next.reference !== record.reference) {
@@ -781,14 +832,18 @@ async function assistant(database: Database, businessId: string, body: Body, mod
       pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now,
     }).where(eq(quote.id, id));
     const message = assistantMessage(result.message, result.changed, changedFields);
-    await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: message.role, fr: message.fr, en: message.en, changed: storedChanges(result.changed, changedFields) });
+    const messageId = crypto.randomUUID();
+    await transaction.insert(quoteMessage).values({ id: messageId, quoteId: id, role: message.role, fr: message.fr, en: message.en, changed: storedChanges(result.changed, changedFields) });
     await transaction.update(quoteRequest).set({ status: "complete", updatedAt: now }).where(eq(quoteRequest.id, request.id));
+    ended = { outcome: next ? "committed" : "unchanged", resultVersion: next ? record.version + 1 : record.version, message: { id: messageId, role: "assistant", text: message[locale] } };
       detail = await readDetail(transaction, businessId, id);
     });
   } catch (error) {
-    await failAssistant(database, businessId, id, requestId, now);
+    try { await failAssistant(database, businessId, id, requestId, now); }
+    finally { await discarded(failureCode(error, "persistence_failed"), result.turn); }
     throw error;
   }
+  if (ended) await trace({ ...ended, baseVersion, turn: result.turn });
   if (archivedMeanwhile) throw new RequestFailure(409, "quote_archived");
   if (stale) throw new RequestFailure(409, "assistant_stale", assistantSuccessDebug(
     result.debug ? { ...result.debug, outcome: "stale" } : undefined, requestId,

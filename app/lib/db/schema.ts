@@ -7,6 +7,7 @@ import {
   customType,
   integer,
   index,
+  json,
   jsonb,
   pgTable,
   text,
@@ -290,6 +291,45 @@ export const quoteRequest = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [uniqueIndex("quote_request_business_request_idx").on(table.businessId, table.requestId)],
+);
+
+export const turnTraceOutcomes = ["committed", "unchanged", "discarded"] as const;
+export type TurnTraceOutcome = typeof turnTraceOutcomes[number];
+
+// A Turn Trace: what one Assistant Turn sent to and received from the model
+// (ADR 0007). Only Administrators read it. It goes with its Quote, or after 30
+// days. `detail` is `json`, not `jsonb`, so payloads keep their exact key order.
+export const turnTrace = pgTable(
+  "turn_trace",
+  {
+    id: text("id").primaryKey(),
+    quoteId: text("quote_id").notNull().references(() => quote.id, { onDelete: "cascade" }),
+    businessId: text("business_id").notNull().references(() => artisanBusiness.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    requestId: text("request_id").notNull(),
+    locale: text("locale").$type<"en" | "fr">().notNull(),
+    outcome: text("outcome").$type<TurnTraceOutcome>().notNull(),
+    // Why the turn was discarded, as a bounded code.
+    reason: text("reason"),
+    baseVersion: integer("base_version"),
+    resultVersion: integer("result_version"),
+    // The assistant message or note the turn left in the conversation.
+    messageId: text("message_id"),
+    provider: text("provider"),
+    model: text("model"),
+    modelCallCount: integer("model_call_count").default(0).notNull(),
+    inputTokens: integer("input_tokens").default(0).notNull(),
+    outputTokens: integer("output_tokens").default(0).notNull(),
+    costUsd: doublePrecision("cost_usd").default(0).notNull(),
+    detail: json("detail").$type<unknown>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("turn_trace_quote_created_idx").on(table.quoteId, table.createdAt),
+    index("turn_trace_created_idx").on(table.createdAt),
+    check("turn_trace_outcome", sql`${table.outcome} in ('committed', 'unchanged', 'discarded')`),
+    check("turn_trace_locale", sql`${table.locale} in ('en', 'fr')`),
+  ],
 );
 
 // One cumulative Quote AI spending allowance per deployment database, shared by

@@ -18,7 +18,7 @@ The server owns the provider, model, credential, generation settings, and reques
 | `QUOTE_AI_MAX_OUTPUT_TOKENS` | Optional output-token limit per model call, default `4096`, at most the model's limit |
 | `QUOTE_AI_SPEND_LIMIT_USD` | Required for OpenRouter. Cumulative spending ceiling for the deployment, with at most 9 decimals |
 | `QUOTE_AI_TIMEOUT_MS` | Optional integer from `1000` through `45000`, default `20000` |
-| `QUOTE_AI_DEBUG` | Optional `true`; exposes safe failure diagnostics in the authenticated Quote UI |
+| `QUOTE_AI_DEBUG` | Optional `true`, for development only; exposes safe failure diagnostics in the authenticated Quote UI. It is separate from [Turn Traces](#turn-traces) |
 | `QUOTE_STT_PROVIDER` | Optional transcription provider for dictation. Defaults to `QUOTE_AI_PROVIDER`. Only `google` is implemented |
 | `QUOTE_STT_MODEL` | Optional transcription model. Defaults to `QUOTE_AI_MODEL`. Required when `QUOTE_STT_PROVIDER` differs from `QUOTE_AI_PROVIDER` |
 
@@ -69,7 +69,26 @@ It excludes unrelated Quotes, older Published Revisions, reusable-record directo
 
 The Artisan reviews quantities, prices, technical content, wording, and applied changes before Publication. A valid tool call cannot prove that the assistant interpreted the request correctly. The assistant cannot publish, send, accept, create a Quote or later Working Draft, or perform Undo.
 
-Do not write raw conversations, Quote descriptions, provider payloads, or provider responses to application logs, traces, or error-reporting breadcrumbs. Debug mode may temporarily show the authorized Quote viewer the application-level request and attempted calls. They can contain the complete draft and Customer data. Credentials and provider responses remain excluded.
+Administrators can read every Quote and its conversation. The in-app disclosure tells the Artisan this, and that Turn Traces are kept for up to 30 days.
+
+Do not write raw conversations, Quote descriptions, provider payloads, or provider responses to application logs, traces, or error-reporting breadcrumbs. They are stored only in Turn Traces. Debug mode is a development switch. It may temporarily show the authorized Quote viewer the application-level request and attempted calls, which can contain the complete draft and Customer data. Credentials and provider responses stay out of debug output.
+
+### Turn Traces
+
+Every Assistant Turn leaves a Turn Trace in the `turn_trace` table ([ADR 0007](adr/0007-store-turn-traces-temporarily-for-administrators.md)). This replaces the earlier rule against keeping provider payloads and responses. A turn gets one when it commits, changes nothing, or is discarded, including a provider failure. A turn that stops before any model call gets one too, with the error and the context that would have been sent. A stale Working Draft, a draft over the limits, the spending limit and a missing provider configuration all stop a turn this way. A turn refused before its Quote is found, such as a request for another business's Quote, has no Turn Trace.
+
+A Turn Trace contains:
+
+- for each model call, the provider payload as the SDK built it (system prompt, tool definitions, messages and application context), the provider response with its text, reasoning, tool calls and stop reason, and the provider, model, token usage, cost and latency. A call stopped before the provider built a payload keeps the model context instead;
+- each tool call's arguments and its result or rejection, in order;
+- the outcome (`committed`, `unchanged` or `discarded`) and, when discarded, the reason code;
+- the Working Draft version before and after, the locale, the User, the Quote, the Artisan's message, and the assistant message or note the turn left in the conversation.
+
+Credential fields such as API keys and authorization headers are replaced with `[redacted]`, and so is any configured provider key found in the text. Speech-to-text requests are not traced.
+
+Only Administrators can read Turn Traces (`readTurnTraces` in `app/lib/turn-traces.server.ts`). A Turn Trace is deleted with its Quote, and 30 days after its turn. The server deletes expired traces an hour after start and every hour after that, and again whenever it records a trace. Expired traces are never returned while they wait for deletion. If a Turn Trace cannot be stored, the turn still succeeds or fails as it would have, and the server logs a fixed message with no turn content.
+
+Storage keeps the whole trace without truncation. A model call may send up to 600,000 bytes and a turn has at most twelve model responses. The `detail` column is `json`, not `jsonb`, so a payload keeps its key order.
 
 ## Tool boundary
 

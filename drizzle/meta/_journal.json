@@ -85,6 +85,13 @@
       "when": 1770000011000,
       "tag": "0011_users_and_administrators",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1770000012000,
+      "tag": "0012_turn_traces",
+      "breakpoints": true
     }
   ]
 }

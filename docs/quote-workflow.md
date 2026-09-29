@@ -33,7 +33,7 @@ See [ADR 0006](adr/0006-artisans-may-delete-any-quote.md). `archive` and `restor
 
 The Quote page shows an Archived Quote read-only with a Restore banner: its latest Published Revision, or its Working Draft if it was never published. A Working Draft on top of a Published Revision is kept as it was and comes back on restore. The list has Active and Archived tabs, and search covers only the tab shown. Each row's actions menu and the Quote page header menu offer Archive or Restore, and Delete.
 
-`delete` permanently removes the Quote. Foreign keys remove its Published Revisions, conversation and request records. The delete request is kept without a Quote ID, so a retried key succeeds. The browser asks first in an `AlertDialog` with Cancel focused.
+`delete` permanently removes the Quote. Foreign keys remove its Published Revisions, conversation, request records and Turn Traces. The delete request is kept without a Quote ID, so a retried key succeeds. The browser asks first in an `AlertDialog` with Cancel focused.
 
 Automatic references come from `artisan_business.next_quote_number`, which only goes up, so a deleted Quote's number is never assigned again. A number an Artisan already typed into another Quote is skipped. Easy Quote does not remember deleted references, so an Artisan may type one again by hand.
 

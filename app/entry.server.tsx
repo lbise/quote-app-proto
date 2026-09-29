@@ -7,11 +7,16 @@ import { isbot } from "isbot";
 import type { RenderToPipeableStreamOptions } from "react-dom/server";
 import { renderToPipeableStream } from "react-dom/server";
 
+import { getDatabase } from "./lib/db.server";
 import { assertQuoteAIConfiguration } from "./lib/quote-ai-config.server";
+import { scheduleTurnTraceRetention } from "./lib/turn-traces.server";
 
 // Validate outbound processing when the server module initializes, not when an
 // Artisan first sends a message.
 assertQuoteAIConfiguration();
+
+// Turn Traces are deleted after 30 days without manual action (ADR 0007).
+scheduleTurnTraceRetention(getDatabase);
 
 export const streamTimeout = 5_000;
 
