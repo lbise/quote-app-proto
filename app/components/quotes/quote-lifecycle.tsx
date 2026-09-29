@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Archive, ArchiveRestore, MoreHorizontal, Trash2, TriangleAlert } from 'lucide-react';
 import { Button } from '../ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../ui/dropdown-menu';
+import { Alert, AlertDescription } from '../ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { randomUUID } from '../../lib/random-id';
 
@@ -76,7 +77,7 @@ export function DeleteQuoteDialog({ locale, quote, onCancel, onConfirm }: {
         <AlertDialogDescription>{t('Cette action est irréversible. Le devis, ses révisions publiées et sa conversation seront supprimés.', 'This cannot be undone. The Quote, its Published Revisions and its conversation will be deleted.')}</AlertDialogDescription>
       </AlertDialogHeader>
       {quote && <p className="qp-delete-identity"><span>{quote.reference}</span><strong>{titleOf(quote, locale)}</strong></p>}
-      {failed && <p className="qp-delete-failed" role="alert"><TriangleAlert />{t('Le devis n’a pas pu être supprimé. Vérifiez votre connexion, puis réessayez.', 'The Quote could not be deleted. Check your connection, then try again.')}</p>}
+      {failed && <Alert variant="destructive"><TriangleAlert /><AlertDescription>{t('Le devis n’a pas pu être supprimé. Vérifiez votre connexion, puis réessayez.', 'The Quote could not be deleted. Check your connection, then try again.')}</AlertDescription></Alert>}
       <AlertDialogFooter>
         <AlertDialogCancel disabled={deleting}>{t('Annuler', 'Cancel')}</AlertDialogCancel>
         <AlertDialogAction variant="destructive" disabled={deleting} onClick={event => { event.preventDefault(); void confirm(); }}><Trash2 data-icon="inline-start" />{deleting ? t('Suppression…', 'Deleting…') : t('Supprimer définitivement', 'Delete permanently')}</AlertDialogAction>

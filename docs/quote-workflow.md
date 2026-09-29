@@ -29,7 +29,7 @@ Publication freezes commercial content and calculated amounts together. It remov
 
 ## Archive and delete
 
-See [ADR 0006](adr/0006-artisans-may-delete-any-quote.md). `archive` and `restore` take a Quote ID and a request key, not an expected version. They never change the Working Draft, Published Revisions or version. An Archived Quote refuses `save`, `undo`, `publish`, `new-draft`, `customer-apply` and `assistant` with `409 quote_archived`. An assistant response that arrives after archiving is discarded with a conversation note. Quote Documents and Draft Previews still download.
+See [ADR 0006](adr/0006-artisans-may-delete-any-quote.md). `archive` and `restore` take a Quote ID and a request key, not an expected version. They never change the Working Draft, Published Revisions or version. An Archived Quote refuses `save`, `undo`, `publish`, `new-draft`, `customer-apply` and `assistant` with `409 quote_archived`. Archiving ends a pending assistant turn with a conversation note, and its response is discarded when it arrives, even if the Quote was restored in the meantime. Quote Documents and Draft Previews still download.
 
 The Quote page shows an Archived Quote read-only with a Restore banner: its latest Published Revision, or its Working Draft if it was never published. A Working Draft on top of a Published Revision is kept as it was and comes back on restore. The list has Active and Archived tabs, and search covers only the tab shown. Each row's actions menu and the Quote page header menu offer Archive or Restore, and Delete.
 

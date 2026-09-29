@@ -12,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import QuoteWorkspace from '../components/quotes/workspace';
 import { deleteQuote, quoteRequest, type QuoteList, type QuoteRecord } from '../components/quotes/use-quote';
 import { DeleteQuoteDialog, QuoteActionsMenu } from '../components/quotes/quote-lifecycle';
-import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { QuoteHeader } from '../components/quotes/quote-header';
 import '../components/quotes/quotes.css';
 import '../components/quotes/app-pages.css';
@@ -122,24 +122,23 @@ export default function Quotes() {
       {!list && !error && <p role="status">{t('Chargement…', 'Loading…')}</p>}
       {actionFailed && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{t('Action non enregistrée', 'Action not saved')}</AlertTitle><AlertDescription>{t('Vérifiez votre connexion puis réessayez.', 'Check your connection and retry.')}</AlertDescription></Alert>}
       <p className="sr-only" role="status">{announcement}</p>
-      {list && <>
+      {list && <Tabs value={tab} onValueChange={value => { if (value === 'active' || value === 'archived') setTab(value); }}>
         <div className="qp-list-controls">
-          <Tabs value={tab} onValueChange={value => { if (value === 'active' || value === 'archived') setTab(value); }}>
-            <TabsList variant="line" className="qp-list-tabs" aria-label={t('Devis affichés', 'Shown Quotes')}>
-              <TabsTrigger value="active">{t('Actifs', 'Active')}</TabsTrigger>
-              <TabsTrigger value="archived">{t('Archivés', 'Archived')}</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <TabsList variant="line" className="qp-list-tabs" aria-label={t('Devis affichés', 'Shown Quotes')}>
+            <TabsTrigger value="active">{t('Actifs', 'Active')}</TabsTrigger>
+            <TabsTrigger value="archived">{t('Archivés', 'Archived')}</TabsTrigger>
+          </TabsList>
           <FieldGroup className="qp-search-label"><Field><FieldLabel htmlFor="quote-search">{t('Rechercher un devis', 'Search Quotes')}</FieldLabel><Input id="quote-search" value={filter} onChange={e => setFilter(e.target.value)} placeholder={t('Projet ou destinataire', 'Project or Customer')} /></Field></FieldGroup>
         </div>
-        {!list.quotes.length ? <div className="qp-list-empty"><FileText /><h2>{t('Votre premier devis commence ici.', 'Your first Quote starts here.')}</h2><p>{t('Décrivez les travaux. Les coordonnées pourront attendre.', 'Describe the work. Contact details can wait.')}</p><Button disabled={creating} onClick={() => void create()}>{t('Créer un devis', 'Create a Quote')}</Button></div>
+        {/* Only the selected panel mounts; both render the same filtered rows. */}
+        {(['active', 'archived'] as const).map(value => <TabsContent key={value} value={value}>{!list.quotes.length ? <div className="qp-list-empty"><FileText /><h2>{t('Votre premier devis commence ici.', 'Your first Quote starts here.')}</h2><p>{t('Décrivez les travaux. Les coordonnées pourront attendre.', 'Describe the work. Contact details can wait.')}</p><Button disabled={creating} onClick={() => void create()}>{t('Créer un devis', 'Create a Quote')}</Button></div>
           : !list.quotes.some(q => q.archived === (tab === 'archived'))
           ? <div className="qp-list-empty">{tab === 'archived' ? <><Archive /><h2>{t('Aucun devis archivé.', 'No Archived Quotes.')}</h2><p>{t('Archivez un devis pour le retirer de la liste active. Vous pourrez le restaurer.', 'Archive a Quote to set it aside from the active list. You can restore it later.')}</p></> : <><FileText /><h2>{t('Aucun devis actif.', 'No active Quotes.')}</h2><p>{t('Vos devis archivés restent dans l’onglet Archivés.', 'Your Archived Quotes stay in the Archived tab.')}</p></>}</div>
           : <div className="qp-list-rows" ref={rows}>{visible().map(q => <div className="qp-list-row" key={q.id} data-quote-id={q.id}>
             <button className="qp-list-open" onClick={() => navigate(`/quotes?id=${encodeURIComponent(q.id)}`)}><FileText /><div><strong>{q.title || t('Nouveau devis', 'New Quote')}</strong><span>{q.customerName || t('Sans destinataire', 'No Customer')} · {q.reference}</span></div><Badge variant="outline">{q.hasDraft ? t('Brouillon', 'Draft') : t(`Révision ${q.revision}`, `Revision ${q.revision}`)}</Badge><ArrowRight /></button>
             <QuoteActionsMenu locale={locale} quote={q} archived={q.archived} onArchive={() => void setArchived(q, true)} onRestore={() => void setArchived(q, false)} onDelete={() => setDeleting(q)} onMenuClosed={event => { if (nextFocus.current !== null) event.preventDefault(); }} />
-          </div>)}{!visible().length && <p className="qp-list-footnote">{t('Aucun devis ne correspond à cette recherche.', 'No Quote matches this search.')}</p>}</div>}
-      </>}
+          </div>)}{!visible().length && <p className="qp-list-footnote">{t('Aucun devis ne correspond à cette recherche.', 'No Quote matches this search.')}</p>}</div>}</TabsContent>)}
+      </Tabs>}
       <DeleteQuoteDialog locale={locale} quote={deleting} onCancel={() => setDeleting(null)} onConfirm={remove} />
     </main>
   </div>;

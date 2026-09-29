@@ -138,6 +138,36 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("archiving and
     expect(reopened).toMatchObject({ archived: true, pending: false, version: created.version, draft: { title: created.draft!.title } });
   });
 
+  it("discards an assistant response even when the Quote was restored before it finished", async () => {
+    const created = await steps.create();
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("edit_quote_details", { fields: { title: "Titre de l’assistant" } })], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Titre modifié."),
+    ]);
+    let calls = 0;
+    const request = artisan.withDependencies({ modelBoundary: {
+      model: faux.getModel(),
+      streamFn: async (model, context, options) => {
+        if (calls++ === 0) {
+          const archived = await ok(archive(created.id));
+          expect(archived).toMatchObject({ pending: false });
+          await ok(restore(created.id));
+        }
+        return models.streamSimple(model, context, options);
+      },
+      timeoutMs: 1_000,
+    } });
+    const response = await request({ action: "assistant", id: created.id, expectedVersion: created.version, requestId: crypto.randomUUID(), text: "Change le titre.", locale: "fr" });
+    expect(response.status).toBe(409);
+    const reopened = await ok(artisan.request(undefined, created.id));
+    expect(reopened).toMatchObject({ archived: false, pending: false, version: created.version, draft: { title: created.draft!.title } });
+    const notes = (reopened as unknown as { messages: { role: string; en: string }[] }).messages.filter((message) => message.role === "note");
+    expect(notes).toEqual([expect.objectContaining({ en: "Response discarded; the Quote was archived." })]);
+  });
+
   it("archives and restores idempotently", async () => {
     const created = await steps.create();
     const requestId = crypto.randomUUID();

@@ -583,6 +583,12 @@ async function setArchived(database: Database, businessId: string, body: Body, n
     if (!record) throw new RequestFailure(404, "quote_not_found");
     const archivedAt = action === "archive" ? record.archivedAt ?? now : null;
     if (archivedAt !== record.archivedAt) await transaction.update(quote).set({ archivedAt }).where(eq(quote.id, id));
+    if (action === "archive" && record.pending && record.pendingRequestId) {
+      // End the pending assistant turn now, so its response is discarded even if the Quote is restored before it arrives.
+      await transaction.update(quote).set({ pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null }).where(eq(quote.id, id));
+      await transaction.update(quoteRequest).set({ status: "stale", updatedAt: now }).where(and(eq(quoteRequest.businessId, businessId), eq(quoteRequest.requestId, record.pendingRequestId), eq(quoteRequest.status, "pending")));
+      await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "note", fr: "Réponse ignorée; le devis a été archivé.", en: "Response discarded; the Quote was archived." });
+    }
     await recordRequest(transaction, { businessId, quoteId: id, action, requestId, status: "complete", baseVersion: record.version, payloadHash: hash, now });
     detail = await readDetail(transaction, businessId, id);
   });
@@ -688,18 +694,14 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     const request = await findRequest(transaction, businessId, requestId);
     const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
     if (!request || !record) throw new RequestFailure(404, "quote_not_found");
-    if (record.archivedAt !== null) {
-      // Archiving froze the Quote while the model was working. Discard the response.
-      if (request.status === "pending") await transaction.update(quoteRequest).set({ status: "stale", updatedAt: now }).where(eq(quoteRequest.id, request.id));
+    if (request.status !== "pending" || record.pendingRequestId !== requestId || record.version !== baseVersion || record.archivedAt !== null) {
+      // Archiving ends the turn and leaves its own note; otherwise note that this response is stale.
+      if (request.status === "pending") {
+        await transaction.update(quoteRequest).set({ status: "stale", updatedAt: now }).where(eq(quoteRequest.id, request.id));
+        await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "note", fr: "Réponse devenue obsolète; le brouillon a changé.", en: "Response was stale; the Working Draft changed." });
+      }
       if (record.pendingRequestId === requestId) await transaction.update(quote).set({ pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now }).where(eq(quote.id, id));
-      await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "note", fr: "Réponse ignorée; le devis a été archivé.", en: "Response discarded; the Quote was archived." });
-      archivedMeanwhile = true;
-      return;
-    }
-    if (request.status !== "pending" || record.pendingRequestId !== requestId || record.version !== baseVersion) {
-      if (request.status === "pending") await transaction.update(quoteRequest).set({ status: "stale", updatedAt: now }).where(eq(quoteRequest.id, request.id));
-      if (record.pendingRequestId === requestId) await transaction.update(quote).set({ pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now }).where(eq(quote.id, id));
-      await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "note", fr: "Réponse devenue obsolète; le brouillon a changé.", en: "Response was stale; the Working Draft changed." });
+      archivedMeanwhile = record.archivedAt !== null;
       stale = true;
       return;
     }
