@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="300" viewBox="0 0 720 300">
+  <!-- Mock-up logo for testing only: "Pinto la peinture" -->
+  <rect width="720" height="300" fill="#ffffff"/>
+
+  <!-- Icon: paint roller over a red paint stroke -->
+  <g transform="translate(50 50)">
+    <!-- roller cover -->
+    <rect x="20" y="20" width="150" height="54" rx="14" fill="#D52B1E"/>
+    <rect x="20" y="20" width="150" height="16" rx="8" fill="#ffffff" opacity="0.25"/>
+    <!-- frame -->
+    <path d="M170 47 H192 V104 H104 V128" fill="none" stroke="#1F2328" stroke-width="10"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- handle -->
+    <rect x="92" y="124" width="24" height="70" rx="10" fill="#1F2328"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="290" y="160" font-family="'DejaVu Serif', Georgia, serif" font-weight="700"
+        font-size="104" fill="#1F2328" letter-spacing="-2">Pinto</text>
+  <text x="296" y="218" font-family="'Liberation Sans', 'Helvetica Neue', Arial, sans-serif"
+        font-size="40" fill="#D52B1E" letter-spacing="9">LA PEINTURE</text>
+  <text x="298" y="258" font-family="'Liberation Sans', 'Helvetica Neue', Arial, sans-serif"
+        font-size="18" fill="#6B7076" letter-spacing="4">GENÈVE · LAUSANNE</text>
+</svg>
