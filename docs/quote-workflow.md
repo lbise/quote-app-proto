@@ -86,9 +86,9 @@ Focused tests:
 
 ```sh
 npx vitest run app/lib/quote.test.ts app/lib/quote-tools.server.test.ts app/lib/quote-assistant.server.test.ts
-TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quotes-ai.server.test.ts
-TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quote-pdf.server.test.ts app/lib/business-logo.server.test.ts
-TEST_DATABASE_URL="$DATABASE_URL" npx vitest run app/lib/quote-pricing.server.test.ts app/lib/quote-publication.server.test.ts app/lib/quote-revisions.server.test.ts
+npx vitest run app/lib/quotes-ai.server.test.ts
+npx vitest run app/lib/quote-pdf.server.test.ts app/lib/business-logo.server.test.ts
+npx vitest run app/lib/quote-pricing.server.test.ts app/lib/quote-publication.server.test.ts app/lib/quote-revisions.server.test.ts
 npm run test:browser
 ```
 
@@ -98,7 +98,7 @@ npm run test:browser
 
 Browser tests use an isolated database whose name ends in `_browser`, unless `BROWSER_TEST_DATABASE_URL` is supplied. The setup creates that database and applies migrations. Its PostgreSQL role needs permission to create a database. Browser authentication goes through Better Auth; only test-user email verification uses direct fixture setup. Never point these tests at production. Browser traces contain authenticated test traffic and should not be published without review.
 
-The default browser suite uses Chromium on port 5180. Install it with `npx playwright install chromium`. The PDF server tests need the same Chromium. PostgreSQL-backed server tests are skipped unless `TEST_DATABASE_URL` is set. A passing run with skips does not verify persistence. CI runs the database-backed tests and the browser suite.
+The default browser suite uses Chromium on port 5180. Install it with `npx playwright install chromium`. The PDF server tests need the same Chromium. PostgreSQL-backed server tests are skipped unless `TEST_DATABASE_URL` is set, in the shell or in `.env`. It must name a separate test database, never the `DATABASE_URL` one: tests create Users and Quotes they never delete, and the test setup refuses to run against the development database. Apply migrations to it with `DATABASE_URL=<test url> npm run db:migrate` after each new migration. A passing run with skips does not verify persistence. CI runs the database-backed tests and the browser suite.
 
 Routine request tests use a controllable pi model boundary and the real tool executor. Browser tests use network interception for deterministic assistant replies. Neither makes live model calls. Fictional Google app experiments require the isolated workflow in [quote-ai.md](quote-ai.md). Real-data rehearsal remains gated on recorded provider review and the release acceptance in #21. No provider credentials reach the browser.
 
