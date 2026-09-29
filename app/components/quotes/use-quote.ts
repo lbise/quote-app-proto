@@ -3,6 +3,7 @@ import type { QuoteCalculation, QuoteData } from "../../lib/quote";
 import type { QuoteAssistantDiagnostic, QuoteAssistantLlmRequest, QuoteAssistantSuccessDebug } from "../../lib/quote-assistant-debug";
 import { randomUUID } from "../../lib/random-id";
 import type { DictationMetadata } from "../../lib/dictation";
+import type { QuoteSource } from "../../lib/quote-start-from";
 
 export type ConversationMessage = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
 export type QuoteRecord = {
@@ -14,6 +15,8 @@ export type QuoteRecord = {
   pending: boolean;
   /** An Archived Quote is read-only until restored. */
   archived: boolean;
+  /** When the Quote last changed, including its Working Draft. */
+  updatedAt: string;
   canUndo: boolean;
   assistantRequest?: { requestId: string; text: string; status: 'pending' | 'complete' | 'failed' | 'stale'; baseVersion: number } | null;
   /** Present only in a debug-enabled assistant action response; never persisted. */
@@ -31,6 +34,17 @@ export async function deleteQuote(id: string, requestId: string): Promise<QuoteL
     if (failure instanceof RequestError && failure.code === "quote_not_found") return null;
     throw failure;
   }
+}
+
+/** What the notice on a new Quote names: the source Quote's reference and the version copied. */
+export type StartedFrom = { reference: string; from: QuoteSource };
+
+/**
+ * Start a new Quote from one version of another. With `expectedVersion`, a
+ * Working Draft is copied only if it is still the stored version.
+ */
+export function startQuoteFrom(id: string, from: QuoteSource, requestId: string, expectedVersion?: number): Promise<QuoteRecord> {
+  return quoteRequest<QuoteRecord>({ action: "create-from", id, from, requestId, ...(expectedVersion === undefined ? {} : { expectedVersion }) });
 }
 
 export async function quoteRequest<T>(body?: Record<string, unknown>, id?: string): Promise<T> {
@@ -245,6 +259,27 @@ export function useQuote(initial: QuoteRecord) {
     } finally { if (alive.current) setBusy(false); }
   }
 
+  /**
+   * Start a new Quote from the version on screen. Only a saved Working Draft with
+   * no assistant change in progress can be copied, so the copy matches the screen.
+   */
+  async function startFrom(from: QuoteSource) {
+    if (busy || ai === "processing" || save !== "saved" || queue.current.length) return null;
+    setBusy(true); setError(null);
+    const version = current.current.version;
+    const retry = actionRetry.current;
+    const request = retry?.action === `create-from:${from}` && retry.version === version ? retry : { action: `create-from:${from}`, requestId: randomUUID(), version };
+    actionRetry.current = request;
+    try {
+      const next = await startQuoteFrom(initial.id, from, request.requestId, from === "draft" ? version : undefined);
+      actionRetry.current = null;
+      return next;
+    } catch (failure) {
+      setError(failure instanceof RequestError ? failure.code : "connection_failed");
+      return null;
+    } finally { if (alive.current) setBusy(false); }
+  }
+
   /** `dictation` marks a dictated Artisan message; a retry keeps the original request's value. */
   async function runAssistant(text: string, locale: "fr" | "en", retry = false, dictation?: DictationMetadata) {
     if (!text.trim() || ai === "processing" || busy || !current.current.draft) return null;
@@ -282,5 +317,5 @@ export function useQuote(initial: QuoteRecord) {
     }
   }
 
-  return { record, quote, save, ai, error, debug, toolDebug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, setArchived, lastRequest };
+  return { record, quote, save, ai, error, debug, toolDebug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, setArchived, startFrom, lastRequest };
 }

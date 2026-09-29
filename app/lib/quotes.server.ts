@@ -10,15 +10,17 @@ import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
 import { QuoteAIError, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
 import type { QuoteAssistantDiagnostic, QuoteAssistantSuccessDebug } from "./quote-assistant-debug";
 import { quoteDraftLimit } from "./quote-limits";
+import { parseQuoteSource, workFromSource } from "./quote-start-from";
 import { currentQuoteLayout } from "./quote-layouts";
 import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Store = Database | Transaction;
 type Message = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
-type Action = "create" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "customer-apply" | "defaults-save" | "archive" | "restore" | "delete";
-const actions: readonly Action[] = ["create", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "customer-apply", "defaults-save", "archive", "restore", "delete"];
-type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; dictation?: unknown; customer?: unknown; customerId?: unknown; defaults?: unknown };
+type Action = "create" | "create-from" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "customer-apply" | "defaults-save" | "archive" | "restore" | "delete";
+const actions: readonly Action[] = ["create", "create-from", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "customer-apply", "defaults-save", "archive", "restore", "delete"];
+/** `from` names the source version for `create-from`: "draft" or a Published Revision number. */
+type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; dictation?: unknown; customer?: unknown; customerId?: unknown; defaults?: unknown; from?: unknown };
 export type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: { id: string; email: string; emailVerified: boolean } } | null> } };
 type QuoteDetail = Awaited<ReturnType<typeof readDetail>>;
 
@@ -107,7 +109,7 @@ function stable(value: unknown, depth = 0): string {
 function payloadHash(body: Body): string {
   return createHash("sha256").update(stable({
     action: body.action, id: body.id, expectedVersion: body.expectedVersion, quote: body.quote,
-    text: body.text, locale: body.locale, dictation: body.dictation, customer: body.customer, customerId: body.customerId, defaults: body.defaults,
+    text: body.text, locale: body.locale, dictation: body.dictation, customer: body.customer, customerId: body.customerId, defaults: body.defaults, from: body.from,
   })).digest("hex");
 }
 
@@ -257,6 +259,7 @@ async function readDetail(database: Store, businessId: string, id: string) {
     messages: messages.map((entry) => ({ role: entry.role as Message["role"], fr: entry.fr, en: entry.en, ...messageChanges(entry.changed) })),
     pending: record.pending,
     archived: record.archivedAt !== null,
+    updatedAt: record.updatedAt.toISOString(),
     canUndo: record.undoDraft !== null && record.undoDraft !== undefined,
     ...(assistantRequest ? { assistantRequest } : {}),
   };
@@ -396,6 +399,7 @@ export function createQuoteHandler(dependencies: QuoteHandlerDependencies = {}) 
       if (body.action === "assistant") return json(await assistant(database, businessId, body, dependencies.modelBoundary, now()));
       if (body.action === "delete") return json(await deleteQuote(database, businessId, body, now()));
       if (body.action === "archive" || body.action === "restore") return json(await setArchived(database, businessId, body, now()));
+      if (body.action === "create-from") return json(await createFrom(database, businessId, body, now()));
       return json(await mutate(database, businessId, body, now()));
     } catch (error) {
       if (error instanceof RequestFailure) return json({ error: error.code, ...(error.details === undefined ? {} : { details: error.details }) }, error.status);
@@ -467,7 +471,7 @@ async function saveDefaults(database: Database, businessId: string, body: Body, 
 }
 
 async function mutate(database: Database, businessId: string, body: Body, now: Date): Promise<QuoteDetail> {
-  const action = body.action as Exclude<Action, "assistant" | "customer-save" | "defaults-save" | "archive" | "restore" | "delete">;
+  const action = body.action as Exclude<Action, "create-from" | "assistant" | "customer-save" | "defaults-save" | "archive" | "restore" | "delete">;
   const requestId = requestKey(body.requestId);
   const hash = payloadHash(body);
   const id = action === "create" ? undefined : identifier(body.id, "quote_id");
@@ -481,11 +485,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
       throw new RequestFailure(409, "request_in_progress");
     }
     if (action === "create") {
-      const reference = await nextReference(transaction, businessId);
-      const [storedDefaults] = await transaction.select().from(businessDefaults).where(eq(businessDefaults.businessId, businessId)).limit(1);
-      const draft = asQuote(emptyQuote(reference, defaultsFrom(storedDefaults?.defaults, false)), true).draft;
-      const quoteId = crypto.randomUUID();
-      await transaction.insert(quote).values({ id: quoteId, businessId, reference: draft.reference, title: draft.title, draft, updatedAt: now });
+      const quoteId = await insertNewQuote(transaction, businessId, {}, now);
       await recordRequest(transaction, { businessId, quoteId, action, requestId, status: "complete", payloadHash: hash, now });
       detail = await readDetail(transaction, businessId, quoteId);
       return;
@@ -558,6 +558,62 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
     }
     await recordRequest(transaction, { businessId, quoteId: id!, action, requestId, status: "complete", baseVersion: record.version, payloadHash: hash, now });
     detail = await readDetail(transaction, businessId, id!);
+  });
+  if (!detail) throw new RequestFailure(500, "request_failed");
+  return detail;
+}
+
+/**
+ * Insert a new Quote with the next automatic reference and the current business
+ * defaults. `work` supplies content that does not come from a new Quote.
+ */
+async function insertNewQuote(transaction: Transaction, businessId: string, work: Partial<QuoteData>, now: Date): Promise<string> {
+  const reference = await nextReference(transaction, businessId);
+  const draft = asQuote(emptyQuote(reference, { ...await businessDefaultsFor(transaction, businessId), ...work }), true).draft;
+  const quoteId = crypto.randomUUID();
+  await transaction.insert(quote).values({ id: quoteId, businessId, reference: draft.reference, title: draft.title, draft, updatedAt: now });
+  return quoteId;
+}
+
+/**
+ * Start a new Quote from one version of another: its Working Draft as stored, or
+ * a Published Revision. Only the title, sections and lines are copied. The new
+ * Quote keeps no link to the source, and the source is not changed. Archived
+ * Quotes can be sources. `expectedVersion`, when supplied, must match the
+ * source, so a Working Draft on screen is copied only if it is still stored.
+ */
+async function createFrom(database: Database, businessId: string, body: Body, now: Date): Promise<QuoteDetail> {
+  const id = identifier(body.id, "quote_id");
+  const from = parseQuoteSource(body.from);
+  if (from === null) throw new RequestFailure(400, "invalid_source");
+  const requestId = requestKey(body.requestId);
+  const hash = payloadHash(body);
+  let detail: QuoteDetail | undefined;
+  await database.transaction(async (transaction) => {
+    await lockRequest(transaction, businessId, requestId);
+    const existing = await findRequest(transaction, businessId, requestId);
+    if (existing) {
+      // The stored request names the new Quote; the payload hash binds the source.
+      assertRequestBinding(existing, "create-from", undefined, hash);
+      if (existing.status === "complete" && existing.quoteId) { detail = await readDetail(transaction, businessId, existing.quoteId); return; }
+      throw new RequestFailure(409, "request_in_progress");
+    }
+    // Lock the source so the checked version is the one copied.
+    await lockQuote(transaction, id);
+    const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
+    if (!record) throw new RequestFailure(404, "quote_not_found");
+    if (body.expectedVersion !== undefined) checkVersion(record, body);
+    let source: QuoteData;
+    if (from === "draft") source = requireDraft(record);
+    else {
+      const [revision] = await transaction.select().from(quoteRevision)
+        .where(and(eq(quoteRevision.quoteId, id), eq(quoteRevision.businessId, businessId), eq(quoteRevision.number, from))).limit(1);
+      if (!revision) throw new RequestFailure(404, "revision_not_found");
+      source = revision.quote as QuoteData;
+    }
+    const quoteId = await insertNewQuote(transaction, businessId, workFromSource(source, (kind) => `${kind}-${crypto.randomUUID()}`), now);
+    await recordRequest(transaction, { businessId, quoteId, action: "create-from", requestId, status: "complete", payloadHash: hash, now });
+    detail = await readDetail(transaction, businessId, quoteId);
   });
   if (!detail) throw new RequestFailure(500, "request_failed");
   return detail;

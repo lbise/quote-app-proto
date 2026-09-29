@@ -431,3 +431,5 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 .qp-archived-banner { flex-shrink: 0; margin-top: var(--space-sm); }
 .qp-delete-identity { display: flex; flex-direction: column; gap: var(--space-2xs); padding: var(--space-sm) var(--space-md); background: var(--color-canvas); border-radius: var(--radius-control); font-size: var(--text-sm); }
 .qp-delete-identity span { color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.qp-started-banner { flex-shrink: 0; margin-top: var(--space-sm); }
+.qp-start-from [data-slot='radio-group'] { gap: var(--space-xs); }

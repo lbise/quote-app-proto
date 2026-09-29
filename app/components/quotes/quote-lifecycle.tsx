@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Archive, ArchiveRestore, MoreHorizontal, Trash2, TriangleAlert } from 'lucide-react';
+import { Archive, ArchiveRestore, CopyPlus, MoreHorizontal, Trash2, TriangleAlert } from 'lucide-react';
 import { Button } from '../ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { Alert, AlertDescription } from '../ui/alert';
@@ -14,8 +14,9 @@ const titleOf = (quote: QuoteIdentity, locale: Locale) => quote.title || (locale
 /**
  * Archive/Restore and Delete for one Quote. Active Quotes offer Archive, Archived
  * Quotes offer Restore; both offer Delete, which asks for confirmation first.
+ * With `onStartFrom`, it also offers starting a new Quote from this one.
  */
-export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDisabled, onArchive, onRestore, onDelete, onMenuClosed }: {
+export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDisabled, onArchive, onRestore, onDelete, onStartFrom, onMenuClosed }: {
   locale: Locale;
   quote: QuoteIdentity;
   archived: boolean;
@@ -25,6 +26,7 @@ export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDis
   onArchive: () => void;
   onRestore: () => void;
   onDelete: () => void;
+  onStartFrom?: () => void;
   /** Called instead of returning focus to the trigger when an action removed it. */
   onMenuClosed?: (event: Event) => void;
 }) {
@@ -35,6 +37,10 @@ export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDis
       <Button variant="ghost" size="icon-sm" disabled={disabled} aria-label={t(`Actions du devis ${name}`, `Actions for Quote ${name}`)} title={t('Actions du devis', 'Quote actions')}><MoreHorizontal /></Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="qp-line-menu" lang={locale} onCloseAutoFocus={onMenuClosed}>
+      {onStartFrom && <><DropdownMenuGroup>
+        <DropdownMenuItem onSelect={onStartFrom}><CopyPlus />{t('Nouveau devis à partir de…', 'New Quote from…')}</DropdownMenuItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator /></>}
       <DropdownMenuGroup>
         {archived
           ? <DropdownMenuItem disabled={archiveDisabled} onSelect={onRestore}><ArchiveRestore />{t('Restaurer', 'Restore')}</DropdownMenuItem>

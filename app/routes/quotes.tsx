@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLoaderData, useNavigate, useSearchParams } from 'react-router';
+import { useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Archive, ArrowRight, FileText, Plus, TriangleAlert } from 'lucide-react';
 import type { Route } from './+types/quotes';
 import { requireApprovedArtisan } from '../lib/auth.server';
@@ -10,7 +10,9 @@ import { Input } from '../components/ui/input';
 import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import QuoteWorkspace from '../components/quotes/workspace';
-import { deleteQuote, quoteRequest, type QuoteList, type QuoteRecord } from '../components/quotes/use-quote';
+import { deleteQuote, quoteRequest, startQuoteFrom, type QuoteList, type QuoteRecord, type StartedFrom } from '../components/quotes/use-quote';
+import { StartFromDialog } from '../components/quotes/start-from-dialog';
+import { parseQuoteSource, type QuoteSource } from '../lib/quote-start-from';
 import { DeleteQuoteDialog, QuoteActionsMenu } from '../components/quotes/quote-lifecycle';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { QuoteHeader } from '../components/quotes/quote-header';
@@ -26,11 +28,19 @@ export function meta({ loaderData }: Route.MetaArgs) {
   return [{ title: loaderData?.locale === 'fr' ? 'Mes devis | Easy Quote' : 'My Quotes | Easy Quote' }];
 }
 
+/** The "Started from…" notice for a Quote just started from another, carried in navigation state. */
+function startedFromState(state: unknown): StartedFrom | undefined {
+  const value = (state as { startedFrom?: { reference?: unknown; from?: unknown } } | null)?.startedFrom;
+  const from = parseQuoteSource(value?.from);
+  return typeof value?.reference === 'string' && from !== null ? { reference: value.reference, from } : undefined;
+}
+
 export default function Quotes() {
   const initial = useLoaderData<typeof loader>();
   const [locale, setLocale] = useState(initial.locale);
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const id = params.get('id');
   const [record, setRecord] = useState<QuoteRecord | null>(null);
   const [list, setList] = useState<QuoteList | null>(null);
@@ -43,6 +53,8 @@ export default function Quotes() {
   const [deleting, setDeleting] = useState<QuoteList['quotes'][number] | null>(null);
   const [actionFailed, setActionFailed] = useState(false);
   const [announcement, setAnnouncement] = useState('');
+  const [choosingSource, setChoosingSource] = useState<QuoteList['quotes'][number] | null>(null);
+  const [startingFrom, setStartingFrom] = useState(false);
   // Focus target after an action removed a row from the current tab.
   const nextFocus = useRef<string | null>(null);
   const rows = useRef<HTMLDivElement | null>(null);
@@ -110,10 +122,30 @@ export default function Quotes() {
       return true;
     } catch { nextFocus.current = null; return false; }
   }
+  /** Open a Quote just started from another, with a notice naming the version it was started from. */
+  function openStarted(id: string, startedFrom: StartedFrom) {
+    navigate(`/quotes?id=${encodeURIComponent(id)}`, { state: { startedFrom } });
+  }
+  async function copyFrom(quote: QuoteList['quotes'][number], from: QuoteSource, requestId: string) {
+    setActionFailed(false); setStartingFrom(true);
+    try {
+      const next = await startQuoteFrom(quote.id, from, requestId);
+      setChoosingSource(null);
+      openStarted(next.id, { reference: quote.reference, from });
+      return true;
+    } catch { return false; }
+    finally { setStartingFrom(false); }
+  }
+  /** A Quote with one version is copied at once; with several, the Artisan chooses one. */
+  function startFrom(quote: QuoteList['quotes'][number]) {
+    const versions = quote.revision + (quote.hasDraft ? 1 : 0);
+    if (versions > 1) { setChoosingSource(quote); return; }
+    void copyFrom(quote, quote.hasDraft ? 'draft' : quote.revision, randomUUID()).then(started => { if (!started) setActionFailed(true); });
+  }
   function visible() {
     return (list?.quotes ?? []).filter(q => q.archived === (tab === 'archived') && `${q.reference} ${q.title} ${q.customerName}`.toLowerCase().includes(filter.toLowerCase()));
   }
-  if (record && id === record.id) return <QuoteWorkspace key={record.id} initial={record} locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} />;
+  if (record && id === record.id) return <QuoteWorkspace key={record.id} initial={record} locale={locale} startedFrom={startedFromState(location.state)} onLanguage={changeLanguage} onList={() => navigate('/quotes')} onStarted={openStarted} />;
   return <div className="qp-app qp-page qp-variant-b" lang={locale}>
     <QuoteHeader current="quotes" locale={locale} onLanguage={changeLanguage} onList={() => navigate('/quotes')} />
     <main className="qp-quote-list">
@@ -136,10 +168,11 @@ export default function Quotes() {
           ? <div className="qp-list-empty">{tab === 'archived' ? <><Archive /><h2>{t('Aucun devis archivé.', 'No Archived Quotes.')}</h2><p>{t('Archivez un devis pour le retirer de la liste active. Vous pourrez le restaurer.', 'Archive a Quote to set it aside from the active list. You can restore it later.')}</p></> : <><FileText /><h2>{t('Aucun devis actif.', 'No active Quotes.')}</h2><p>{t('Vos devis archivés restent dans l’onglet Archivés.', 'Your Archived Quotes stay in the Archived tab.')}</p></>}</div>
           : <div className="qp-list-rows" ref={rows}>{visible().map(q => <div className="qp-list-row" key={q.id} data-quote-id={q.id}>
             <button className="qp-list-open" onClick={() => navigate(`/quotes?id=${encodeURIComponent(q.id)}`)}><FileText /><div><strong>{q.title || t('Nouveau devis', 'New Quote')}</strong><span>{q.customerName || t('Sans destinataire', 'No Customer')} · {q.reference}</span></div><Badge variant="outline">{q.hasDraft ? t('Brouillon', 'Draft') : t(`Révision ${q.revision}`, `Revision ${q.revision}`)}</Badge><ArrowRight /></button>
-            <QuoteActionsMenu locale={locale} quote={q} archived={q.archived} onArchive={() => void setArchived(q, true)} onRestore={() => void setArchived(q, false)} onDelete={() => setDeleting(q)} onMenuClosed={event => { if (nextFocus.current !== null) event.preventDefault(); }} />
+            <QuoteActionsMenu locale={locale} quote={q} archived={q.archived} disabled={startingFrom} onStartFrom={() => startFrom(q)} onArchive={() => void setArchived(q, true)} onRestore={() => void setArchived(q, false)} onDelete={() => setDeleting(q)} onMenuClosed={event => { if (nextFocus.current !== null) event.preventDefault(); }} />
           </div>)}{!visible().length && <p className="qp-list-footnote">{t('Aucun devis ne correspond à cette recherche.', 'No Quote matches this search.')}</p>}</div>}</TabsContent>)}
       </Tabs>}
       <DeleteQuoteDialog locale={locale} quote={deleting} onCancel={() => setDeleting(null)} onConfirm={remove} />
+      <StartFromDialog locale={locale} quote={choosingSource} onCancel={() => setChoosingSource(null)} onConfirm={(from, requestId) => choosingSource ? copyFrom(choosingSource, from, requestId) : Promise.resolve(false)} />
     </main>
   </div>;
 }
