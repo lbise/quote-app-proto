@@ -1,59 +1,16 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall, type AssistantMessage } from "@earendil-works/pi-ai";
+import { fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 
 import { AdministrationRefusal } from "./administration.server";
 import { quote as quoteTable, turnTrace } from "./db/schema";
 import type { QuoteAIModelBoundary } from "./quote-assistant.server";
 import { completeQuote, quoteHttpHarness, quoteSteps, type ArtisanFixture } from "./quote-http.test-support";
-import { deleteExpiredTurnTraces, readTurnTraces, recordTurnTrace, scheduleTurnTraceRetention } from "./turn-traces.server";
+import { response, scriptedModel, secret } from "./turn-trace.test-support";
+import { deleteExpiredTurnTraces, listTurnTraces, readTurnTrace, readTurnTraces, recordTurnTrace, scheduleTurnTraceRetention } from "./turn-traces.server";
 import type { TurnTraceModelCall } from "./turn-trace";
 
 // #52: every Assistant Turn leaves a Turn Trace that only Administrators can read.
-
-const secret = "sk-turn-trace-test-credential-0123456789";
-
-/** A model boundary that answers each call with the next scripted message and reports a provider payload, like real providers do. */
-function scriptedModel(messages: AssistantMessage[], hooks: { beforeCall?: (call: number) => Promise<void> | void } = {}) {
-  const model = fauxProvider().getModel();
-  let calls = 0;
-  const boundary: QuoteAIModelBoundary = {
-    model,
-    timeoutMs: 2_000,
-    streamFn: async (requestModel, context, options) => {
-      calls += 1;
-      await hooks.beforeCall?.(calls);
-      await options?.onPayload?.({
-        model: requestModel.id,
-        system: context.systemPrompt,
-        messages: context.messages,
-        tools: context.tools?.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
-        // Providers never put credentials in the payload; the Turn Trace must drop them even if one did.
-        apiKey: secret,
-        headers: { Authorization: `Bearer ${secret}` },
-        note: `key ${secret} in text`,
-      }, requestModel);
-      const message = messages.shift();
-      if (!message) throw new Error("No scripted response left.");
-      const stream = createAssistantMessageEventStream();
-      queueMicrotask(() => {
-        stream.push({ type: "start", partial: message });
-        if (message.stopReason === "error" || message.stopReason === "aborted") stream.push({ type: "error", reason: message.stopReason, error: message });
-        else stream.push({ type: "done", reason: message.stopReason as "stop" | "length" | "toolUse", message });
-        stream.end();
-      });
-      return stream;
-    },
-  };
-  return boundary;
-}
-
-function response(content: Parameters<typeof fauxAssistantMessage>[0], options: { stopReason?: AssistantMessage["stopReason"]; errorMessage?: string; input?: number; output?: number; cost?: number } = {}): AssistantMessage {
-  const message = fauxAssistantMessage(content, { stopReason: options.stopReason, errorMessage: options.errorMessage });
-  const input = options.input ?? 100;
-  const output = options.output ?? 20;
-  return { ...message, provider: "faux", model: "faux-1", usage: { input, output, cacheRead: 0, cacheWrite: 0, totalTokens: input + output, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: options.cost ?? 0.001 } } };
-}
 
 describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces", () => {
   const harness = quoteHttpHarness("turn-traces");
@@ -102,7 +59,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
 
     const [trace] = await traces(detail.id);
     expect(trace).toMatchObject({
-      quoteId: detail.id, userId: artisan.userId, locale: "fr", outcome: "committed", reason: null,
+      quoteId: detail.id, userId: artisan.userId, locale: "fr", outcome: "committed", outcomeKind: "committed", reason: null,
       baseVersion: detail.version, resultVersion: committed.version,
       provider: "faux", model: "faux-1", modelCallCount: 2, inputTokens: 2700, outputTokens: 50,
     });
@@ -124,11 +81,39 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
     expect(trace.detail.toolCalls).toEqual([expect.objectContaining({ name: "edit_quote_lines", outcome: "applied", arguments: expect.objectContaining({ lines: [expect.objectContaining({ amount: "80.00" })] }) })]);
   });
 
+  it("records a committed turn with failed tool calls", async () => {
+    const detail = await draft();
+    const model = scriptedModel([
+      response([fauxToolCall("unknown_tool", {})], { stopReason: "toolUse" }),
+      response([fauxToolCall("edit_quote_lines", { lines: [{ description: "Pose", mode: "fixed", quantity: "", unit: "", unitPrice: "", amount: "80.00" }] })], { stopReason: "toolUse" }),
+      response("La pose a été ajoutée."),
+    ]);
+    expect((await send(model, detail)).status).toBe(200);
+    const [trace] = await traces(detail.id);
+    expect(trace).toMatchObject({ outcome: "committed", outcomeKind: "committed_with_failed_calls" });
+  });
+
+  it("records a provider failure after the request was sent", async () => {
+    const detail = await draft();
+    const model = scriptedModel([]);
+    const failing: QuoteAIModelBoundary = {
+      ...model,
+      streamFn: async (requestModel, context, options) => {
+        await options?.onPayload?.({ model: requestModel.id, messages: context.messages }, requestModel);
+        throw new Error("socket hang up");
+      },
+    };
+    expect((await send(failing, detail)).status).toBe(502);
+    const [trace] = await traces(detail.id);
+    expect(trace).toMatchObject({ outcome: "discarded", outcomeKind: "provider_error", modelCallCount: 1 });
+    expect(trace.detail.modelCalls[0]).toMatchObject({ error: "socket hang up", payload: expect.anything() });
+  });
+
   it("records an unchanged turn", async () => {
     const detail = await draft();
     expect((await send(scriptedModel([response("Quelle pièce ?")]), detail, "Peins.")).status).toBe(200);
     const [trace] = await traces(detail.id);
-    expect(trace).toMatchObject({ outcome: "unchanged", baseVersion: detail.version, resultVersion: detail.version, modelCallCount: 1 });
+    expect(trace).toMatchObject({ outcome: "unchanged", outcomeKind: "unchanged", baseVersion: detail.version, resultVersion: detail.version, modelCallCount: 1 });
   });
 
   it("never records credentials", async () => {
@@ -150,7 +135,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
     ]);
     expect((await send(model, detail)).status).toBe(502);
     const [trace] = await traces(detail.id);
-    expect(trace).toMatchObject({ outcome: "discarded", reason: "failed_call_limit_reached", baseVersion: detail.version, resultVersion: detail.version, messageId: null });
+    expect(trace).toMatchObject({ outcome: "discarded", outcomeKind: "discarded", reason: "failed_call_limit_reached", baseVersion: detail.version, resultVersion: detail.version, messageId: null });
     expect(trace.detail.toolCalls).toHaveLength(3);
     expect(trace.detail.toolCalls[0]).toMatchObject({ name: "unknown_tool", outcome: "rejected" });
     expect(trace.detail.toolCalls[0].result).toBeDefined();
@@ -160,7 +145,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
     const detail = await draft();
     expect((await send(scriptedModel([response([], { stopReason: "error", errorMessage: "Upstream overloaded" })]), detail)).status).toBe(502);
     const [trace] = await traces(detail.id);
-    expect(trace).toMatchObject({ outcome: "discarded", reason: "assistant_failed", modelCallCount: 1 });
+    expect(trace).toMatchObject({ outcome: "discarded", outcomeKind: "provider_error", reason: "assistant_failed", modelCallCount: 1 });
     expect(trace.detail.modelCalls[0].response).toMatchObject({ stopReason: "error", errorMessage: "Upstream overloaded" });
   });
 
@@ -174,7 +159,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
     };
     expect((await send(model, detail)).status).toBe(502);
     const [trace] = await traces(detail.id);
-    expect(trace).toMatchObject({ outcome: "discarded", reason: "spend_limit_reached", modelCallCount: 1, inputTokens: 0 });
+    expect(trace).toMatchObject({ outcome: "discarded", outcomeKind: "failed_before_model_call", reason: "spend_limit_reached", modelCallCount: 1, inputTokens: 0 });
     const [call] = trace.detail.modelCalls;
     expect(call.payload).toBeUndefined();
     expect(call.response).toBeUndefined();
@@ -187,7 +172,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
     const refused = await send(scriptedModel([response("Jamais envoyé.")]), { id: detail.id, version: detail.version - 1 });
     expect(refused.status).toBe(409);
     const [trace] = await traces(detail.id);
-    expect(trace).toMatchObject({ outcome: "discarded", reason: "stale_version", modelCallCount: 0, baseVersion: detail.version, resultVersion: detail.version });
+    expect(trace).toMatchObject({ outcome: "discarded", outcomeKind: "failed_before_model_call", reason: "stale_version", modelCallCount: 0, baseVersion: detail.version, resultVersion: detail.version });
     expect(trace.detail.text).toBe("Ajoute la pose.");
     expect(trace.detail.systemPrompt).toContain("You help an Artisan prepare a Quote");
     expect(trace.detail.applicationContext).toMatchObject({ currentWorkingDraft: { title: "Bibliothèque sur mesure" }, currentMessage: { text: "Ajoute la pose." } });
@@ -233,7 +218,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
     release();
     expect((await pending).status).toBe(409);
     const [trace] = await traces(detail.id);
-    expect(trace).toMatchObject({ outcome: "discarded", reason: "stale", modelCallCount: 2, baseVersion: detail.version, resultVersion: detail.version + 1 });
+    expect(trace).toMatchObject({ outcome: "discarded", outcomeKind: "discarded", reason: "stale", modelCallCount: 2, baseVersion: detail.version, resultVersion: detail.version + 1 });
     expect(trace.detail.message).toMatchObject({ role: "note", text: "Réponse devenue obsolète; le brouillon a changé." });
   });
 
@@ -317,5 +302,108 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
     const [trace] = await traces(detail.id);
     expect(trace.detail.modelCalls).toEqual(modelCalls);
     expect(Object.keys(trace.detail.modelCalls[0].payload as object)).toEqual(["z", "messages", "a"]);
+  });
+  describe("for the admin area", () => {
+    let listed: ArtisanFixture;
+    const now = new Date("2026-09-20T12:00:00Z");
+
+    beforeAll(async () => { listed = await harness.artisan("Listed Artisan"); });
+
+    async function listedDraft() {
+      const steps = quoteSteps(listed.request);
+      const created = await steps.create();
+      return steps.save(created, completeQuote(created.draft!.reference));
+    }
+    function sendAs(modelBoundary: QuoteAIModelBoundary, detail: { id: string; version: number }) {
+      return listed.withDependencies({ modelBoundary })({ action: "assistant", id: detail.id, expectedVersion: detail.version, requestId: crypto.randomUUID(), text: "Ajoute la pose.", locale: "fr" });
+    }
+    const list = (filter: Parameters<typeof listTurnTraces>[2], options: Parameters<typeof listTurnTraces>[3] = {}) =>
+      listTurnTraces(database, administrator.userId, filter, { now, ...options });
+
+    it("lists Turn Traces newest first with their User, business, Quote, outcome, model, calls, tokens and cost", async () => {
+      const detail = await listedDraft();
+      await sendAs(scriptedModel([response("Quelle pièce ?", { input: 300, output: 5, cost: 0.0004 })]), detail);
+      await sendAs(scriptedModel([
+        response([fauxToolCall("edit_quote_details", { fields: { title: "Nouveau titre" } })], { stopReason: "toolUse", input: 1000, output: 30, cost: 0.002 }),
+        response("Titre changé.", { input: 1100, output: 8, cost: 0.001 }),
+      ]), detail);
+      const [first, second] = await database.select({ id: turnTrace.id }).from(turnTrace).where(eq(turnTrace.quoteId, detail.id)).orderBy(turnTrace.createdAt);
+      await database.update(turnTrace).set({ createdAt: new Date("2026-09-10T08:00:00Z") }).where(eq(turnTrace.id, first.id));
+      await database.update(turnTrace).set({ createdAt: new Date("2026-09-11T08:00:00Z") }).where(eq(turnTrace.id, second.id));
+
+      const { traces: rows, hasMore } = await list({ quoteId: detail.id });
+      expect(hasMore).toBe(false);
+      expect(rows.map((row) => row.id)).toEqual([second.id, first.id]);
+      expect(rows[0]).toEqual({
+        id: second.id, createdAt: new Date("2026-09-11T08:00:00Z"), requestId: expect.any(String),
+        outcome: "committed", outcomeKind: "committed", reason: null,
+        provider: "faux", model: "faux-1", modelCallCount: 2, inputTokens: 2100, outputTokens: 38, costUsd: expect.closeTo(0.003),
+        user: { id: listed.userId, name: "Listed Artisan", email: listed.email },
+        business: { id: expect.any(String), name: "" },
+        quote: { id: detail.id, reference: detail.draft!.reference, title: "Nouveau titre" },
+      });
+      expect(rows[1]).toMatchObject({ outcomeKind: "unchanged", modelCallCount: 1, inputTokens: 300, outputTokens: 5 });
+    });
+
+    it("filters by outcome, User and date range, in Swiss days", async () => {
+      const detail = await listedDraft();
+      await sendAs(scriptedModel([response("Quelle pièce ?")]), detail);
+      await sendAs(scriptedModel([response([], { stopReason: "error", errorMessage: "Upstream overloaded" })]), detail);
+      const [unchanged, failed] = await database.select({ id: turnTrace.id }).from(turnTrace).where(eq(turnTrace.quoteId, detail.id)).orderBy(turnTrace.createdAt);
+      // 23:30 on 10 September and 00:30 on 11 September in Switzerland.
+      await database.update(turnTrace).set({ createdAt: new Date("2026-09-10T21:30:00Z") }).where(eq(turnTrace.id, unchanged.id));
+      await database.update(turnTrace).set({ createdAt: new Date("2026-09-10T22:30:00Z") }).where(eq(turnTrace.id, failed.id));
+
+      const ids = async (filter: Parameters<typeof listTurnTraces>[2]) => (await list({ quoteId: detail.id, ...filter })).traces.map((row) => row.id);
+      expect(await ids({ outcomeKind: "provider_error" })).toEqual([failed.id]);
+      expect(await ids({ outcomeKind: "unchanged" })).toEqual([unchanged.id]);
+      expect(await ids({ outcomeKind: "committed" })).toEqual([]);
+      expect(await ids({ userId: listed.userId })).toEqual([failed.id, unchanged.id]);
+      expect(await ids({ userId: administrator.userId })).toEqual([]);
+      expect(await ids({ from: "2026-09-10", to: "2026-09-10" })).toEqual([unchanged.id]);
+      expect(await ids({ from: "2026-09-11" })).toEqual([failed.id]);
+      expect(await ids({ to: "2026-09-09" })).toEqual([]);
+    });
+
+    it("pages through Turn Traces and leaves out expired ones", async () => {
+      const detail = await listedDraft();
+      for (const text of ["Un.", "Deux.", "Trois."]) await sendAs(scriptedModel([response(text)]), detail);
+      const rows = await database.select({ id: turnTrace.id }).from(turnTrace).where(eq(turnTrace.quoteId, detail.id)).orderBy(turnTrace.createdAt);
+      await Promise.all(rows.map((row, index) => database.update(turnTrace).set({ createdAt: new Date(now.getTime() - (3 - index) * 60_000) }).where(eq(turnTrace.id, row.id))));
+
+      const firstPage = await list({ quoteId: detail.id }, { pageSize: 2 });
+      expect(firstPage).toMatchObject({ hasMore: true });
+      expect(firstPage.traces.map((row) => row.id)).toEqual([rows[2].id, rows[1].id]);
+      const secondPage = await list({ quoteId: detail.id }, { pageSize: 2, page: 2 });
+      expect(secondPage).toMatchObject({ hasMore: false });
+      expect(secondPage.traces.map((row) => row.id)).toEqual([rows[0].id]);
+
+      await database.update(turnTrace).set({ createdAt: new Date(now.getTime() - 31 * 24 * 60 * 60_000) }).where(eq(turnTrace.id, rows[0].id));
+      expect((await list({ quoteId: detail.id })).traces.map((row) => row.id)).toEqual([rows[2].id, rows[1].id]);
+    });
+
+    it("reads one Turn Trace with its User, business and Quote, until it expires or its Quote is deleted", async () => {
+      const detail = await listedDraft();
+      await sendAs(scriptedModel([response("Noté.")]), detail);
+      const [{ id }] = await database.select({ id: turnTrace.id }).from(turnTrace).where(eq(turnTrace.quoteId, detail.id));
+
+      const trace = await readTurnTrace(database, administrator.userId, id);
+      expect(trace).toMatchObject({
+        id, outcomeKind: "unchanged",
+        user: { id: listed.userId, email: listed.email },
+        quote: { id: detail.id, reference: detail.draft!.reference },
+        detail: { text: "Ajoute la pose.", modelCalls: [expect.objectContaining({ sequence: 1 })] },
+      });
+      expect(await readTurnTrace(database, administrator.userId, id, new Date(Date.now() + 31 * 24 * 60 * 60_000))).toBeNull();
+      expect(await readTurnTrace(database, administrator.userId, crypto.randomUUID())).toBeNull();
+
+      expect((await listed.request({ action: "delete", id: detail.id, requestId: crypto.randomUUID() })).status).toBe(200);
+      expect(await readTurnTrace(database, administrator.userId, id)).toBeNull();
+    });
+
+    it("refuses anyone but an Administrator", async () => {
+      await expect(listTurnTraces(database, listed.userId, {})).rejects.toBeInstanceOf(AdministrationRefusal);
+      await expect(readTurnTrace(database, listed.userId, crypto.randomUUID())).rejects.toBeInstanceOf(AdministrationRefusal);
+    });
   });
 });

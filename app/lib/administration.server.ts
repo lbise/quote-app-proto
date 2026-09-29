@@ -76,7 +76,8 @@ export async function listUsers(database: Database): Promise<AdministeredUser[]>
   }));
 }
 
-function businessName(defaults: unknown): string {
+/** An Artisan Business's name, from its saved business defaults; empty when it has none. */
+export function businessName(defaults: unknown): string {
   const name = (defaults as { businessName?: unknown } | null)?.businessName;
   return typeof name === "string" ? name.trim() : "";
 }
@@ -170,6 +171,16 @@ async function otherActiveGrantedAdministrator(transaction: Transaction, exceptU
     .from(user)
     .where(and(eq(user.administrator, true), eq(user.status, "active"), ne(user.id, exceptUserId)));
   return others.some((other) => roleOf(other) === "granted");
+}
+
+/**
+ * Refuse anyone who is not an Administrator now, for reads of other
+ * businesses' records. The admin area checks the session first; this checks
+ * the stored User again at the data boundary.
+ */
+export async function assertAdministrator(database: Database, userId: string): Promise<void> {
+  const [viewer] = await database.select().from(user).where(eq(user.id, userId)).limit(1);
+  if (!viewer || !isAdministrator(viewer)) throw new AdministrationRefusal("not_administrator");
 }
 
 async function findUser(transaction: Transaction, id: string) {

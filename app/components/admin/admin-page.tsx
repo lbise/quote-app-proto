@@ -1,30 +1,18 @@
 import { useEffect, useState } from 'react';
-import { useFetcher } from 'react-router';
+import { Link, useFetcher } from 'react-router';
 import { TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { QuoteHeader } from '../quotes/quote-header';
+import { AdminShell, formatDate, t, Unnamed, UserStatusBadge, type Locale } from './admin-shell';
 
 import type { AdministeredUser, AdministratorActionRecord, RefusalCode } from '@/lib/administration.server';
 import type { AdministratorActionKind as Action } from '@/lib/db/schema';
 
-type Locale = 'fr' | 'en';
 /** Loader data: dates arrive as ISO strings. */
 type Serialized<T> = Omit<T, 'createdAt'> & { createdAt: string };
 export type AdminUser = Serialized<AdministeredUser>;
 export type AdminActionRecord = Serialized<AdministratorActionRecord>;
-
-const t = (locale: Locale, fr: string, en: string) => locale === 'fr' ? fr : en;
-
-function formatDate(locale: Locale, value: string, withTime = false) {
-  return new Intl.DateTimeFormat(locale === 'fr' ? 'fr-CH' : 'en-GB', withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }).format(new Date(value));
-}
-
-function statusLabel(locale: Locale, status: AdminUser['status']) {
-  return { invited: t(locale, 'Invité', 'Invited'), active: t(locale, 'Actif', 'Active'), blocked: t(locale, 'Bloqué', 'Blocked') }[status];
-}
 
 /** One record line: the acting Administrator, what they did, and to whom. */
 function recordSentence(locale: Locale, record: AdminActionRecord) {
@@ -91,12 +79,8 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
 
   const dialog = pending ? confirmation(locale, pending.action, pending.target) : null;
 
-  return <div className="qp-app qp-page" lang={locale}>
-    <QuoteHeader current="admin" locale={locale} onLanguage={language => void onLanguage(language)} onList={() => undefined} />
-    <main className="qp-admin">
-      <div className="qp-page-heading">
-        <div><h1>Administration</h1><p>{t(locale, 'Gérez qui peut se connecter à Easy Quote et qui peut l’administrer.', 'Manage who can sign in to Easy Quote and who can administer it.')}</p></div>
-      </div>
+  return <AdminShell locale={locale} onLanguage={onLanguage} section="users" title={t(locale, 'Utilisateurs', 'Users')}
+    description={t(locale, 'Gérez qui peut se connecter à Easy Quote et qui peut l’administrer.', 'Manage who can sign in to Easy Quote and who can administer it.')}>
 
       {refusal && <Alert variant="destructive" className="qp-admin-alert"><TriangleAlert /><AlertTitle>{t(locale, 'Action refusée', 'Action refused')}</AlertTitle><AlertDescription>{refusalMessage(locale, refusal)}</AlertDescription></Alert>}
 
@@ -121,9 +105,9 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
                 const bootstrap = entry.administrator === 'bootstrap';
                 return <tr key={entry.id} data-status={entry.status}>
                   <td><div className="qp-admin-user"><strong>{entry.name}{self && ` (${t(locale, 'vous', 'you')})`}</strong><span>{entry.email}</span></div></td>
-                  <td><Badge variant={entry.status === 'blocked' ? 'destructive' : entry.status === 'active' ? 'secondary' : 'outline'}>{statusLabel(locale, entry.status)}</Badge></td>
+                  <td><UserStatusBadge locale={locale} status={entry.status} /></td>
                   <td>{entry.administrator === 'none' ? <span className="qp-admin-muted">—</span> : <span>{t(locale, 'Administrateur', 'Administrator')}{bootstrap && <small>ADMIN_EMAILS</small>}</span>}</td>
-                  <td>{entry.business ? (entry.business.name || <span className="qp-admin-muted">{t(locale, 'Sans nom', 'Unnamed')}</span>) : <span className="qp-admin-muted">—</span>}</td>
+                  <td>{entry.business ? <Link className="qp-admin-link" to={`/admin/businesses/${encodeURIComponent(entry.business.id)}`}>{entry.business.name || <Unnamed locale={locale} />}</Link> : <span className="qp-admin-muted">—</span>}</td>
                   <td><time dateTime={entry.createdAt}>{formatDate(locale, entry.createdAt)}</time></td>
                   <td><div className="qp-admin-actions">
                     {entry.status === 'blocked'
@@ -153,7 +137,6 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
             </li>)}
           </ol>}
       </section>
-    </main>
 
     <AlertDialog open={pending !== null} onOpenChange={open => { if (!open && !busy) setPending(null); }}>
       <AlertDialogContent className="qp-modal" lang={locale}>
@@ -170,5 +153,5 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
         </>}
       </AlertDialogContent>
     </AlertDialog>
-  </div>;
+  </AdminShell>;
 }

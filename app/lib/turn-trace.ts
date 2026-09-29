@@ -1,5 +1,13 @@
 import type { QuoteAssistantOutcome } from "./quote-assistant-debug";
 
+/**
+ * The outcome Administrators filter Assistant Turns by. It refines the turn's
+ * outcome: a committed turn may have had failed tool calls, and a discarded
+ * turn may have failed at the provider or before any model call was sent.
+ */
+export const turnOutcomeKinds = ["committed", "committed_with_failed_calls", "unchanged", "discarded", "provider_error", "failed_before_model_call"] as const;
+export type TurnOutcomeKind = typeof turnOutcomeKinds[number];
+
 /** One model call of an Assistant Turn, as recorded in its Turn Trace. */
 export type TurnTraceModelCall = {
   /** 1 for the first call of the turn. */
@@ -57,3 +65,31 @@ export type TurnTraceDetail = AssistantTurnRecord & {
   /** The assistant's failure diagnostic, when the turn failed in the assistant. */
   diagnostic?: { phase: string; code: string; outcome?: string; tool?: string };
 };
+
+/** One step of an Assistant Turn, for reading a Turn Trace in order. */
+export type TurnTraceStep = { kind: "model"; call: TurnTraceModelCall } | { kind: "tool"; call: TurnTraceToolCall };
+
+function requestedToolCallIds(call: TurnTraceModelCall): string[] {
+  const content = (call.response as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) => part && typeof part === "object" && (part as { type?: unknown }).type === "toolCall" && typeof (part as { id?: unknown }).id === "string"
+    ? [(part as { id: string }).id] : []);
+}
+
+/**
+ * Model calls and tool calls in the order they happened: each model call is
+ * followed by the tool calls its response asked for. Tool calls that match no
+ * response come last.
+ */
+export function turnTraceSteps(trace: Pick<AssistantTurnRecord, "modelCalls" | "toolCalls">): TurnTraceStep[] {
+  const remaining = [...trace.toolCalls];
+  const steps: TurnTraceStep[] = [];
+  for (const call of trace.modelCalls) {
+    steps.push({ kind: "model", call });
+    for (const id of requestedToolCallIds(call)) {
+      const index = remaining.findIndex((tool) => tool.toolCallId === id);
+      if (index >= 0) steps.push({ kind: "tool", call: remaining.splice(index, 1)[0] });
+    }
+  }
+  return [...steps, ...remaining.map((call) => ({ kind: "tool" as const, call }))];
+}

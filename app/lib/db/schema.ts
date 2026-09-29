@@ -15,6 +15,8 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+import { turnOutcomeKinds, type TurnOutcomeKind } from "../turn-trace";
+
 // A single installation marker proves migrations ran and storage survives redeploys.
 // This is infrastructure state, not a customer or quote model.
 export const appInstallation = pgTable(
@@ -296,6 +298,8 @@ export const quoteRequest = pgTable(
 export const turnTraceOutcomes = ["committed", "unchanged", "discarded"] as const;
 export type TurnTraceOutcome = typeof turnTraceOutcomes[number];
 
+export { turnOutcomeKinds, type TurnOutcomeKind };
+
 // A Turn Trace: what one Assistant Turn sent to and received from the model
 // (ADR 0007). Only Administrators read it. It goes with its Quote, or after 30
 // days. `detail` is `json`, not `jsonb`, so payloads keep their exact key order.
@@ -309,6 +313,7 @@ export const turnTrace = pgTable(
     requestId: text("request_id").notNull(),
     locale: text("locale").$type<"en" | "fr">().notNull(),
     outcome: text("outcome").$type<TurnTraceOutcome>().notNull(),
+    outcomeKind: text("outcome_kind").$type<TurnOutcomeKind>().notNull(),
     // Why the turn was discarded, as a bounded code.
     reason: text("reason"),
     baseVersion: integer("base_version"),
@@ -327,7 +332,9 @@ export const turnTrace = pgTable(
   (table) => [
     index("turn_trace_quote_created_idx").on(table.quoteId, table.createdAt),
     index("turn_trace_created_idx").on(table.createdAt),
+    index("turn_trace_user_created_idx").on(table.userId, table.createdAt),
     check("turn_trace_outcome", sql`${table.outcome} in ('committed', 'unchanged', 'discarded')`),
+    check("turn_trace_outcome_kind", sql`${table.outcomeKind} in ('committed', 'committed_with_failed_calls', 'unchanged', 'discarded', 'provider_error', 'failed_before_model_call')`),
     check("turn_trace_locale", sql`${table.locale} in ('en', 'fr')`),
   ],
 );

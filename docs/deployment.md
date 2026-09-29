@@ -135,6 +135,15 @@ Administrators open the admin area at `/admin` from the navigation. Everyone els
 - Users whose email is in `ADMIN_EMAILS` are Bootstrap Administrators: always Administrators, and never blocked, even if they were blocked before being listed. The admin area cannot block them or remove their role. Use it to create the first Administrator, and as the way back in if every other Administrator is lost: add an email, redeploy, and sign up or sign in with it.
 - An Administrator cannot block themselves or remove their own role. The last active Administrator granted in the admin area cannot be blocked or have their role removed.
 
+The admin area also lets Administrators inspect every Artisan Business, read-only (#53). Nothing in these views edits a Quote, runs the assistant, publishes, archives, deletes or signs in as another User.
+
+- **Businesses** (`/admin/businesses`): one row per Artisan Business with its owner, the owner's status, its active and Archived Quote counts, and its last activity, which is the latest Assistant Turn or Quote change. A business opens on all its Quotes, Archived Quotes included.
+- **A Quote** (`/admin/quotes/:id`): its Working Draft and each Published Revision as the PDF prints them, and its conversation. Each Assistant Turn links to its Turn Trace, or says that the trace expired. The shown version downloads as a Draft Preview or Quote Document from `/admin/quotes/:id/draft-preview` and `/admin/quotes/:id/revisions/:number/document`.
+- **Assistant Turns** (`/admin/turns`): every Assistant Turn with a Turn Trace, newest first, 50 per page. Each row shows the time, User, business, Quote, outcome, model, model calls, tokens and cost. Filters: outcome, User, and a date range in Swiss days, both ends included. The list can also be limited to one Quote.
+- **A Turn Trace** (`/admin/turns/:id`): a stable URL for problem reports (#45). It shows the model calls, tool calls and tool results in order, with each model call's model, tokens, cost and latency. Every payload and response opens as the JSON recorded and can be copied. A trace that expired or went with its Quote shows a not-found page that says so.
+
+The outcomes are: committed; committed with failed calls (a tool call was rejected along the way); unchanged; discarded; provider error (the last model call sent failed or ended in a provider error); and failed before any model call (no call reached the provider, for example a stale Working Draft or the spending limit).
+
 ## Local checks
 
 After the application package exists:
