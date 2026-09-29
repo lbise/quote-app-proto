@@ -12,16 +12,27 @@ export type QuoteRecord = {
   revisions: { number: number; publishedAt: string; quote: QuoteData; calculation: QuoteCalculation }[];
   messages: ConversationMessage[];
   pending: boolean;
+  /** An Archived Quote is read-only until restored. */
+  archived: boolean;
   canUndo: boolean;
   assistantRequest?: { requestId: string; text: string; status: 'pending' | 'complete' | 'failed' | 'stale'; baseVersion: number } | null;
   /** Present only in a debug-enabled assistant action response; never persisted. */
   assistantDebug?: QuoteAssistantSuccessDebug;
 };
-export type QuoteList = { quotes: { id: string; reference: string; title: string; customerName: string; hasDraft: boolean; revision: number; updatedAt: string }[] };
+export type QuoteList = { quotes: { id: string; reference: string; title: string; customerName: string; hasDraft: boolean; archived: boolean; revision: number; updatedAt: string }[] };
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, public details?: unknown) { super(code); }
 }
+/** Permanently delete a Quote. A retried key, or a Quote that is already gone, counts as deleted. */
+export async function deleteQuote(id: string, requestId: string): Promise<QuoteList | null> {
+  try { return await quoteRequest<QuoteList>({ action: "delete", id, requestId }); }
+  catch (failure) {
+    if (failure instanceof RequestError && failure.code === "quote_not_found") return null;
+    throw failure;
+  }
+}
+
 export async function quoteRequest<T>(body?: Record<string, unknown>, id?: string): Promise<T> {
   const response = await fetch(`/api/quotes${id ? `?id=${encodeURIComponent(id)}` : ""}`, body ? {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -219,6 +230,21 @@ export function useQuote(initial: QuoteRecord) {
     } finally { if (alive.current) setBusy(false); }
   }
 
+  /** Archive or restore this Quote. Pending saves reach the server first, because an Archived Quote refuses them. */
+  async function setArchived(archived: boolean) {
+    if (busy || ai === "processing") return null;
+    setBusy(true); setError(null);
+    try {
+      if (!(await flush())) return null;
+      const next = await quoteRequest<QuoteRecord>({ action: archived ? "archive" : "restore", id: initial.id, requestId: randomUUID() });
+      accept(next, true); setChanged([]); setChangedFields([]);
+      return next;
+    } catch (failure) {
+      setError(failure instanceof RequestError ? failure.code : "connection_failed");
+      return null;
+    } finally { if (alive.current) setBusy(false); }
+  }
+
   /** `dictation` marks a dictated Artisan message; a retry keeps the original request's value. */
   async function runAssistant(text: string, locale: "fr" | "en", retry = false, dictation?: DictationMetadata) {
     if (!text.trim() || ai === "processing" || busy || !current.current.draft) return null;
@@ -256,5 +282,5 @@ export function useQuote(initial: QuoteRecord) {
     }
   }
 
-  return { record, quote, save, ai, error, debug, toolDebug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, lastRequest };
+  return { record, quote, save, ai, error, debug, toolDebug, changed, changedFields, busy, apply, flush, mutate, applyCustomer, runAssistant, setArchived, lastRequest };
 }

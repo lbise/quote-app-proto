@@ -15,6 +15,8 @@ export type QuoteRequest = (body?: Record<string, unknown>, quoteId?: string) =>
 
 export type ArtisanFixture = {
   request: QuoteRequest;
+  /** The signed-in session cookie, for requests to other authenticated handlers. */
+  cookie: string;
   /** Build a request function that uses different handler dependencies (for example, a scripted model). */
   withDependencies(dependencies: Omit<QuoteHandlerDependencies, "database" | "auth">): QuoteRequest;
 };
@@ -64,12 +66,13 @@ export function quoteHttpHarness(label: string) {
       ...(body ? { body: JSON.stringify(body) } : {}),
     }));
     return {
+      cookie,
       request: requestWith(createQuoteHandler({ database: connection.db, auth })),
       withDependencies: (dependencies) => requestWith(createQuoteHandler({ ...dependencies, database: connection.db, auth })),
     };
   }
 
-  return { connection, setUp, tearDown, artisan };
+  return { connection, auth, setUp, tearDown, artisan };
 }
 
 /** A publishable Working Draft with one fixed-price line. */

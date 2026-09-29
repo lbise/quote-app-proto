@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ArrowLeft, FileText, Settings, UsersRound } from 'lucide-react';
 import { Link } from 'react-router';
 import { Button } from '../ui/button';
@@ -10,9 +11,11 @@ export type AppSection = 'quotes' | 'customers' | 'settings';
  * with compact links to Customers and Settings. Elsewhere it shows the three
  * destinations as navigation.
  */
-export function QuoteHeader({ locale, onLanguage, onList, quote, current }: {
+export function QuoteHeader({ locale, onLanguage, onList, quote, current, quoteActions }: {
   locale: 'fr' | 'en'; onLanguage: (locale: 'fr' | 'en') => void; onList: () => void;
   quote?: QuoteData; current?: AppSection;
+  /** The Quote's actions menu, shown inside a Quote. */
+  quoteActions?: ReactNode;
 }) {
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
   const destinations = [
@@ -26,6 +29,7 @@ export function QuoteHeader({ locale, onLanguage, onList, quote, current }: {
     <div className="qp-brand-group"><button className="qp-wordmark" onClick={onList}>easy<span>quote</span><span className="qp-brand-dot">.</span></button><span className="qp-header-divider" /><Button variant="ghost" onClick={onList} aria-label={t('Mes devis', 'My Quotes')}><ArrowLeft data-icon="inline-start" /><span className="qp-back-label">{t('Mes devis', 'My Quotes')}</span></Button></div>
     <div className="qp-project-heading"><span>{quote.reference}</span><strong>{quote.title || t('Nouveau devis', 'New Quote')}</strong></div>
     <div className="qp-header-end">
+      {quoteActions}
       {destinations.slice(1).map(({ id, to, icon: Icon, label }) => <Button key={id} asChild variant="ghost" size="icon-sm"><Link to={to} aria-label={label} title={label}><Icon /></Link></Button>)}
       {language}
     </div>

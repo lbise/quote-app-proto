@@ -71,6 +71,13 @@
       "when": 1770000009000,
       "tag": "0009_quote_message_dictation",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1770000010000,
+      "tag": "0010_quote_archive",
+      "breakpoints": true
     }
   ]
 }

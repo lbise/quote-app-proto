@@ -30,6 +30,10 @@ _Avoid_: Sent Quote, accepted Quote
 **Publication**:
 An Artisan's explicit approval of a Working Draft for sharing with its Customer, creating a Published Revision that cannot be undone or overwritten. Publication does not establish Customer receipt or acceptance.
 
+**Archived Quote**:
+A Quote that an Artisan has set aside from the active Quotes, kept read-only and restorable. Archiving is reversible; deleting a Quote is not.
+_Avoid_: Deleted Quote, closed Quote, cancelled Quote
+
 **Quote Line**:
 A part of a Quote that describes proposed work or material, independently editable in a Working Draft and numbered consecutively in the Quote's current line order. Its price, when supplied, is either calculated from a quantity and unit price or entered as a fixed amount.
 _Avoid_: Quote item, catalog entry

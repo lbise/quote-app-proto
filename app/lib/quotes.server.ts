@@ -4,7 +4,7 @@ import { and, asc, desc, eq, lte, ne, sql } from "drizzle-orm";
 
 import { hasApprovedAccess, trustedOrigins } from "./auth-config.server";
 import { getAuth } from "./auth.server";
-import { artisan, businessDefaults, customer, quote, quoteMessage, quoteRequest, quoteRevision } from "./db/schema";
+import { artisan, artisanBusiness, businessDefaults, customer, quote, quoteMessage, quoteRequest, quoteRevision } from "./db/schema";
 import { type Database, getDatabase } from "./db.server";
 import { calculateQuote, emptyQuote, type QuoteData } from "./quote";
 import { QuoteAIError, generateQuoteChange, type QuoteAIInput, type QuoteAIModelBoundary } from "./quote-assistant.server";
@@ -16,7 +16,8 @@ import { BodyLimitError, readLimitedBody } from "./limited-body.server";
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Store = Database | Transaction;
 type Message = { role: "artisan" | "assistant" | "note"; fr: string; en: string; changed?: string[]; changedFields?: string[] };
-type Action = "create" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "customer-apply" | "defaults-save";
+type Action = "create" | "save" | "publish" | "new-draft" | "undo" | "assistant" | "customer-save" | "customer-apply" | "defaults-save" | "archive" | "restore" | "delete";
+const actions: readonly Action[] = ["create", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "customer-apply", "defaults-save", "archive", "restore", "delete"];
 type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; dictation?: unknown; customer?: unknown; customerId?: unknown; defaults?: unknown };
 export type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: { id: string; email: string; emailVerified: boolean } } | null> } };
 type QuoteDetail = Awaited<ReturnType<typeof readDetail>>;
@@ -255,6 +256,7 @@ async function readDetail(database: Store, businessId: string, id: string) {
     revisions: revisions.map((revision) => ({ number: revision.number, publishedAt: revision.publishedAt.toISOString(), quote: revision.quote as QuoteData, calculation: revision.calculation })),
     messages: messages.map((entry) => ({ role: entry.role as Message["role"], fr: entry.fr, en: entry.en, ...messageChanges(entry.changed) })),
     pending: record.pending,
+    archived: record.archivedAt !== null,
     canUndo: record.undoDraft !== null && record.undoDraft !== undefined,
     ...(assistantRequest ? { assistantRequest } : {}),
   };
@@ -296,7 +298,7 @@ async function readList(database: Store, businessId: string) {
     quotes: records.map((record) => {
       const latest = revisions.filter((revision) => revision.quoteId === record.id).sort((a, b) => b.number - a.number)[0];
       const document = (record.draft ?? latest?.quote ?? {}) as Partial<QuoteData>;
-      return { id: record.id, reference: record.reference, title: document.title ?? record.title, customerName: document.customerName ?? "", hasDraft: record.draft !== null, revision: latest?.number ?? 0, updatedAt: record.updatedAt.toISOString() };
+      return { id: record.id, reference: record.reference, title: document.title ?? record.title, customerName: document.customerName ?? "", hasDraft: record.draft !== null, archived: record.archivedAt !== null, revision: latest?.number ?? 0, updatedAt: record.updatedAt.toISOString() };
     }),
     customers: customers.map((entry) => ({ id: entry.id, name: entry.name, address: entry.address, contact: entry.contact })),
     defaults: await businessDefaultsFor(database, businessId),
@@ -319,11 +321,21 @@ async function recordRequest(transaction: Transaction, values: { businessId: str
   await transaction.insert(quoteRequest).values({ id: crypto.randomUUID(), ...request, updatedAt: now });
 }
 
-async function suggestedReference(transaction: Transaction, businessId: string): Promise<string> {
-  await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${businessId}))`);
+/**
+ * Take the business's next automatic reference. The counter only goes up, so a
+ * deleted Quote's number is never assigned again (ADR 0006). A number an
+ * Artisan already typed into another Quote is skipped.
+ */
+async function nextReference(transaction: Transaction, businessId: string): Promise<string> {
+  const [business] = await transaction.select({ next: artisanBusiness.nextQuoteNumber }).from(artisanBusiness)
+    .where(eq(artisanBusiness.id, businessId)).for("update").limit(1);
+  if (!business) throw new RequestFailure(403, "artisan_business_unavailable");
   const rows = await transaction.select({ reference: quote.reference }).from(quote).where(eq(quote.businessId, businessId));
-  const largest = rows.reduce((max, row) => Math.max(max, /^Q-(\d+)$/.exec(row.reference) ? Number(/^Q-(\d+)$/.exec(row.reference)![1]) : 0), 0);
-  return `Q-${largest + 1}`;
+  const used = new Set(rows.map((row) => row.reference));
+  let number = business.next;
+  while (used.has(`Q-${number}`)) number += 1;
+  await transaction.update(artisanBusiness).set({ nextQuoteNumber: number + 1 }).where(eq(artisanBusiness.id, businessId));
+  return `Q-${number}`;
 }
 
 async function assertReference(transaction: Transaction, businessId: string, id: string, reference: string, published: boolean) {
@@ -335,6 +347,10 @@ async function assertReference(transaction: Transaction, businessId: string, id:
 function requireDraft(record: { draft: unknown }): QuoteData {
   if (!record.draft) throw new RequestFailure(409, "working_draft_required");
   return record.draft as QuoteData;
+}
+
+function assertNotArchived(record: { archivedAt: Date | null }) {
+  if (record.archivedAt !== null) throw new RequestFailure(409, "quote_archived");
 }
 
 function checkVersion(record: { version: number }, body: Body) {
@@ -374,10 +390,12 @@ export function createQuoteHandler(dependencies: QuoteHandlerDependencies = {}) 
       if (request.method !== "POST") throw new RequestFailure(405, "method_not_allowed");
       assertMutationOrigin(request);
       const body = await readJson(request);
-      if (!["create", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "customer-apply", "defaults-save"].includes(body.action!)) throw new RequestFailure(400, "invalid_action");
+      if (!actions.includes(body.action!)) throw new RequestFailure(400, "invalid_action");
       if (body.action === "customer-save") return json(await saveCustomer(database, businessId, body, now()));
       if (body.action === "defaults-save") return json(await saveDefaults(database, businessId, body, now()));
       if (body.action === "assistant") return json(await assistant(database, businessId, body, dependencies.modelBoundary, now()));
+      if (body.action === "delete") return json(await deleteQuote(database, businessId, body, now()));
+      if (body.action === "archive" || body.action === "restore") return json(await setArchived(database, businessId, body, now()));
       return json(await mutate(database, businessId, body, now()));
     } catch (error) {
       if (error instanceof RequestFailure) return json({ error: error.code, ...(error.details === undefined ? {} : { details: error.details }) }, error.status);
@@ -449,7 +467,7 @@ async function saveDefaults(database: Database, businessId: string, body: Body, 
 }
 
 async function mutate(database: Database, businessId: string, body: Body, now: Date): Promise<QuoteDetail> {
-  const action = body.action as Exclude<Action, "assistant" | "customer-save" | "defaults-save">;
+  const action = body.action as Exclude<Action, "assistant" | "customer-save" | "defaults-save" | "archive" | "restore" | "delete">;
   const requestId = requestKey(body.requestId);
   const hash = payloadHash(body);
   const id = action === "create" ? undefined : identifier(body.id, "quote_id");
@@ -463,7 +481,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
       throw new RequestFailure(409, "request_in_progress");
     }
     if (action === "create") {
-      const reference = await suggestedReference(transaction, businessId);
+      const reference = await nextReference(transaction, businessId);
       const [storedDefaults] = await transaction.select().from(businessDefaults).where(eq(businessDefaults.businessId, businessId)).limit(1);
       const draft = asQuote(emptyQuote(reference, defaultsFrom(storedDefaults?.defaults, false)), true).draft;
       const quoteId = crypto.randomUUID();
@@ -475,6 +493,7 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
     await lockQuote(transaction, id!);
     const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id!), eq(quote.businessId, businessId))).limit(1);
     if (!record) throw new RequestFailure(404, "quote_not_found");
+    assertNotArchived(record);
     checkVersion(record, body);
     if (action === "customer-apply") {
       const oldDraft = requireDraft(record);
@@ -544,6 +563,58 @@ async function mutate(database: Database, businessId: string, body: Body, now: D
   return detail;
 }
 
+/** Archive or restore a Quote. Its Working Draft, revisions and version stay unchanged. */
+async function setArchived(database: Database, businessId: string, body: Body, now: Date): Promise<QuoteDetail> {
+  const action = body.action as "archive" | "restore";
+  const id = identifier(body.id, "quote_id");
+  const requestId = requestKey(body.requestId);
+  const hash = payloadHash(body);
+  let detail: QuoteDetail | undefined;
+  await database.transaction(async (transaction) => {
+    await lockRequest(transaction, businessId, requestId);
+    const existing = await findRequest(transaction, businessId, requestId);
+    if (existing) {
+      assertRequestBinding(existing, action, id, hash);
+      if (existing.status === "complete") { detail = await readDetail(transaction, businessId, id); return; }
+      throw new RequestFailure(409, "request_in_progress");
+    }
+    await lockQuote(transaction, id);
+    const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
+    if (!record) throw new RequestFailure(404, "quote_not_found");
+    const archivedAt = action === "archive" ? record.archivedAt ?? now : null;
+    if (archivedAt !== record.archivedAt) await transaction.update(quote).set({ archivedAt }).where(eq(quote.id, id));
+    await recordRequest(transaction, { businessId, quoteId: id, action, requestId, status: "complete", baseVersion: record.version, payloadHash: hash, now });
+    detail = await readDetail(transaction, businessId, id);
+  });
+  if (!detail) throw new RequestFailure(500, "request_failed");
+  return detail;
+}
+
+/**
+ * Permanently delete a Quote (ADR 0006). Foreign keys remove its Published
+ * Revisions, conversation and request records. The delete request itself is
+ * kept without a Quote so a retry succeeds.
+ */
+async function deleteQuote(database: Database, businessId: string, body: Body, now: Date) {
+  const id = identifier(body.id, "quote_id");
+  const requestId = requestKey(body.requestId);
+  const hash = payloadHash(body);
+  await database.transaction(async (transaction) => {
+    await lockRequest(transaction, businessId, requestId);
+    const existing = await findRequest(transaction, businessId, requestId);
+    if (existing) {
+      // The payload hash binds the Quote ID; the stored request no longer references the deleted Quote.
+      assertRequestBinding(existing, "delete", undefined, hash);
+      return;
+    }
+    await lockQuote(transaction, id);
+    const deleted = await transaction.delete(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).returning({ id: quote.id });
+    if (!deleted.length) throw new RequestFailure(404, "quote_not_found");
+    await recordRequest(transaction, { businessId, action: "delete", requestId, status: "complete", payloadHash: hash, now });
+  });
+  return readList(database, businessId);
+}
+
 async function assistant(database: Database, businessId: string, body: Body, modelBoundary: QuoteAIModelBoundary | undefined, now: Date): Promise<QuoteDetail> {
   const id = identifier(body.id, "quote_id");
   const requestId = requestKey(body.requestId);
@@ -566,6 +637,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     await lockQuote(transaction, id);
     const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
     if (!record) throw new RequestFailure(404, "quote_not_found");
+    assertNotArchived(record);
     checkVersion(record, body);
     if (record.pending) throw new RequestFailure(409, "assistant_pending");
     const draft = requireDraft(record);
@@ -608,6 +680,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
 
   let detail: QuoteDetail | undefined;
   let stale = false;
+  let archivedMeanwhile = false;
   try {
     await database.transaction(async (transaction) => {
     await lockRequest(transaction, businessId, requestId);
@@ -615,6 +688,14 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     const request = await findRequest(transaction, businessId, requestId);
     const [record] = await transaction.select().from(quote).where(and(eq(quote.id, id), eq(quote.businessId, businessId))).limit(1);
     if (!request || !record) throw new RequestFailure(404, "quote_not_found");
+    if (record.archivedAt !== null) {
+      // Archiving froze the Quote while the model was working. Discard the response.
+      if (request.status === "pending") await transaction.update(quoteRequest).set({ status: "stale", updatedAt: now }).where(eq(quoteRequest.id, request.id));
+      if (record.pendingRequestId === requestId) await transaction.update(quote).set({ pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now }).where(eq(quote.id, id));
+      await transaction.insert(quoteMessage).values({ id: crypto.randomUUID(), quoteId: id, role: "note", fr: "Réponse ignorée; le devis a été archivé.", en: "Response discarded; the Quote was archived." });
+      archivedMeanwhile = true;
+      return;
+    }
     if (request.status !== "pending" || record.pendingRequestId !== requestId || record.version !== baseVersion) {
       if (request.status === "pending") await transaction.update(quoteRequest).set({ status: "stale", updatedAt: now }).where(eq(quoteRequest.id, request.id));
       if (record.pendingRequestId === requestId) await transaction.update(quote).set({ pending: false, pendingVersion: null, pendingRequestId: null, pendingExpiresAt: null, updatedAt: now }).where(eq(quote.id, id));
@@ -648,6 +729,7 @@ async function assistant(database: Database, businessId: string, body: Body, mod
     await failAssistant(database, businessId, id, requestId, now);
     throw error;
   }
+  if (archivedMeanwhile) throw new RequestFailure(409, "quote_archived");
   if (stale) throw new RequestFailure(409, "assistant_stale", assistantSuccessDebug(
     result.debug ? { ...result.debug, outcome: "stale" } : undefined, requestId,
   ));

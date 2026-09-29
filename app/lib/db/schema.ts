@@ -96,9 +96,15 @@ export const artisanBusiness = pgTable(
   {
     id: text("id").primaryKey(),
     ownerUserId: text("owner_user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    // The next automatic `Q-<n>` reference. It only goes up, so a deleted
+    // Quote's reference is never given to another Quote (ADR 0006).
+    nextQuoteNumber: bigint("next_quote_number", { mode: "number" }).default(1).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [uniqueIndex("artisan_business_owner_idx").on(table.ownerUserId)],
+  (table) => [
+    uniqueIndex("artisan_business_owner_idx").on(table.ownerUserId),
+    check("artisan_business_next_quote_number_positive", sql`${table.nextQuoteNumber} >= 1`),
+  ],
 );
 
 export const artisan = pgTable(
@@ -180,6 +186,8 @@ export const quote = pgTable(
     pendingVersion: integer("pending_version"),
     pendingRequestId: text("pending_request_id"),
     pendingExpiresAt: timestamp("pending_expires_at", { withTimezone: true }),
+    // Set while the Quote is an Archived Quote: read-only until restored.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
