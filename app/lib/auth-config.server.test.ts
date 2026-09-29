@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   browserLanguage,
   hasApprovedAccess,
+  isAdministrator,
   trustedOrigins,
   isEmailAllowed,
   normalizeEmail,
@@ -14,9 +15,26 @@ describe("auth configuration", () => {
     expect(normalizeEmail("  Test@Example.COM ")).toBe("test@example.com");
     expect(isEmailAllowed("Test@Example.com", "other@example.com test@example.com")).toBe(true);
     expect(isEmailAllowed("nope@example.com", "test@example.com")).toBe(false);
-    expect(hasApprovedAccess({ email: "test@example.com", emailVerified: false }, "test@example.com")).toBe(false);
-    expect(hasApprovedAccess({ email: "test@example.com", emailVerified: true }, "removed@example.com")).toBe(false);
-    expect(hasApprovedAccess({ email: "test@example.com", emailVerified: true }, "test@example.com")).toBe(true);
+  });
+
+  it("approves only verified, active Users", () => {
+    const person = { email: "person@example.com", emailVerified: true };
+    expect(hasApprovedAccess({ ...person, status: "active" }, "")).toBe(true);
+    expect(hasApprovedAccess({ ...person, emailVerified: false, status: "active" }, "")).toBe(false);
+    expect(hasApprovedAccess({ ...person, status: "blocked" }, "")).toBe(false);
+    expect(hasApprovedAccess({ ...person, status: "invited" }, "")).toBe(false);
+  });
+
+  it("always lets Bootstrap Administrators in, even when blocked", () => {
+    expect(hasApprovedAccess({ email: "admin@example.com", emailVerified: true, status: "blocked" }, "admin@example.com")).toBe(true);
+  });
+
+  it("makes approved Users Administrators by granted role or ADMIN_EMAILS, never by '*'", () => {
+    const person = { email: "Admin@Example.com", emailVerified: true, status: "active", administrator: false };
+    expect(isAdministrator(person, "other@example.com admin@example.com")).toBe(true);
+    expect(isAdministrator(person, "*")).toBe(false);
+    expect(isAdministrator({ ...person, administrator: true }, "")).toBe(true);
+    expect(isAdministrator({ ...person, administrator: true, status: "blocked" }, "other@example.com")).toBe(false);
   });
 
   it("selects the highest-priority supported browser language and falls back to French", () => {

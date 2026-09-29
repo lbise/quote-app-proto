@@ -147,12 +147,12 @@ async function main() {
       // mode only applies when creating a file. Replace the old file so an
       // existing 0644 .env cannot expose the newly generated auth secret.
       await writeFile(temporaryEnv, updatedEnv(original, settings), { mode: 0o600, flag: 'wx' });
-      if (await readFile(envPath, 'utf8') !== original) throw new SetupError('Account created and verified, but .env changed. Add your email to AUTH_ALLOWED_EMAILS before signing in.');
+      if (await readFile(envPath, 'utf8') !== original) throw new SetupError('Account created and verified, but .env changed. Set BETTER_AUTH_URL and AUTH_TRUSTED_ORIGINS in .env to the app URL before signing in.');
       // This protects against partial writes, not edits by unrelated processes.
       await rename(temporaryEnv, envPath);
     } catch (error) {
       if (error instanceof SetupError) throw error;
-      throw new SetupError('Account created and verified, but .env could not be written. Add your email to AUTH_ALLOWED_EMAILS before signing in.');
+      throw new SetupError('Account created and verified, but .env could not be written. Set BETTER_AUTH_URL and AUTH_TRUSTED_ORIGINS in .env to the app URL before signing in.');
     } finally { await rm(temporaryEnv, { force: true }); }
     console.info(`\nVerified local account created for ${input.email}.`);
     console.info('Updated .env with the allowed email, app URL and trusted origins. No password was written to .env.');

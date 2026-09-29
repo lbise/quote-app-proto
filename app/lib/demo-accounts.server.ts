@@ -34,7 +34,7 @@ export function parseDemoAccounts(value: string | undefined, allowlist?: string)
     if (seen.has(email)) throw new DemoAccountError(`${email} appears more than once in DEMO_ACCOUNTS.`);
     seen.add(email);
     if (!isEmailAllowed(email, allowlist)) {
-      throw new DemoAccountError(`${email} is not in AUTH_ALLOWED_EMAILS. Add it there first, or the account cannot sign in.`);
+      throw new DemoAccountError(`${email} is not in AUTH_ALLOWED_EMAILS. Add it there first, or the account cannot be created.`);
     }
     return { email, password };
   });

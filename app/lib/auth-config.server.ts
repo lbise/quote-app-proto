@@ -22,11 +22,40 @@ export function isEmailAllowed(email: string, value?: string): boolean {
   return configured.has("*") || configured.has(normalizeEmail(email));
 }
 
-export function hasApprovedAccess(
-  identity: { email: string; emailVerified: boolean },
-  allowlist?: string,
-): boolean {
-  return identity.emailVerified && isEmailAllowed(identity.email, allowlist);
+/** Bootstrap Administrators: emails whose Users are always Administrators. `*` is not accepted here. */
+export function administratorEmails(value = process.env.ADMIN_EMAILS): Set<string> {
+  const configured = allowedEmails(value ?? "");
+  configured.delete("*");
+  return configured;
+}
+
+export function isBootstrapAdministrator(email: string, value?: string): boolean {
+  return administratorEmails(value).has(normalizeEmail(email));
+}
+
+/** The signed-in User fields that decide access. */
+export type SessionIdentity = { email: string; emailVerified: boolean; status?: string | null; administrator?: boolean | null };
+
+/**
+ * Whether a User may sign in, ignoring email verification. Only active Users
+ * may, except Bootstrap Administrators: ADMIN_EMAILS is always a way back in.
+ */
+export function canSignIn(identity: { email: string; status?: string | null }, adminEmails?: string): boolean {
+  return identity.status === "active" || isBootstrapAdministrator(identity.email, adminEmails);
+}
+
+/**
+ * Whether a signed-in User may use Easy Quote. AUTH_ALLOWED_EMAILS only
+ * controls sign-up; once signed up, access depends on the User's status.
+ */
+export function hasApprovedAccess(identity: SessionIdentity, adminEmails?: string): boolean {
+  return identity.emailVerified && canSignIn(identity, adminEmails);
+}
+
+/** Whether an approved User is an Administrator, by role or through ADMIN_EMAILS. */
+export function isAdministrator(identity: SessionIdentity, adminEmails?: string): boolean {
+  return hasApprovedAccess(identity, adminEmails) &&
+    (identity.administrator === true || isBootstrapAdministrator(identity.email, adminEmails));
 }
 
 export function authBaseUrl(): string {

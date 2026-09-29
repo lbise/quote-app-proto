@@ -13,6 +13,7 @@ import { getArtisanForUser } from "./lib/artisan.server";
 import {
   browserLanguage,
   interfaceLanguage,
+  isAdministrator,
   localeCookie,
   parseLocaleCookie,
   type InterfaceLanguage,
@@ -27,6 +28,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   let locale = parseLocaleCookie(request.headers.get("cookie")) ??
     browserLanguage(request.headers.get("accept-language"));
 
+  // Shows the admin area's navigation entry. The area checks access itself.
+  let administrator = false;
+
   // Health and auth resource requests must remain useful without a database
   // connection. The protected application gets the persisted profile choice.
   if (!url.pathname.startsWith("/health/") && !url.pathname.startsWith("/api/")) {
@@ -35,6 +39,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       if (current) {
         const profile = await getArtisanForUser(current.user.id);
         locale = interfaceLanguage(profile?.interfaceLanguage);
+        administrator = isAdministrator(current.user);
       }
     } catch {
       // The child route will report an unavailable protected request. Rendering
@@ -43,7 +48,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   return Response.json(
-    { locale, quoteAI: quoteAIDisclosure() },
+    { locale, administrator, quoteAI: quoteAIDisclosure() },
     { headers: { "Set-Cookie": localeCookie(locale) } },
   );
 }

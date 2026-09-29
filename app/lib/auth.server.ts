@@ -7,6 +7,7 @@ import {
   assertAuthConfiguration,
   authBaseUrl,
   browserLanguage,
+  canSignIn,
   hasApprovedAccess,
   isEmailAllowed,
   parseLocaleCookie,
@@ -18,6 +19,9 @@ import { type Database, getDatabase } from "./db.server";
 import { account, artisanBusiness, session, user, verification } from "./db/schema";
 import { sendAuthEmail } from "./mail.server";
 import { assertQuoteAIConfiguration } from "./quote-ai-config.server";
+
+/** Better Auth error code returned when a blocked User tries to sign in. */
+export const USER_NOT_ACTIVE = "USER_NOT_ACTIVE";
 
 let authInstance: ReturnType<typeof createAuth> | undefined;
 
@@ -69,7 +73,30 @@ function createAuth(database: Database = getDatabase()) {
         await provisionArtisanBusiness(authUser.id, database);
       },
     },
+    user: {
+      // Returned with every session so loaders and API handlers can reject
+      // blocked Users. Neither field can be set through Better Auth endpoints.
+      additionalFields: {
+        status: { type: "string", input: false, defaultValue: "active", required: false },
+        administrator: { type: "boolean", input: false, defaultValue: false, required: false },
+      },
+    },
     databaseHooks: {
+      session: {
+        create: {
+          // Every sign-in path creates a session here, so a blocked User cannot sign in.
+          before: async (newSession) => {
+            const [owner] = await database
+              .select({ email: user.email, status: user.status })
+              .from(user)
+              .where(eq(user.id, newSession.userId))
+              .limit(1);
+            if (!owner || !canSignIn(owner)) {
+              throw new APIError("FORBIDDEN", { code: USER_NOT_ACTIVE, message: "Access is not available." });
+            }
+          },
+        },
+      },
       user: {
         create: {
           before: async (authUser) => {

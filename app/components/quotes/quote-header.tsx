@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft, FileText, Settings, UsersRound } from 'lucide-react';
-import { Link } from 'react-router';
+import { ArrowLeft, FileText, Settings, ShieldCheck, UsersRound } from 'lucide-react';
+import { Link, useRouteLoaderData } from 'react-router';
 import { Button } from '../ui/button';
 import type { QuoteData } from '../../lib/quote';
 
-export type AppSection = 'quotes' | 'customers' | 'settings';
+export type AppSection = 'quotes' | 'customers' | 'settings' | 'admin';
 
 /**
  * Application header. Inside a Quote it keeps the back link and Quote heading,
- * with compact links to Customers and Settings. Elsewhere it shows the three
- * destinations as navigation.
+ * with compact links to Customers and Settings. Elsewhere it shows the
+ * destinations as navigation. Only Administrators see the admin area.
  */
 export function QuoteHeader({ locale, onLanguage, onList, quote, current, quoteActions }: {
   locale: 'fr' | 'en'; onLanguage: (locale: 'fr' | 'en') => void; onList: () => void;
@@ -18,10 +18,12 @@ export function QuoteHeader({ locale, onLanguage, onList, quote, current, quoteA
   quoteActions?: ReactNode;
 }) {
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
+  const administrator = (useRouteLoaderData('root') as { administrator?: boolean } | undefined)?.administrator === true;
   const destinations = [
     { id: 'quotes' as const, to: '/quotes', icon: FileText, label: t('Devis', 'Quotes') },
     { id: 'customers' as const, to: '/customers', icon: UsersRound, label: t('Clients', 'Customers') },
     { id: 'settings' as const, to: '/settings', icon: Settings, label: t('Paramètres', 'Settings') },
+    ...(administrator ? [{ id: 'admin' as const, to: '/admin', icon: ShieldCheck, label: t('Administration', 'Administration') }] : []),
   ];
   const language = <select aria-label="Interface language / Langue de l’interface" value={locale} onChange={e => onLanguage(e.target.value as 'en' | 'fr')}><option value="fr">FR</option><option value="en">EN</option></select>;
 
@@ -38,7 +40,7 @@ export function QuoteHeader({ locale, onLanguage, onList, quote, current, quoteA
   return <header className="qp-app-header qp-app-header-nav">
     <Link className="qp-wordmark" to="/quotes">easy<span>quote</span><span className="qp-brand-dot">.</span></Link>
     <nav className="qp-app-nav" aria-label={t('Navigation principale', 'Main navigation')}>
-      {destinations.map(({ id, to, icon: Icon, label }) => <Link key={id} to={to} aria-current={current === id ? 'page' : undefined}><Icon />{label}</Link>)}
+      {destinations.map(({ id, to, icon: Icon, label }) => <Link key={id} to={to} aria-current={current === id ? 'page' : undefined} data-compact={id === 'admin' || undefined}><Icon /><span>{label}</span></Link>)}
     </nav>
     <div className="qp-header-end">{language}</div>
   </header>;

@@ -14,7 +14,11 @@ let fixtureNumber = 0;
 export type QuoteRequest = (body?: Record<string, unknown>, quoteId?: string) => Promise<Response>;
 
 export type ArtisanFixture = {
+  userId: string;
+  email: string;
   request: QuoteRequest;
+  /** Sign in again through Better Auth with the fixture's password. */
+  signIn(): Promise<Response>;
   /** The signed-in session cookie, for requests to other authenticated handlers. */
   cookie: string;
   /** Build a request function that uses different handler dependencies (for example, a scripted model). */
@@ -54,10 +58,11 @@ export function quoteHttpHarness(label: string) {
     expect(signedUp.status).toBe(200);
     const account = await signedUp.json();
     await connection.db.update(user).set({ emailVerified: true }).where(eq(user.id, account.user.id));
-    const signedIn = await auth.handler(new Request(`${origin}/api/auth/sign-in/email`, {
+    const signIn = () => auth.handler(new Request(`${origin}/api/auth/sign-in/email`, {
       method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": clientIp },
       body: JSON.stringify({ email, password: "password123" }),
     }));
+    const signedIn = await signIn();
     expect(signedIn.status).toBe(200);
     const cookie = signedIn.headers.getSetCookie().map((entry) => entry.split(";", 1)[0]).join("; ");
     const requestWith = (handler: ReturnType<typeof createQuoteHandler>): QuoteRequest => (body, quoteId) => handler(new Request(`${origin}/api/quotes${quoteId ? `?id=${quoteId}` : ""}`, {
@@ -66,7 +71,10 @@ export function quoteHttpHarness(label: string) {
       ...(body ? { body: JSON.stringify(body) } : {}),
     }));
     return {
+      userId: account.user.id,
+      email,
       cookie,
+      signIn,
       request: requestWith(createQuoteHandler({ database: connection.db, auth })),
       withDependencies: (dependencies) => requestWith(createQuoteHandler({ ...dependencies, database: connection.db, auth })),
     };

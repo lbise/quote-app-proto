@@ -27,7 +27,8 @@ The image contains no runtime secrets. Set the following only in Dokploy's appli
 - `DATABASE_URL`: PostgreSQL connection string.
 - `BETTER_AUTH_SECRET`: at least 32 random characters.
 - `BETTER_AUTH_URL`: the canonical HTTPS application URL (`https://easy-quote.voidstation.ch` in production); it is used for origin checks and verification/reset links.
-- `AUTH_ALLOWED_EMAILS`: space, comma or newline separated normalized tester addresses. An empty value denies all new registrations and protected access.
+- `AUTH_ALLOWED_EMAILS`: space, comma or newline separated normalized tester addresses that may sign up. An empty value denies all new registrations. It does not control access after sign-up: a signed-up User keeps access until an Administrator blocks them in the admin area.
+- `ADMIN_EMAILS`: optional, space, comma or newline separated emails whose Users are always Administrators (see [Administrators](#administrators)). `*` is ignored.
 - `AUTH_TRUSTED_ORIGINS`: optional additional HTTPS origins, space separated. Include `https://dev.voidstation.ch` when serving the development deployment from that domain.
 - `EMAIL_DELIVERY=smtp`, `SMTP_HOST=mail.infomaniak.com`, `SMTP_PORT=587`, `SMTP_USER=auth@voidstation.ch`, `SMTP_PASSWORD` (dedicated device/app password), and `SMTP_FROM=auth@voidstation.ch`.
 
@@ -124,7 +125,15 @@ Before real data, prove persistence: create test data, redeploy the application,
 2. Open the application's container terminal in Dokploy and run `npm run seed:demo`. It prints `created` or `unchanged` for each email, never a password.
 3. To empty the demo accounts again, for example before handing them to another prospect, run `npm run seed:demo -- --reset`. This deletes each listed demo account with its Customers, Quotes, settings and logo, signs out its sessions, and recreates it empty with the password currently in `DEMO_ACCOUNTS`. Change a demo password by editing `DEMO_ACCOUNTS`, redeploying, and resetting.
 
-The command marks the accounts it creates in the `demo_account` table and only ever resets marked accounts. If a listed email belongs to a real account, it stops before changing anything. Removing an email from `DEMO_ACCOUNTS` leaves the account in place; remove it from `AUTH_ALLOWED_EMAILS` to block sign-in.
+The command marks the accounts it creates in the `demo_account` table and only ever resets marked accounts. If a listed email belongs to a real account, it stops before changing anything. Removing an email from `DEMO_ACCOUNTS` leaves the account in place; block it in the admin area to stop sign-in. A reset recreates the account unblocked.
+
+## Administrators
+
+Administrators open the admin area at `/admin` from the navigation. Everyone else gets a not-found page there. The area lists every User with their status, Administrator role, Artisan Business and creation date. An Administrator can block, unblock, grant the Administrator role and remove it. Every such change is recorded with the acting Administrator, the User, the action and the time, and kept indefinitely.
+
+- Blocking ends all of the User's sessions at once and refuses sign-in. An Assistant Turn already running is allowed to finish. The User's Artisan Business, Quotes and Customers are kept, and unblocking restores access to them.
+- Users whose email is in `ADMIN_EMAILS` are Bootstrap Administrators: always Administrators, and never blocked, even if they were blocked before being listed. The admin area cannot block them or remove their role. Use it to create the first Administrator, and as the way back in if every other Administrator is lost: add an email, redeploy, and sign up or sign in with it.
+- An Administrator cannot block themselves or remove their own role. The last active Administrator granted in the admin area cannot be blocked or have their role removed.
 
 ## Local checks
 

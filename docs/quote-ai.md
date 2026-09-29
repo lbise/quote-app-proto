@@ -101,4 +101,4 @@ Check the current terms for the account and region before using real Artisan Bus
 4. Record the review in the deployment change and update this document and the disclosure if the provider or terms differ.
 5. Complete configured-provider rehearsal and release acceptance in [#21](https://github.com/lbise/quote-app-proto/issues/21).
 
-The assistant is intentionally always configured. Authorization remains separate: verified sessions, the explicit `AUTH_ALLOWED_EMAILS` allowlist, trusted origins, business-scoped database access, and server-side mutation validation still apply.
+The assistant is intentionally always configured. Authorization remains separate: verified sessions of active (not blocked) Users, the explicit `AUTH_ALLOWED_EMAILS` sign-up allowlist, trusted origins, business-scoped database access, and server-side mutation validation still apply.

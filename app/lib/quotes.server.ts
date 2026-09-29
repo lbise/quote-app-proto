@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { and, asc, desc, eq, lte, ne, sql } from "drizzle-orm";
 
-import { hasApprovedAccess, trustedOrigins } from "./auth-config.server";
+import { hasApprovedAccess, trustedOrigins, type SessionIdentity } from "./auth-config.server";
 import { getAuth } from "./auth.server";
 import { artisan, artisanBusiness, businessDefaults, customer, quote, quoteMessage, quoteRequest, quoteRevision } from "./db/schema";
 import { type Database, getDatabase } from "./db.server";
@@ -21,7 +21,7 @@ type Action = "create" | "create-from" | "save" | "publish" | "new-draft" | "und
 const actions: readonly Action[] = ["create", "create-from", "save", "publish", "new-draft", "undo", "assistant", "customer-save", "customer-apply", "defaults-save", "archive", "restore", "delete"];
 /** `from` names the source version for `create-from`: "draft" or a Published Revision number. */
 type Body = { action?: Action; id?: string; expectedVersion?: number; requestId?: string; quote?: unknown; text?: string; locale?: "fr" | "en"; dictation?: unknown; customer?: unknown; customerId?: unknown; defaults?: unknown; from?: unknown };
-export type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: { id: string; email: string; emailVerified: boolean } } | null> } };
+export type SessionAuth = { api: { getSession(input: { headers: Headers }): Promise<{ user: SessionIdentity & { id: string } } | null> } };
 type QuoteDetail = Awaited<ReturnType<typeof readDetail>>;
 
 const MAX_HTTP_BYTES = 256_000;
@@ -215,6 +215,8 @@ function storedChanges(changed: string[], changedFields?: string[]): string[] | 
 export async function authorised(request: Request, auth: SessionAuth, database: Database): Promise<string> {
   const current = await auth.api.getSession({ headers: request.headers });
   if (!current) throw new RequestFailure(401, "authentication_required");
+  // Checked on every request as well: a session can survive a block that
+  // raced with its sign-in.
   if (!hasApprovedAccess(current.user)) throw new RequestFailure(403, "access_denied");
   const [profile] = await database.select().from(artisan).where(eq(artisan.userId, current.user.id)).limit(1);
   if (!profile) throw new RequestFailure(403, "artisan_business_unavailable");

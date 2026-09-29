@@ -175,7 +175,9 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("business defa
     expect((await laterQuote.json()).draft).toMatchObject(laterDefaults);
   });
 
-  it("rejects unauthenticated and no-longer-allowlisted defaults access", async () => {
+  // Blocked Users are refused in administration.server.test.ts. AUTH_ALLOWED_EMAILS
+  // only controls sign-up (#50), so it no longer affects signed-up Artisans.
+  it("rejects unauthenticated defaults access", async () => {
     const unauthenticated = await handler(new Request(`${origin}/api/quotes`, {
       method: "POST",
       headers: { origin, "content-type": "application/json" },
@@ -183,16 +185,6 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("business defa
     }));
     expect(unauthenticated.status).toBe(401);
     expect((await handler(new Request(`${origin}/api/quotes`))).status).toBe(401);
-
-    const fixture = await artisan("Removed from allowlist");
-    process.env.AUTH_ALLOWED_EMAILS = "nobody@example.test";
-    try {
-      const denied = await fixture.request({ action: "defaults-save", defaults: registeredDefaults });
-      expect(denied.status).toBe(403);
-      expect((await fixture.request()).status).toBe(403);
-    } finally {
-      process.env.AUTH_ALLOWED_EMAILS = "*";
-    }
   });
 
   it("derives every read and write from the authenticated Artisan Business", async () => {

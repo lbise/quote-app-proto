@@ -28,15 +28,49 @@ export const appInstallation = pgTable(
 // Better Auth's PostgreSQL adapter uses these four tables. Keep their names and
 // columns aligned with its documented Drizzle schema so direct API requests and
 // server-side calls share the same session store.
-export const user = pgTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
-  image: text("image"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const userStatuses = ["invited", "active", "blocked"] as const;
+export type UserStatus = typeof userStatuses[number];
+
+export const user = pgTable(
+  "user",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: boolean("email_verified").default(false).notNull(),
+    image: text("image"),
+    // Only an active User may sign in. Blocking keeps the User's business records.
+    status: text("status").$type<UserStatus>().default("active").notNull(),
+    // The Administrator role granted in the admin area. ADMIN_EMAILS
+    // Administrators come from configuration and are not stored.
+    administrator: boolean("administrator").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [check("user_status", sql`${table.status} in ('invited', 'active', 'blocked')`)],
+);
+
+export const administratorActions = ["block", "unblock", "grant_administrator", "remove_administrator"] as const;
+export type AdministratorActionKind = typeof administratorActions[number];
+
+// Every Administrator change to a User, kept indefinitely. Emails are copied so
+// a record stays readable if either User is later deleted.
+export const administratorAction = pgTable(
+  "administrator_action",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "set null" }),
+    actorEmail: text("actor_email").notNull(),
+    targetUserId: text("target_user_id").references(() => user.id, { onDelete: "set null" }),
+    targetEmail: text("target_email").notNull(),
+    action: text("action").$type<AdministratorActionKind>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("administrator_action_created_idx").on(table.createdAt),
+    check("administrator_action_action", sql`${table.action} in ('block', 'unblock', 'grant_administrator', 'remove_administrator')`),
+  ],
+);
 
 export const session = pgTable(
   "session",

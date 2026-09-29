@@ -78,6 +78,13 @@
       "when": 1770000010000,
       "tag": "0010_quote_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1770000011000,
+      "tag": "0011_users_and_administrators",
+      "breakpoints": true
     }
   ]
 }
