@@ -5,23 +5,23 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from '../ui/field';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
-import { money } from '../../lib/quote';
-import { quoteSourceOptions, type QuoteSource, type QuoteSourceOption } from '../../lib/quote-start-from';
+import { swissAmount } from '../../lib/quote';
+import { quoteSourceOptions, quoteVersionName, type QuoteSource, type QuoteSourceOption } from '../../lib/quote-start-from';
 import { randomUUID } from '../../lib/random-id';
 import { quoteRequest, type QuoteRecord } from './use-quote';
 
 type Locale = 'fr' | 'en';
-export type StartFromQuote = { id: string; reference: string; title: string };
+export type StartFromQuote = { id: string; reference: string };
 
 function describe(option: QuoteSourceOption, locale: Locale) {
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
   const date = new Intl.DateTimeFormat(locale === 'fr' ? 'fr-CH' : 'en-GB', { dateStyle: 'medium' }).format(new Date(option.date));
   const total = option.total === null
     ? t('Total à compléter', 'Total incomplete')
-    : `CHF ${money(option.total).replace(/\u202f/g, '’').replace(/\u00a0CHF$/, '')}${option.vatRegistered ? t(' TTC', ' incl. VAT') : ''}`;
+    : `CHF ${swissAmount(option.total)}${option.vatRegistered ? t(' TTC', ' incl. VAT') : ''}`;
   const lines = option.lines === 1 ? t('1 ligne', '1 line') : t(`${option.lines} lignes`, `${option.lines} lines`);
   return {
-    name: option.source === 'draft' ? t('Brouillon de travail', 'Working Draft') : t(`Révision ${option.source}`, `Revision ${option.source}`),
+    name: quoteVersionName(option.source, locale),
     details: [option.source === 'draft' ? t(`Modifié le ${date}`, `Last edited ${date}`) : t(`Publiée le ${date}`, `Published ${date}`), total, lines].join(' · '),
   };
 }

@@ -1,4 +1,4 @@
-import { calculateQuote, money, type QuoteCalculation, type QuoteData, type QuoteLine } from "./quote";
+import { calculateQuote, swissAmount, type QuoteCalculation, type QuoteData, type QuoteLine } from "./quote";
 
 /** The logo image the Quote names, when it belongs to the Quote's business. */
 export type QuoteDocumentLogo = { contentType: string; data: Uint8Array };
@@ -133,10 +133,6 @@ function swissDate(value: string): string {
 
 function amount(cents: number | null): DocumentText {
   return cents === null ? { text: missingText, missing: true } : { text: swissAmount(cents), missing: false };
-}
-
-function swissAmount(cents: number): string {
-  return money(cents).replace(/\u202f/g, "\u2019").replace(/\u00a0CHF$/, "");
 }
 
 /** Show a decimal with Swiss grouping. Trailing zeros go when places is 0. Values that are not decimals are left as entered. */

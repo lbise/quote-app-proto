@@ -55,6 +55,8 @@ export default function Quotes() {
   const [announcement, setAnnouncement] = useState('');
   const [choosingSource, setChoosingSource] = useState<QuoteList['quotes'][number] | null>(null);
   const [startingFrom, setStartingFrom] = useState(false);
+  // One request key per Quote copied at once, kept until it succeeds, so retrying after a lost response is safe.
+  const immediateCopyKeys = useRef(new Map<string, string>());
   // Focus target after an action removed a row from the current tab.
   const nextFocus = useRef<string | null>(null);
   const rows = useRef<HTMLDivElement | null>(null);
@@ -136,11 +138,16 @@ export default function Quotes() {
     } catch { return false; }
     finally { setStartingFrom(false); }
   }
-  /** A Quote with one version is copied at once; with several, the Artisan chooses one. */
-  function startFrom(quote: QuoteList['quotes'][number]) {
+  /** A Quote with one version is copied at once; with several, the Artisan chooses one. Revisions are numbered from 1 without gaps. */
+  function startNewQuoteFrom(quote: QuoteList['quotes'][number]) {
     const versions = quote.revision + (quote.hasDraft ? 1 : 0);
     if (versions > 1) { setChoosingSource(quote); return; }
-    void copyFrom(quote, quote.hasDraft ? 'draft' : quote.revision, randomUUID()).then(started => { if (!started) setActionFailed(true); });
+    const keys = immediateCopyKeys.current;
+    const requestId = keys.get(quote.id) ?? randomUUID();
+    keys.set(quote.id, requestId);
+    void copyFrom(quote, quote.hasDraft ? 'draft' : quote.revision, requestId).then(started => {
+      if (started) keys.delete(quote.id); else setActionFailed(true);
+    });
   }
   function visible() {
     return (list?.quotes ?? []).filter(q => q.archived === (tab === 'archived') && `${q.reference} ${q.title} ${q.customerName}`.toLowerCase().includes(filter.toLowerCase()));
@@ -168,7 +175,7 @@ export default function Quotes() {
           ? <div className="qp-list-empty">{tab === 'archived' ? <><Archive /><h2>{t('Aucun devis archivé.', 'No Archived Quotes.')}</h2><p>{t('Archivez un devis pour le retirer de la liste active. Vous pourrez le restaurer.', 'Archive a Quote to set it aside from the active list. You can restore it later.')}</p></> : <><FileText /><h2>{t('Aucun devis actif.', 'No active Quotes.')}</h2><p>{t('Vos devis archivés restent dans l’onglet Archivés.', 'Your Archived Quotes stay in the Archived tab.')}</p></>}</div>
           : <div className="qp-list-rows" ref={rows}>{visible().map(q => <div className="qp-list-row" key={q.id} data-quote-id={q.id}>
             <button className="qp-list-open" onClick={() => navigate(`/quotes?id=${encodeURIComponent(q.id)}`)}><FileText /><div><strong>{q.title || t('Nouveau devis', 'New Quote')}</strong><span>{q.customerName || t('Sans destinataire', 'No Customer')} · {q.reference}</span></div><Badge variant="outline">{q.hasDraft ? t('Brouillon', 'Draft') : t(`Révision ${q.revision}`, `Revision ${q.revision}`)}</Badge><ArrowRight /></button>
-            <QuoteActionsMenu locale={locale} quote={q} archived={q.archived} disabled={startingFrom} onStartFrom={() => startFrom(q)} onArchive={() => void setArchived(q, true)} onRestore={() => void setArchived(q, false)} onDelete={() => setDeleting(q)} onMenuClosed={event => { if (nextFocus.current !== null) event.preventDefault(); }} />
+            <QuoteActionsMenu locale={locale} quote={q} archived={q.archived} disabled={startingFrom} onStartFrom={() => startNewQuoteFrom(q)} onArchive={() => void setArchived(q, true)} onRestore={() => void setArchived(q, false)} onDelete={() => setDeleting(q)} onMenuClosed={event => { if (nextFocus.current !== null) event.preventDefault(); }} />
           </div>)}{!visible().length && <p className="qp-list-footnote">{t('Aucun devis ne correspond à cette recherche.', 'No Quote matches this search.')}</p>}</div>}</TabsContent>)}
       </Tabs>}
       <DeleteQuoteDialog locale={locale} quote={deleting} onCancel={() => setDeleting(null)} onConfirm={remove} />

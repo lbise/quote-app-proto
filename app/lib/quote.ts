@@ -248,6 +248,11 @@ export function money(cents: number): string {
   return `${negative ? "-" : ""}${whole}.${fraction}\u00a0CHF`;
 }
 
+/** An amount with Swiss grouping (1’234.50) and no currency, as Quotes show it. */
+export function swissAmount(cents: number): string {
+  return money(cents).replace(/\u202f/g, "\u2019").replace(/\u00a0CHF$/, "");
+}
+
 function quoteFrom(input: unknown, errors: QuoteProblem[]): QuoteData | null {
   try {
     if (!isRecord(input)) {

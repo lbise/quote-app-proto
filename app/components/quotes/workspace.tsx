@@ -12,7 +12,7 @@ import { LineActions } from './line-actions';
 import { Message, MessageContent, MessageHeader } from '../ui/message';
 import { Bubble, BubbleContent } from '../ui/bubble';
 import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '../ui/message-scroller';
-import { appendQuoteLineToSection, calculateQuote, money, type QuoteLine } from '../../lib/quote';
+import { appendQuoteLineToSection, calculateQuote, swissAmount, type QuoteLine } from '../../lib/quote';
 import { quoteLineId, randomUUID } from '../../lib/random-id';
 import { addQuoteSection, duplicateQuoteSection, moveQuoteSection, removeQuoteSection, renameQuoteSection } from '../../lib/quote-section-operations';
 import { LineEditor } from './manual-editor';
@@ -38,7 +38,7 @@ import { useBlocker, useNavigate, useRouteLoaderData } from 'react-router';
 const clone = <T,>(value: T): T => structuredClone(value);
 // A line's first control can be a missing-field warning. Focus returns to its Edit button.
 const lineEditButton = '.qp-line-actions button';
-const formatMoney = (value: number | null) => value === null ? '—' : money(value).replace(/\u202f/g, '’').replace(/\u00a0CHF$/, '');
+const formatMoney = (value: number | null) => value === null ? '—' : swissAmount(value);
 
 export default function QuoteWorkspace({ initial, locale, startedFrom, onList, onLanguage, onStarted }: {
   initial: QuoteRecord; locale: 'en' | 'fr';

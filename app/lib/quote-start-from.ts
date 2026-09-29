@@ -44,13 +44,20 @@ type Locale = "fr" | "en";
  * the notice shown when the new Quote opens.
  */
 export function quoteSourceName(source: QuoteSource, locale: Locale, form: "menu" | "notice", reference = ""): string {
-  const fr = locale === "fr";
-  if (form === "menu") {
-    if (source === "draft") return fr ? "Nouveau devis à partir du brouillon de travail" : "New Quote from the Working Draft";
-    return fr ? `Nouveau devis à partir de la révision ${source}` : `New Quote from Revision ${source}`;
+  const version = quoteVersionName(source, locale);
+  if (locale === "fr") {
+    const lower = version.toLowerCase();
+    if (form === "notice") return `Créé à partir de ${reference}, ${lower}`;
+    return source === "draft" ? `Nouveau devis à partir du ${lower}` : `Nouveau devis à partir de la ${lower}`;
   }
-  const version = source === "draft" ? (fr ? "brouillon de travail" : "Working Draft") : (fr ? `révision ${source}` : `Revision ${source}`);
-  return fr ? `Créé à partir de ${reference}, ${version}` : `Started from ${reference}, ${version}`;
+  if (form === "notice") return `Started from ${reference}, ${version}`;
+  return source === "draft" ? `New Quote from the ${version}` : `New Quote from ${version}`;
+}
+
+/** "Working Draft" or "Revision 2". */
+export function quoteVersionName(source: QuoteSource, locale: Locale): string {
+  if (source === "draft") return locale === "fr" ? "Brouillon de travail" : "Working Draft";
+  return locale === "fr" ? `Révision ${source}` : `Revision ${source}`;
 }
 
 export type QuoteSourceOption = {
