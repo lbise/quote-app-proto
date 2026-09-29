@@ -90,7 +90,8 @@ export async function recordTurnTrace(database: Database, trace: TurnTraceInput,
     detail,
     createdAt: now,
   });
-  await deleteExpiredTurnTraces(database, now);
+  // A failed purge is not a failed recording; the scheduled deletion retries it.
+  await deleteExpiredTurnTraces(database, now).catch(() => {});
 }
 
 /** Delete every Turn Trace older than 30 days. Returns how many were deleted. */

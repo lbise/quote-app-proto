@@ -177,11 +177,11 @@ export async function generateQuoteChange(input: QuoteAIInput, modelBoundary?: Q
   try {
     return await runTurn(input, modelBoundary, turn);
   } catch (error) {
-    if (error instanceof QuoteAIError) {
-      error.turn = turn;
-      turn.assistantOutcome ??= error.diagnostic.outcome;
-    }
-    throw error;
+    // Unexpected errors become the generic failure, so their Turn Trace keeps the calls made so far.
+    const failure = error instanceof QuoteAIError ? error : new QuoteAIError({ phase: "model", code: "assistant_failed" });
+    failure.turn = turn;
+    turn.assistantOutcome ??= failure.diagnostic.outcome;
+    throw failure;
   }
 }
 
@@ -384,12 +384,13 @@ async function runTurn(input: QuoteAIInput, modelBoundary: QuoteAIModelBoundary 
     }
     if (event.type === "tool_execution_end") {
       const toolCall = toolCallsById.get(event.toolCallId);
+      const rejection = event.isError ? staged.diagnostic()?.code ?? "tool_rejected" : undefined;
       const outcome: QuoteAssistantAttemptOutcome = event.isError ? "failed" : "applied";
       if (!event.isError && toolCall) successfulToolCalls.push(toolCall);
       if (event.isError) failedCalls += 1;
       stateSequence += 1;
       turn.toolCalls.push({ toolCallId: event.toolCallId, name: event.toolName, arguments: toolCall?.arguments, outcome: event.isError ? "rejected" : "applied", result: event.result,
-        ...(event.isError ? { errorCode: staged.diagnostic()?.code ?? "tool_rejected" } : {}) });
+        ...(rejection ? { errorCode: rejection } : {}) });
       if (toolCall) attempts.push({ ...toolCall, result: event.result, outcome, validation: event.isError
         ? { outcome: "rejected", code: staged.diagnostic()?.code ?? "tool_rejected" }
         : { outcome: "accepted" }, stateSequence, failedCalls, failureLimit, ...(event.isError ? { errorCode: staged.diagnostic()?.code ?? "tool_rejected" } : {}) });

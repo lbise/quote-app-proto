@@ -741,7 +741,8 @@ async function assistant(database: Database, actor: { businessId: string; userId
       const messages = await transaction.select().from(quoteMessage).where(eq(quoteMessage.quoteId, id)).orderBy(asc(quoteMessage.sequence));
       const stored = (record.draft ?? null) as QuoteData | null;
       const conversation = messages.map((message) => ({ role: message.role as Message["role"], fr: message.fr, en: message.en }));
-      const capturedLineIds = stored ? trustedCapturedLineIds(record.capturedLineIds, stored) : [];
+      let capturedLineIds: string[] = [];
+      try { if (stored) capturedLineIds = trustedCapturedLineIds(record.capturedLineIds, stored); } catch { /* The checks below refuse a malformed draft. */ }
       found = { preview: { quote: stored, messages: conversation, text, locale, referenceLocked: revisions.length > 0, capturedLineIds }, version: record.version };
       assertNotArchived(record);
       checkVersion(record, body);
