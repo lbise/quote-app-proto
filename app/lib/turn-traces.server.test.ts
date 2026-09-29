@@ -363,6 +363,8 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Turn Traces",
       expect(await ids({ from: "2026-09-10", to: "2026-09-10" })).toEqual([unchanged.id]);
       expect(await ids({ from: "2026-09-11" })).toEqual([failed.id]);
       expect(await ids({ to: "2026-09-09" })).toEqual([]);
+      // Impossible days are ignored, not sent to the database.
+      expect(await ids({ from: "2026-13-45", to: "2026-02-30" })).toEqual([failed.id, unchanged.id]);
     });
 
     it("pages through Turn Traces and leaves out expired ones", async () => {

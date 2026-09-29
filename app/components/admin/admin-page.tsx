@@ -4,7 +4,7 @@ import { TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { AdminShell, formatDate, t, Unnamed, UserStatusBadge, type Locale } from './admin-shell';
+import { AdminShell, adminPaths, formatDate, t, Unnamed, UserStatusBadge, type LanguageChange, type Locale } from './admin-shell';
 
 import type { AdministeredUser, AdministratorActionRecord, RefusalCode } from '@/lib/administration.server';
 import type { AdministratorActionKind as Action } from '@/lib/db/schema';
@@ -63,7 +63,7 @@ function confirmation(locale: Locale, action: Action, target: AdminUser) {
 }
 
 export function AdminPage({ locale, onLanguage, currentUserId, users, actions }: {
-  locale: Locale; onLanguage: (locale: Locale) => Promise<boolean>; currentUserId: string; users: AdminUser[]; actions: AdminActionRecord[];
+  locale: Locale; onLanguage: LanguageChange; currentUserId: string; users: AdminUser[]; actions: AdminActionRecord[];
 }) {
   const fetcher = useFetcher<{ ok: true } | { error: RefusalCode }>();
   const [pending, setPending] = useState<{ action: Action; target: AdminUser } | null>(null);
@@ -107,7 +107,7 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
                   <td><div className="qp-admin-user"><strong>{entry.name}{self && ` (${t(locale, 'vous', 'you')})`}</strong><span>{entry.email}</span></div></td>
                   <td><UserStatusBadge locale={locale} status={entry.status} /></td>
                   <td>{entry.administrator === 'none' ? <span className="qp-admin-muted">—</span> : <span>{t(locale, 'Administrateur', 'Administrator')}{bootstrap && <small>ADMIN_EMAILS</small>}</span>}</td>
-                  <td>{entry.business ? <Link className="qp-admin-link" to={`/admin/businesses/${encodeURIComponent(entry.business.id)}`}>{entry.business.name || <Unnamed locale={locale} />}</Link> : <span className="qp-admin-muted">—</span>}</td>
+                  <td>{entry.business ? <Link className="qp-admin-link" to={adminPaths.business(entry.business.id)}>{entry.business.name || <Unnamed locale={locale} />}</Link> : <span className="qp-admin-muted">—</span>}</td>
                   <td><time dateTime={entry.createdAt}>{formatDate(locale, entry.createdAt)}</time></td>
                   <td><div className="qp-admin-actions">
                     {entry.status === 'blocked'

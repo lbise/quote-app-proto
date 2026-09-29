@@ -1,12 +1,7 @@
 import { Link } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import type { AdministeredQuote, BusinessOverview } from '@/lib/admin-inspection.server';
-import { AdminShell, DateTime, t, Unnamed, UserStatusBadge, type Locale } from './admin-shell';
-
-type LanguageChange = (locale: Locale) => Promise<boolean>;
-
-const businessPath = (id: string) => `/admin/businesses/${encodeURIComponent(id)}`;
-export const adminQuotePath = (id: string) => `/admin/quotes/${encodeURIComponent(id)}`;
+import { AdminShell, adminPaths, DateTime, t, Unnamed, UserStatusBadge, type LanguageChange, type Locale } from './admin-shell';
 
 function quoteCounts(locale: Locale, business: BusinessOverview) {
   return t(locale, `${business.activeQuotes} actifs · ${business.archivedQuotes} archivés`, `${business.activeQuotes} active · ${business.archivedQuotes} archived`);
@@ -38,7 +33,7 @@ export function BusinessesPage({ locale, onLanguage, businesses }: { locale: Loc
             </tr></thead>
             <tbody>
               {businesses.map(business => <tr key={business.id}>
-                <td><Link className="qp-admin-link" to={businessPath(business.id)}>{business.name || <Unnamed locale={locale} />}</Link></td>
+                <td><Link className="qp-admin-link" to={adminPaths.business(business.id)}>{business.name || <Unnamed locale={locale} />}</Link></td>
                 <td><Owner owner={business.owner} /></td>
                 <td><UserStatusBadge locale={locale} status={business.owner.status} /></td>
                 <td className="qp-admin-nowrap">{quoteCounts(locale, business)}</td>
@@ -76,7 +71,7 @@ export function BusinessPage({ locale, onLanguage, business, quotes }: { locale:
             <tbody>
               {quotes.map(quote => <tr key={quote.id}>
                 <td><div className="qp-admin-user">
-                  <Link className="qp-admin-link" to={adminQuotePath(quote.id)}>{quote.title || t(locale, 'Nouveau devis', 'New Quote')}</Link>
+                  <Link className="qp-admin-link" to={adminPaths.quote(quote.id)}>{quote.title || t(locale, 'Nouveau devis', 'New Quote')}</Link>
                   <span>{quote.reference}</span>
                 </div></td>
                 <td>{quote.customerName || <span className="qp-admin-muted">{t(locale, 'Sans destinataire', 'No Customer')}</span>}</td>

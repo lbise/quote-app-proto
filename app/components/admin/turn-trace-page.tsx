@@ -3,11 +3,8 @@ import { Link } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import type { StoredTurnTrace, TurnTraceContext } from '@/lib/turn-traces.server';
 import { turnTraceSteps, type TurnTraceModelCall, type TurnTraceToolCall } from '@/lib/turn-trace';
-import { AdminShell, DateTime, formatCost, formatNumber, OutcomeBadge, t, type Locale } from './admin-shell';
-import { adminQuotePath } from './businesses-page';
+import { AdminShell, adminPaths, DateTime, formatCost, formatNumber, OutcomeBadge, t, type LanguageChange, type Locale } from './admin-shell';
 import { JsonBlock } from './json-block';
-
-type LanguageChange = (locale: Locale) => Promise<boolean>;
 export type AdminTurnTrace = StoredTurnTrace & TurnTraceContext;
 
 const back = (locale: Locale) => ({ to: '/admin/turns', label: t(locale, 'Tours de l’assistant', 'Assistant Turns') });
@@ -82,8 +79,8 @@ export function TurnTracePage({ locale, onLanguage, trace }: { locale: Locale; o
       <header className="qp-panel-header"><h2 id="trace-summary-heading">{t(locale, 'Résumé', 'Summary')}</h2></header>
       <dl className="qp-admin-facts">
         <Fact label={t(locale, 'Utilisateur', 'User')}>{trace.user ? <>{trace.user.name} · {trace.user.email}</> : <span className="qp-admin-muted">{t(locale, 'Supprimé', 'Deleted')}</span>}</Fact>
-        <Fact label={t(locale, 'Entreprise', 'Business')}><Link className="qp-admin-link" to={`/admin/businesses/${encodeURIComponent(trace.business.id)}`}>{trace.business.name || t(locale, 'Sans nom', 'Unnamed')}</Link></Fact>
-        <Fact label={t(locale, 'Devis', 'Quote')}><Link className="qp-admin-link" to={adminQuotePath(trace.quote.id)}>{trace.quote.reference}</Link>{trace.quote.title && <> · {trace.quote.title}</>}</Fact>
+        <Fact label={t(locale, 'Entreprise', 'Business')}><Link className="qp-admin-link" to={adminPaths.business(trace.business.id)}>{trace.business.name || t(locale, 'Sans nom', 'Unnamed')}</Link></Fact>
+        <Fact label={t(locale, 'Devis', 'Quote')}><Link className="qp-admin-link" to={adminPaths.quote(trace.quote.id)}>{trace.quote.reference}</Link>{trace.quote.title && <> · {trace.quote.title}</>}</Fact>
         <Fact label={t(locale, 'Résultat', 'Outcome')}><OutcomeBadge locale={locale} kind={trace.outcomeKind} />{trace.reason && <code>{trace.reason}</code>}</Fact>
         <Fact label={t(locale, 'Modèle', 'Model')}>{trace.model ? <>{trace.model}{trace.provider && <span className="qp-admin-muted"> · {trace.provider}</span>}</> : '—'}</Fact>
         <Fact label={t(locale, 'Appels au modèle', 'Model calls')}>{formatNumber(locale, trace.modelCallCount)}</Fact>

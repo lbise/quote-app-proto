@@ -3,13 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { turnOutcomeKinds } from '@/lib/turn-trace';
 import type { TurnTraceFilter, TurnTraceSummary } from '@/lib/turn-traces.server';
-import { AdminShell, DateTime, formatCost, formatNumber, OutcomeBadge, outcomeLabel, t, type Locale } from './admin-shell';
-import { adminQuotePath } from './businesses-page';
+import { AdminShell, adminPaths, DateTime, formatCost, formatNumber, OutcomeBadge, outcomeLabel, t, type LanguageChange, type Locale } from './admin-shell';
 
-type LanguageChange = (locale: Locale) => Promise<boolean>;
 export type TurnListUser = { id: string; name: string; email: string };
-
-export const turnTracePath = (id: string) => `/admin/turns/${encodeURIComponent(id)}`;
 
 /** The list URL for a filter and page, keeping only what is set. */
 function listPath(filter: TurnTraceFilter, page: number) {
@@ -56,7 +52,7 @@ export function TurnsPage({ locale, onLanguage, traces, hasMore, page, filter, u
         {filtered && <Button asChild size="sm" variant="ghost"><Link to="/admin/turns">{t(locale, 'Tout afficher', 'Clear filters')}</Link></Button>}
       </div>
     </Form>
-    {quote && <p className="qp-admin-scope">{t(locale, 'Limité au devis', 'Limited to Quote')} <Link className="qp-admin-link" to={adminQuotePath(quote.id)}>{quote.reference}</Link> · <Link className="qp-admin-link" to={listPath({ ...filter, quoteId: undefined }, 1)}>{t(locale, 'tous les devis', 'all Quotes')}</Link></p>}
+    {quote && <p className="qp-admin-scope">{t(locale, 'Limité au devis', 'Limited to Quote')} <Link className="qp-admin-link" to={adminPaths.quote(quote.id)}>{quote.reference}</Link> · <Link className="qp-admin-link" to={listPath({ ...filter, quoteId: undefined }, 1)}>{t(locale, 'tous les devis', 'all Quotes')}</Link></p>}
 
     <section className="qp-panel" aria-labelledby="admin-turns-heading">
       <header className="qp-panel-header">
@@ -80,10 +76,10 @@ export function TurnsPage({ locale, onLanguage, traces, hasMore, page, filter, u
             </tr></thead>
             <tbody>
               {traces.map(trace => <tr key={trace.id}>
-                <td><Link className="qp-admin-link" to={turnTracePath(trace.id)} aria-label={`${t(locale, 'Voir la trace', 'View trace')} ${trace.quote.reference}`}><DateTime locale={locale} value={trace.createdAt} seconds /></Link></td>
+                <td><Link className="qp-admin-link" to={adminPaths.turn(trace.id)} aria-label={`${t(locale, 'Voir la trace', 'View trace')} ${trace.quote.reference}`}><DateTime locale={locale} value={trace.createdAt} seconds /></Link></td>
                 <td>{trace.user ? <div className="qp-admin-user"><strong>{trace.user.name}</strong><span>{trace.user.email}</span></div> : <span className="qp-admin-muted">{t(locale, 'Supprimé', 'Deleted')}</span>}</td>
-                <td><Link className="qp-admin-link" to={`/admin/businesses/${encodeURIComponent(trace.business.id)}`}>{trace.business.name || t(locale, 'Sans nom', 'Unnamed')}</Link></td>
-                <td><Link className="qp-admin-link" to={adminQuotePath(trace.quote.id)}>{trace.quote.reference}</Link></td>
+                <td><Link className="qp-admin-link" to={adminPaths.business(trace.business.id)}>{trace.business.name || t(locale, 'Sans nom', 'Unnamed')}</Link></td>
+                <td><Link className="qp-admin-link" to={adminPaths.quote(trace.quote.id)}>{trace.quote.reference}</Link></td>
                 <td><OutcomeBadge locale={locale} kind={trace.outcomeKind} /></td>
                 <td>{trace.model ?? <span className="qp-admin-muted">—</span>}</td>
                 <td className="qp-admin-number">{formatNumber(locale, trace.modelCallCount)}</td>

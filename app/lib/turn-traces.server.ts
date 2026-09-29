@@ -153,7 +153,12 @@ export type TurnTraceFilter = { outcomeKind?: TurnOutcomeKind; userId?: string; 
 /** The time zone of the admin area's days. */
 export const adminTimeZone = "Europe/Zurich";
 
-const day = /^\d{4}-\d{2}-\d{2}$/;
+/** Whether a value is a real `YYYY-MM-DD` calendar day. */
+export function isDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 const summaryColumns = {
   id: turnTrace.id,
@@ -215,8 +220,8 @@ export async function listTurnTraces(
   if (filter.outcomeKind) conditions.push(eq(turnTrace.outcomeKind, filter.outcomeKind));
   if (filter.userId) conditions.push(eq(turnTrace.userId, filter.userId));
   if (filter.quoteId) conditions.push(eq(turnTrace.quoteId, filter.quoteId));
-  if (filter.from && day.test(filter.from)) conditions.push(sql`${turnTrace.createdAt} >= (${filter.from}::date)::timestamp at time zone ${adminTimeZone}`);
-  if (filter.to && day.test(filter.to)) conditions.push(sql`${turnTrace.createdAt} < (${filter.to}::date + 1)::timestamp at time zone ${adminTimeZone}`);
+  if (filter.from && isDay(filter.from)) conditions.push(sql`${turnTrace.createdAt} >= (${filter.from}::date)::timestamp at time zone ${adminTimeZone}`);
+  if (filter.to && isDay(filter.to)) conditions.push(sql`${turnTrace.createdAt} < (${filter.to}::date + 1)::timestamp at time zone ${adminTimeZone}`);
   const offset = (Math.max(1, Math.floor(page)) - 1) * pageSize;
   const rows = await summarise(database).where(and(...conditions))
     .orderBy(desc(turnTrace.createdAt), desc(turnTrace.id))

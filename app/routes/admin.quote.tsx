@@ -4,6 +4,7 @@ import { adminPage, asAdministrator } from '../lib/admin-area.server';
 import { readQuoteForAdministrator } from '../lib/admin-inspection.server';
 import type { PrintablePage } from '../lib/pdf-renderer.server';
 import { quoteDocumentPage, type QuoteVersion } from '../lib/quote-pdf.server';
+import { adminPaths } from '../components/admin/admin-shell';
 import { AdminQuotePage } from '../components/admin/quote-page';
 import { useInterfaceLanguage } from '../components/quotes/use-interface-language';
 import '../components/quotes/quotes.css';
@@ -38,6 +39,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
 
 export default function AdminQuote() {
   const loaded = useLoaderData<typeof loader>();
-  const [locale, changeLanguage] = useInterfaceLanguage(loaded.locale, `/admin/quotes/${encodeURIComponent(loaded.quote.id)}`);
+  const [locale, changeLanguage] = useInterfaceLanguage(loaded.locale, adminPaths.quote(loaded.quote.id));
   return <AdminQuotePage locale={locale} onLanguage={changeLanguage} quote={loaded.quote} version={loaded.version} page={loaded.page} />;
 }

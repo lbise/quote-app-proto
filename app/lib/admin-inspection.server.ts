@@ -158,10 +158,10 @@ export async function readQuoteForAdministrator(database: Database, viewerUserId
   const revisions = await database.select({ number: quoteRevision.number, publishedAt: quoteRevision.publishedAt, quote: quoteRevision.quote })
     .from(quoteRevision).where(eq(quoteRevision.quoteId, quoteId)).orderBy(asc(quoteRevision.number));
   const messages = await database.select().from(quoteMessage).where(eq(quoteMessage.quoteId, quoteId)).orderBy(asc(quoteMessage.sequence));
-  const turns = messages.filter((message) => message.role === "artisan" && message.requestId !== null).map((message) => message.requestId!);
-  const traces = turns.length ? await database.select({ id: turnTrace.id, requestId: turnTrace.requestId, outcomeKind: turnTrace.outcomeKind, createdAt: turnTrace.createdAt })
+  const turnRequestIds = messages.filter((message) => message.role === "artisan" && message.requestId !== null).map((message) => message.requestId!);
+  const traces = turnRequestIds.length ? await database.select({ id: turnTrace.id, requestId: turnTrace.requestId, outcomeKind: turnTrace.outcomeKind, createdAt: turnTrace.createdAt })
     .from(turnTrace)
-    .where(and(eq(turnTrace.quoteId, quoteId), inArray(turnTrace.requestId, turns), gte(turnTrace.createdAt, new Date(now.getTime() - turnTraceRetentionMs))))
+    .where(and(eq(turnTrace.quoteId, quoteId), inArray(turnTrace.requestId, turnRequestIds), gte(turnTrace.createdAt, new Date(now.getTime() - turnTraceRetentionMs))))
     .orderBy(asc(turnTrace.createdAt), asc(turnTrace.id)) : [];
   const latest = revisions.at(-1);
   const document = (record.draft ?? latest?.quote ?? {}) as Partial<QuoteData>;

@@ -2,6 +2,7 @@ import { data, useLoaderData } from 'react-router';
 import type { Route } from './+types/admin.turn';
 import { adminPage, asAdministrator } from '../lib/admin-area.server';
 import { readTurnTrace } from '../lib/turn-traces.server';
+import { adminPaths } from '../components/admin/admin-shell';
 import { MissingTurnTracePage, TurnTracePage } from '../components/admin/turn-trace-page';
 import { useInterfaceLanguage } from '../components/quotes/use-interface-language';
 import '../components/quotes/quotes.css';
@@ -21,7 +22,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
 
 export default function AdminTurn() {
   const loaded = useLoaderData<typeof loader>();
-  const [locale, changeLanguage] = useInterfaceLanguage(loaded.locale, loaded.trace ? `/admin/turns/${encodeURIComponent(loaded.trace.id)}` : '/admin/turns');
+  const [locale, changeLanguage] = useInterfaceLanguage(loaded.locale, loaded.trace ? adminPaths.turn(loaded.trace.id) : '/admin/turns');
   return loaded.trace
     ? <TurnTracePage locale={locale} onLanguage={changeLanguage} trace={loaded.trace} />
     : <MissingTurnTracePage locale={locale} onLanguage={changeLanguage} />;

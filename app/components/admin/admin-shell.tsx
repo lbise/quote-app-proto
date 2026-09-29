@@ -8,6 +8,15 @@ import type { TurnOutcomeKind } from '@/lib/turn-trace';
 
 export type Locale = 'fr' | 'en';
 export type AdminSection = 'users' | 'businesses' | 'turns';
+export type LanguageChange = (locale: Locale) => Promise<boolean>;
+
+/** The admin area's pages. */
+export const adminPaths = {
+  business: (id: string) => `/admin/businesses/${encodeURIComponent(id)}`,
+  quote: (id: string) => `/admin/quotes/${encodeURIComponent(id)}`,
+  turn: (id: string) => `/admin/turns/${encodeURIComponent(id)}`,
+  quoteTurns: (id: string) => `/admin/turns?quote=${encodeURIComponent(id)}`,
+};
 
 export const t = (locale: Locale, fr: string, en: string) => locale === 'fr' ? fr : en;
 
@@ -70,7 +79,7 @@ export function Unnamed({ locale }: { locale: Locale }) {
  */
 export function AdminShell({ locale, onLanguage, section, title, description, back, actions, wide = false, children }: {
   locale: Locale;
-  onLanguage: (locale: Locale) => Promise<boolean>;
+  onLanguage: LanguageChange;
   section: AdminSection;
   title: ReactNode;
   description?: ReactNode;

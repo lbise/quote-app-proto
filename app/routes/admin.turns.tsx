@@ -3,15 +3,13 @@ import type { Route } from './+types/admin.turns';
 import { adminPage, asAdministrator } from '../lib/admin-area.server';
 import { listUsers } from '../lib/administration.server';
 import { quote } from '../lib/db/schema';
-import { listTurnTraces, type TurnTraceFilter } from '../lib/turn-traces.server';
+import { isDay, listTurnTraces, type TurnTraceFilter } from '../lib/turn-traces.server';
 import { turnOutcomeKinds, type TurnOutcomeKind } from '../lib/turn-trace';
 import { TurnsPage } from '../components/admin/turns-page';
 import { useInterfaceLanguage } from '../components/quotes/use-interface-language';
 import { eq } from 'drizzle-orm';
 import '../components/quotes/quotes.css';
 import '../components/quotes/app-pages.css';
-
-const day = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The filter in the list URL. Unknown values are ignored. */
 function filterFrom(params: URLSearchParams): TurnTraceFilter {
@@ -23,8 +21,8 @@ function filterFrom(params: URLSearchParams): TurnTraceFilter {
     ...(outcome && (turnOutcomeKinds as readonly string[]).includes(outcome) ? { outcomeKind: outcome as TurnOutcomeKind } : {}),
     ...(value('user') ? { userId: value('user') } : {}),
     ...(value('quote') ? { quoteId: value('quote') } : {}),
-    ...(from && day.test(from) ? { from } : {}),
-    ...(to && day.test(to) ? { to } : {}),
+    ...(from && isDay(from) ? { from } : {}),
+    ...(to && isDay(to) ? { to } : {}),
   };
 }
 

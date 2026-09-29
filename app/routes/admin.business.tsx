@@ -2,6 +2,7 @@ import { useLoaderData } from 'react-router';
 import type { Route } from './+types/admin.business';
 import { adminPage, asAdministrator } from '../lib/admin-area.server';
 import { readArtisanBusiness } from '../lib/admin-inspection.server';
+import { adminPaths } from '../components/admin/admin-shell';
 import { BusinessPage } from '../components/admin/businesses-page';
 import { useInterfaceLanguage } from '../components/quotes/use-interface-language';
 import '../components/quotes/quotes.css';
@@ -21,6 +22,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
 
 export default function AdminBusiness() {
   const loaded = useLoaderData<typeof loader>();
-  const [locale, changeLanguage] = useInterfaceLanguage(loaded.locale, `/admin/businesses/${encodeURIComponent(loaded.business.id)}`);
+  const [locale, changeLanguage] = useInterfaceLanguage(loaded.locale, adminPaths.business(loaded.business.id));
   return <BusinessPage locale={locale} onLanguage={changeLanguage} business={loaded.business} quotes={loaded.quotes} />;
 }

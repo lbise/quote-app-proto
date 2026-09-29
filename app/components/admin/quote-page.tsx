@@ -3,11 +3,7 @@ import { Download, LockKeyhole } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { AdministeredQuoteDetail } from '@/lib/admin-inspection.server';
-import { AdminShell, DateTime, OutcomeBadge, t, type Locale } from './admin-shell';
-import { adminQuotePath } from './businesses-page';
-import { turnTracePath } from './turns-page';
-
-type LanguageChange = (locale: Locale) => Promise<boolean>;
+import { AdminShell, adminPaths, DateTime, OutcomeBadge, t, type LanguageChange, type Locale } from './admin-shell';
 export type AdminQuoteVersion = number | 'draft';
 
 function versionLabel(locale: Locale, version: AdminQuoteVersion) {
@@ -15,11 +11,11 @@ function versionLabel(locale: Locale, version: AdminQuoteVersion) {
 }
 
 function versionPath(quoteId: string, version: AdminQuoteVersion) {
-  return `${adminQuotePath(quoteId)}?version=${version}`;
+  return `${adminPaths.quote(quoteId)}?version=${version}`;
 }
 
 function downloadPath(quoteId: string, version: AdminQuoteVersion) {
-  return version === 'draft' ? `${adminQuotePath(quoteId)}/draft-preview` : `${adminQuotePath(quoteId)}/revisions/${version}/document`;
+  return version === 'draft' ? `${adminPaths.quote(quoteId)}/draft-preview` : `${adminPaths.quote(quoteId)}/revisions/${version}/document`;
 }
 
 function roleLabel(locale: Locale, role: AdministeredQuoteDetail['conversation'][number]['role']) {
@@ -41,7 +37,7 @@ export function AdminQuotePage({ locale, onLanguage, quote, version, page }: {
   const versions: AdminQuoteVersion[] = [...(quote.draft ? ['draft' as const] : []), ...quote.revisions.map(revision => revision.number).reverse()];
   const turns = quote.conversation.filter(entry => entry.traces !== undefined).length;
   return <AdminShell locale={locale} onLanguage={onLanguage} section="businesses" wide
-    back={{ to: `/admin/businesses/${encodeURIComponent(quote.business.id)}`, label: quote.business.name || t(locale, 'Entreprise sans nom', 'Unnamed business') }}
+    back={{ to: adminPaths.business(quote.business.id), label: quote.business.name || t(locale, 'Entreprise sans nom', 'Unnamed business') }}
     title={<><span className="qp-admin-reference">{quote.reference}</span> {quote.title || t(locale, 'Nouveau devis', 'New Quote')}</>}
     description={<>{quote.business.owner.name} · {quote.business.owner.email} · {t(locale, 'modifié le', 'changed')} <DateTime locale={locale} value={quote.updatedAt} /></>}
     actions={quote.archived ? <Badge variant="secondary">{t(locale, 'Archivé', 'Archived')}</Badge> : undefined}>
@@ -71,7 +67,7 @@ export function AdminQuotePage({ locale, onLanguage, quote, version, page }: {
       <section className="qp-panel" aria-labelledby="admin-conversation-heading">
         <header className="qp-panel-header">
           <h2 id="admin-conversation-heading">{t(locale, 'Conversation', 'Conversation')}</h2>
-          <p>{turns === 1 ? t(locale, '1 tour de l’assistant', '1 Assistant Turn') : t(locale, `${turns} tours de l’assistant`, `${turns} Assistant Turns`)} · <Link className="qp-admin-link" to={`/admin/turns?quote=${encodeURIComponent(quote.id)}`}>{t(locale, 'toutes les traces de ce devis', 'all Turn Traces of this Quote')}</Link></p>
+          <p>{turns === 1 ? t(locale, '1 tour de l’assistant', '1 Assistant Turn') : t(locale, `${turns} tours de l’assistant`, `${turns} Assistant Turns`)} · <Link className="qp-admin-link" to={adminPaths.quoteTurns(quote.id)}>{t(locale, 'toutes les traces de ce devis', 'all Turn Traces of this Quote')}</Link></p>
         </header>
         {quote.conversation.length === 0
           ? <p className="qp-admin-empty">{t(locale, 'Aucun message.', 'No messages.')}</p>
@@ -83,7 +79,7 @@ export function AdminQuotePage({ locale, onLanguage, quote, version, page }: {
                 {entry.traces.length === 0
                   ? <span className="qp-admin-muted">{t(locale, 'Trace expirée : les traces sont conservées 30 jours.', 'Turn Trace expired: Turn Traces are kept for 30 days.')}</span>
                   : entry.traces.map((trace, index) => <span key={trace.id} className="qp-admin-turn-trace">
-                    <Link className="qp-admin-link" to={turnTracePath(trace.id)}>{entry.traces!.length > 1 ? t(locale, `Voir la trace ${index + 1}`, `View trace ${index + 1}`) : t(locale, 'Voir la trace', 'View trace')}</Link>
+                    <Link className="qp-admin-link" to={adminPaths.turn(trace.id)}>{entry.traces!.length > 1 ? t(locale, `Voir la trace ${index + 1}`, `View trace ${index + 1}`) : t(locale, 'Voir la trace', 'View trace')}</Link>
                     <OutcomeBadge locale={locale} kind={trace.outcomeKind} />
                   </span>)}
               </div>}

@@ -1,3 +1,4 @@
+import type { Browser } from "@playwright/test";
 import pg from "pg";
 import { baseURL, createUser, signedInContext } from "./admin-support";
 import { createCompleteQuote, expect, requestQuote, test } from "./fixtures";
@@ -56,7 +57,7 @@ async function recordTurn(quoteId: string, options: { text: string; reply: strin
 // One Administrator for the file: sign-up is rate limited.
 let administrator: Promise<{ email: string }> | undefined;
 
-async function administratorPage(browser: Parameters<Parameters<typeof test>[2]>[0]["browser"]) {
+async function administratorPage(browser: Browser) {
   administrator ??= createUser("Inspecting Administrator", { administrator: true });
   const { email } = await administrator;
   const context = await signedInContext(browser, email);
