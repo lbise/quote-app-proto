@@ -1,6 +1,6 @@
 ## Tests
 
-Database-backed tests read `TEST_DATABASE_URL` from `.env`. Never set it to the `DATABASE_URL` database; the test setup refuses. After adding a migration, apply it to the test database too: `DATABASE_URL=<TEST_DATABASE_URL> npm run db:migrate`. See `docs/quote-workflow.md`.
+Database-backed tests read `TEST_DATABASE_URL` from `.env`, and every Vitest run applies pending migrations to that database first. Never set it to the `DATABASE_URL` database; the test setup refuses. See `docs/quote-workflow.md`.
 
 ## Agent skills
 
