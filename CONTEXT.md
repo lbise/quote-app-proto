@@ -17,8 +17,8 @@ A reusable record of the person or organization for whom an Artisan Business pro
 _Avoid_: Client, buyer, account
 
 **Quote**:
-A commercial record belonging to an Artisan Business that describes proposed work for a Customer, identified by a reference unique within that business and fixed after first Publication. Its customer-facing language is independent of the Artisan's interface language.
-_Avoid_: Estimate, invoice, proposal
+A commercial record belonging to an Artisan Business that describes proposed work for a Customer, identified by a reference unique within that business and fixed after first Publication. Its customer-facing language is independent of the Artisan's interface language. A Quote can be started from the work of one version of another Quote; the new Quote is independent of its source.
+_Avoid_: Estimate, invoice, proposal, duplicate Quote
 
 **Working Draft**:
 The editable version of a Quote being prepared, whose details, quantities, and prices may be incomplete. A Quote has at most one Working Draft, initially prepared from scratch or based on its latest Published Revision.
@@ -57,6 +57,24 @@ _Avoid_: Draft quote document
 **Quote Layout**:
 The presentation used to turn a Quote's content into a PDF. A Quote Layout changes appearance only and never the commercial content or amounts. Each Published Revision keeps the Quote Layout it was published with.
 _Avoid_: Template, theme
+
+## Administration language
+
+**User**:
+The sign-in identity of a person using Easy Quote. A User can be an Artisan, an Administrator, or both, and can be blocked from signing in without losing their Artisan Business's records.
+_Avoid_: Account, member
+
+**Administrator**:
+A person who runs Easy Quote and can see and manage across every Artisan Business. Being an Administrator is a role added to a person, who may also be an Artisan with their own Artisan Business.
+_Avoid_: Operator, support, superuser
+
+**Assistant Turn**:
+One Artisan message to the Quote assistant and everything the assistant did in response, ending with its changes committed, nothing changed, or its changes discarded.
+_Avoid_: Request, exchange, interaction
+
+**Turn Trace**:
+The temporary record of exactly what an Assistant Turn sent to and received from the model, readable only by Administrators.
+_Avoid_: Log, debug dump
 
 ## Evaluation language
 
