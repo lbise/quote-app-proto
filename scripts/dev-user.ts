@@ -104,20 +104,18 @@ async function main() {
   if (addresses.length) console.info(`For another device, use the private address you will open: ${[...new Set(addresses)].join(' or ')}`);
   const input = await credentials(defaultOrigin);
 
-  const allowed = new Set(`${savedEnv.AUTH_ALLOWED_EMAILS ?? ''} ${process.env.AUTH_ALLOWED_EMAILS ?? ''}`.split(/[\s,;]+/).filter(Boolean));
-  allowed.add(input.email);
   const origins = new Set(`${savedEnv.AUTH_TRUSTED_ORIGINS ?? ''} ${process.env.AUTH_TRUSTED_ORIGINS ?? ''}`.split(/[\s,;]+/).filter(Boolean));
   origins.add(input.origin);
   origins.add('http://localhost:5173');
   const settings: Record<string, string> = {
-    AUTH_ALLOWED_EMAILS: [...allowed].join(' '),
     BETTER_AUTH_URL: input.origin,
     AUTH_TRUSTED_ORIGINS: [...origins].join(' '),
   };
   if (!savedEnv.BETTER_AUTH_SECRET || savedEnv.BETTER_AUTH_SECRET.startsWith('replace-')) settings.BETTER_AUTH_SECRET = randomBytes(32).toString('hex');
 
   // These overrides belong to this CLI process, never to production auth code.
-  Object.assign(process.env, settings, { EMAIL_DELIVERY: 'fake' });
+  // Registration is opened for this process only, so the local account needs no invitation.
+  Object.assign(process.env, settings, { EMAIL_DELIVERY: 'fake', REGISTRATION_MODE: 'open' });
   const { connectDatabase } = await import('../app/lib/db.server');
   const { createAuthForDatabase } = await import('../app/lib/auth.server');
   const { capturedAuthEmails } = await import('../app/lib/mail.server');
@@ -155,7 +153,7 @@ async function main() {
       throw new SetupError('Account created and verified, but .env could not be written. Set BETTER_AUTH_URL and AUTH_TRUSTED_ORIGINS in .env to the app URL before signing in.');
     } finally { await rm(temporaryEnv, { force: true }); }
     console.info(`\nVerified local account created for ${input.email}.`);
-    console.info('Updated .env with the allowed email, app URL and trusted origins. No password was written to .env.');
+    console.info('Updated .env with the app URL and trusted origins. No password was written to .env.');
     console.info(`Restart npm run dev:network, then sign in at ${input.origin}/sign-in with the password you chose.`);
     console.info('Keep port 5173 on your trusted private network. Exported shell variables can override .env.');
   } finally { await connection.pool.end(); }

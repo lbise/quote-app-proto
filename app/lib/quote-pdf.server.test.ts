@@ -21,7 +21,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("Quote PDF downloads", ()
   const auth = createAuthForDatabase(connection.db);
   const renderer = createPdfRenderer();
   const origin = "http://localhost:5173";
-  const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
+  const originalRegistration = process.env.REGISTRATION_MODE;
   const originalDelivery = process.env.EMAIL_DELIVERY;
   let owner = "";
   let stranger = "";
@@ -67,15 +67,15 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("Quote PDF downloads", ()
   }
 
   beforeAll(async () => {
-    process.env.AUTH_ALLOWED_EMAILS = "*";
+    process.env.REGISTRATION_MODE = "open";
     process.env.EMAIL_DELIVERY = "fake";
     owner = await signIn();
     stranger = await signIn();
   });
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env.AUTH_ALLOWED_EMAILS;
-    else process.env.AUTH_ALLOWED_EMAILS = originalAllowlist;
+    if (originalRegistration === undefined) delete process.env.REGISTRATION_MODE;
+    else process.env.REGISTRATION_MODE = originalRegistration;
     if (originalDelivery === undefined) delete process.env.EMAIL_DELIVERY;
     else process.env.EMAIL_DELIVERY = originalDelivery;
     await renderer.close();

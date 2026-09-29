@@ -8,23 +8,23 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function allowedEmails(value = process.env.AUTH_ALLOWED_EMAILS): Set<string> {
-  return new Set(
-    (value ?? "")
-      .split(/[\s,;]+/)
-      .map((email) => normalizeEmail(email))
-      .filter(Boolean),
-  );
-}
+/** How people become Users on this deployment. */
+export type RegistrationMode = "invitation" | "open";
 
-export function isEmailAllowed(email: string, value?: string): boolean {
-  const configured = allowedEmails(value);
-  return configured.has("*") || configured.has(normalizeEmail(email));
+/**
+ * REGISTRATION_MODE: `invitation` (the default) accepts sign-ups only through
+ * an Administrator's invitation link; `open` lets anyone sign up. It is set
+ * per deployment, never from the admin area.
+ */
+export function registrationMode(value = process.env.REGISTRATION_MODE): RegistrationMode {
+  if (!value || value === "invitation") return "invitation";
+  if (value === "open") return "open";
+  throw new Error("REGISTRATION_MODE must be invitation or open.");
 }
 
 /** Bootstrap Administrators: emails whose Users are always Administrators. `*` is not accepted here. */
 export function administratorEmails(value = process.env.ADMIN_EMAILS): Set<string> {
-  const configured = allowedEmails(value ?? "");
+  const configured = new Set((value ?? "").split(/[\s,;]+/).map((email) => normalizeEmail(email)).filter(Boolean));
   configured.delete("*");
   return configured;
 }
@@ -44,10 +44,7 @@ export function canSignIn(identity: { email: string; status?: string | null }, a
   return identity.status === "active" || isBootstrapAdministrator(identity.email, adminEmails);
 }
 
-/**
- * Whether a signed-in User may use Easy Quote. AUTH_ALLOWED_EMAILS only
- * controls sign-up; once signed up, access depends on the User's status.
- */
+/** Whether a signed-in User may use Easy Quote: a verified email and an active status. */
 export function hasApprovedAccess(identity: SessionIdentity, adminEmails?: string): boolean {
   return identity.emailVerified && canSignIn(identity, adminEmails);
 }
@@ -74,11 +71,11 @@ export function trustedOrigins(): string[] {
 }
 
 export function assertAuthConfiguration(): void {
+  registrationMode();
   if (process.env.NODE_ENV === "production") {
     for (const [name, value] of [
       ["BETTER_AUTH_SECRET", process.env.BETTER_AUTH_SECRET],
       ["BETTER_AUTH_URL", authBaseUrl()],
-      ["AUTH_ALLOWED_EMAILS", process.env.AUTH_ALLOWED_EMAILS],
       ["EMAIL_DELIVERY", process.env.EMAIL_DELIVERY === "smtp" ? "smtp" : ""],
       ["SMTP_HOST", process.env.SMTP_HOST],
       ["SMTP_USER", process.env.SMTP_USER],

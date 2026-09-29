@@ -20,7 +20,7 @@ npm run db:migrate
 
 Start the development server on localhost with `npm run dev`, or bind it to the machine's private interfaces with `npm run dev:network`. The assistant is always configured and the server checks its provider, model and API key at startup. Server-side development commands load `.env`; the file is ignored by Git and excluded from Docker images. Production uses runtime environment variables instead.
 
-The example environment uses captured mail (`EMAIL_DELIVERY=fake`) and `AUTH_ALLOWED_EMAILS=*`, so local development never sends real messages. Captured messages are held in the server process and are not exposed by an application endpoint. Use a specific address instead of `*` when testing the allowlist behavior.
+The example environment uses captured mail (`EMAIL_DELIVERY=fake`) and open registration (`REGISTRATION_MODE=open`), so local development never sends real messages and needs no invitation. Captured messages are held in the server process and are not exposed by an application endpoint. Remove `REGISTRATION_MODE` or set it to `invitation` to try invitation-only sign-up, the default.
 
 ### Create your local login
 
@@ -34,7 +34,7 @@ Enter your email, password twice, and the URL you will open. Password input is h
 
 For another device, enter the machine's LAN or Tailscale IPv4 URL, such as `http://192.168.1.11:5173`. The command suggests available private addresses. For this machine only, accept `http://localhost:5173`.
 
-The command adds your email to `AUTH_ALLOWED_EMAILS`, sets `BETTER_AUTH_URL`, and updates `AUTH_TRUSTED_ORIGINS` in `.env`. Existing allowlist entries and unrelated configuration are preserved. If the file has no auth secret or still contains the example placeholder, it generates one. Existing accounts, passwords and verification states are never overwritten; choose a fresh email if an earlier registration is still unverified.
+The command creates the account without an invitation, whatever `REGISTRATION_MODE` says. It sets `BETTER_AUTH_URL` and updates `AUTH_TRUSTED_ORIGINS` in `.env`. Existing trusted origins and unrelated configuration are preserved. If the file has no auth secret or still contains the example placeholder, it generates one. Existing accounts, passwords and verification states are never overwritten; choose a fresh email if an earlier registration is still unverified.
 
 This command refuses non-development `NODE_ENV` values, remote database hosts, database names not ending in `_local` or `_test`, and connection URLs with query parameters. It only accepts loopback PostgreSQL connections. Use it with disposable local data, never with a tunnel to production.
 

@@ -9,25 +9,28 @@ import {
   browserLanguage,
   canSignIn,
   hasApprovedAccess,
-  isEmailAllowed,
+  normalizeEmail,
   parseLocaleCookie,
+  registrationMode,
   type InterfaceLanguage,
   trustedOrigins,
 } from "./auth-config.server";
 import { provisionArtisanBusiness, getArtisanForUser } from "./artisan.server";
 import { type Database, getDatabase } from "./db.server";
 import { account, artisanBusiness, session, user, verification } from "./db/schema";
+import { acceptInvitation, invitationForSignUp, usableInvitationForEmail } from "./invitations.server";
 import { sendAuthEmail } from "./mail.server";
 import { assertQuoteAIConfiguration } from "./quote-ai-config.server";
 
 /** Better Auth error code returned when a blocked User tries to sign in. */
 export const USER_NOT_ACTIVE = "USER_NOT_ACTIVE";
 
+/** Better Auth error code returned when sign-up needs an invitation link. */
+export const INVITATION_REQUIRED = "INVITATION_REQUIRED";
+
 let authInstance: ReturnType<typeof createAuth> | undefined;
 
-function emailCanAccessThisInstance(email: string): boolean {
-  return isEmailAllowed(email);
-}
+const invitationRequired = () => new APIError("FORBIDDEN", { code: INVITATION_REQUIRED, message: "Registration is by invitation only." });
 
 function createAuth(database: Database = getDatabase()) {
   assertAuthConfiguration();
@@ -99,12 +102,16 @@ function createAuth(database: Database = getDatabase()) {
       },
       user: {
         create: {
-          before: async (authUser) => {
-            if (!emailCanAccessThisInstance(authUser.email)) {
-              throw new APIError("FORBIDDEN", { message: "Registration is not available." });
-            }
+          // A new User gets the role their invitation grants. Sign-up checks the
+          // invitation link first; checking again here closes the gap in which
+          // it could be cancelled. Operator scripts create Users without one.
+          before: async (authUser, context) => {
+            const invitation = await usableInvitationForEmail(database, authUser.email);
+            if (!invitation && context?.path === "/sign-up/email" && registrationMode() === "invitation") return false;
+            if (invitation?.administrator) return { data: { ...authUser, administrator: true } };
           },
           after: async (authUser, context) => {
+            await acceptInvitation(database, authUser.email, authUser.id);
             const initialLanguage = parseLocaleCookie(context?.request?.headers.get("cookie") ?? null) ??
               browserLanguage(context?.request?.headers.get("accept-language") ?? null);
             await provisionArtisanBusiness(authUser.id, database, initialLanguage);
@@ -114,12 +121,15 @@ function createAuth(database: Database = getDatabase()) {
     },
     hooks: {
       // This hook runs for HTTP requests as well as internal clients. It is the
-      // server-side registration gate; a page redirect is not an access control.
+      // server-side registration gate; the sign-up page is not an access control.
+      // While registration is invitation-only, sign-up needs a usable
+      // invitation link for the same email.
       before: createAuthMiddleware(async (context) => {
-        if (context.path === "/sign-up/email") {
-          const body = context.body as { email?: unknown } | undefined;
-          if (typeof body?.email !== "string" || !emailCanAccessThisInstance(body.email)) {
-            throw new APIError("FORBIDDEN", { message: "Registration is not available." });
+        if (context.path === "/sign-up/email" && registrationMode() === "invitation") {
+          const body = context.body as { email?: unknown; invitationToken?: unknown } | undefined;
+          const invitation = await invitationForSignUp(database, body?.invitationToken);
+          if (typeof body?.email !== "string" || !invitation || invitation.email !== normalizeEmail(body.email)) {
+            throw invitationRequired();
           }
         }
       }),

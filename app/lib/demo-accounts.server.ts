@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 
-import { isEmailAllowed, normalizeEmail } from "./auth-config.server";
+import { normalizeEmail } from "./auth-config.server";
 import type { createAuthForDatabase } from "./auth.server";
 import type { Database } from "./db.server";
 import { demoAccount, user } from "./db/schema";
@@ -16,7 +16,7 @@ export class DemoAccountError extends Error {}
  * password is everything after the first colon, so it may contain colons but
  * not whitespace.
  */
-export function parseDemoAccounts(value: string | undefined, allowlist?: string): DemoAccount[] {
+export function parseDemoAccounts(value: string | undefined): DemoAccount[] {
   const entries = (value ?? "").split(/\s+/).filter(Boolean);
   if (!entries.length) throw new DemoAccountError("DEMO_ACCOUNTS is empty. Set it to space-separated email:password entries.");
   const seen = new Set<string>();
@@ -33,9 +33,6 @@ export function parseDemoAccounts(value: string | undefined, allowlist?: string)
     }
     if (seen.has(email)) throw new DemoAccountError(`${email} appears more than once in DEMO_ACCOUNTS.`);
     seen.add(email);
-    if (!isEmailAllowed(email, allowlist)) {
-      throw new DemoAccountError(`${email} is not in AUTH_ALLOWED_EMAILS. Add it there first, or the account cannot be created.`);
-    }
     return { email, password };
   });
 }
@@ -77,7 +74,8 @@ export async function seedDemoAccounts({ database, auth, accounts, reset = false
     const hash = await context.password.hash(password);
     // Cascades remove the Artisan Business, its Customers and Quotes, and sessions.
     if (current) await database.delete(user).where(eq(user.id, current.id));
-    // The user-create hook enforces the allowlist and provisions the business.
+    // The user-create hook provisions the business. Demo accounts need no
+    // invitation, whatever the registration mode.
     // No verification email is sent: the account is created already verified.
     const created = await context.internalAdapter.createUser({ email, name: "Demo", emailVerified: true }, { method: "email-password" });
     if (!created) throw new DemoAccountError(`${email} could not be created. Run the command again.`);

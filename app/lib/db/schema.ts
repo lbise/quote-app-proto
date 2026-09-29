@@ -53,7 +53,17 @@ export const user = pgTable(
   (table) => [check("user_status", sql`${table.status} in ('invited', 'active', 'blocked')`)],
 );
 
-export const administratorActions = ["block", "unblock", "grant_administrator", "remove_administrator"] as const;
+/** Administrator actions on an existing User. */
+export const userActions = ["block", "unblock", "grant_administrator", "remove_administrator"] as const;
+export type UserActionKind = typeof userActions[number];
+
+export const administratorActions = [
+  ...userActions,
+  "send_invitation",
+  "send_administrator_invitation",
+  "resend_invitation",
+  "cancel_invitation",
+] as const;
 export type AdministratorActionKind = typeof administratorActions[number];
 
 // Every Administrator change to a User, kept indefinitely. Emails are copied so
@@ -71,7 +81,33 @@ export const administratorAction = pgTable(
   },
   (table) => [
     index("administrator_action_created_idx").on(table.createdAt),
-    check("administrator_action_action", sql`${table.action} in ('block', 'unblock', 'grant_administrator', 'remove_administrator')`),
+    check("administrator_action_action", sql`${table.action} in ('block', 'unblock', 'grant_administrator', 'remove_administrator', 'send_invitation', 'send_administrator_invitation', 'resend_invitation', 'cancel_invitation')`),
+  ],
+);
+
+// An Administrator's invitation for one email to sign up. It stays an
+// invitation until the invitee signs up; resending replaces the token, so only
+// the latest link works. Only a hash of the token is stored.
+export const invitation = pgTable(
+  "invitation",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    // Whether the invitee becomes an Administrator when they sign up.
+    administrator: boolean("administrator").default(false).notNull(),
+    invitedByUserId: text("invited_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    invitedByEmail: text("invited_by_email").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedUserId: text("accepted_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("invitation_email_idx").on(table.email),
+    uniqueIndex("invitation_token_hash_idx").on(table.tokenHash),
   ],
 );
 

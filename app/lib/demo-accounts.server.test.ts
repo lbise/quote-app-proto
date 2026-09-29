@@ -14,13 +14,13 @@ const script = fileURLToPath(new URL("../../scripts/seed-demo.ts", import.meta.u
 
 describe("parseDemoAccounts", () => {
   it("reads whitespace-separated email:password entries and normalizes emails", () => {
-    expect(parseDemoAccounts(" Demo1@Example.test:first-pass\n demo2@example.test:pa:ss:word ", "*")).toEqual([
+    expect(parseDemoAccounts(" Demo1@Example.test:first-pass\n demo2@example.test:pa:ss:word ")).toEqual([
       { email: "demo1@example.test", password: "first-pass" },
       { email: "demo2@example.test", password: "pa:ss:word" },
     ]);
   });
 
-  it("rejects missing, malformed, duplicate or unapproved entries without echoing passwords", () => {
+  it("rejects missing, malformed or duplicate entries without echoing passwords", () => {
     const cases: Array<[string | undefined, string]> = [
       [undefined, "DEMO_ACCOUNTS is empty"],
       ["  ", "DEMO_ACCOUNTS is empty"],
@@ -29,11 +29,10 @@ describe("parseDemoAccounts", () => {
       ["demo@example.test:short", "8 and 128"],
       [`demo@example.test:${"x".repeat(129)}`, "8 and 128"],
       ["demo@example.test:first-pass DEMO@example.test:second-pass", "more than once"],
-      ["other@example.test:secret-password", "AUTH_ALLOWED_EMAILS"],
     ];
     for (const [value, message] of cases) {
       let error: unknown;
-      try { parseDemoAccounts(value, "demo@example.test"); } catch (caught) { error = caught; }
+      try { parseDemoAccounts(value); } catch (caught) { error = caught; }
       expect(error, value).toBeInstanceOf(DemoAccountError);
       expect((error as Error).message).toContain(message);
       for (const secret of ["short", "secret-password", "long-enough-password", "first-pass"]) {
@@ -67,7 +66,6 @@ it("refuses unknown arguments before touching the database", async () => {
 describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("seedDemoAccounts", () => {
   const connection = connectDatabase(process.env.TEST_DATABASE_URL!);
   const auth = createAuthForDatabase(connection.db);
-  const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
   const originalDelivery = process.env.EMAIL_DELIVERY;
   const emails: string[] = [];
   let ip = 0;
@@ -99,14 +97,12 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("seedDemoAccounts", () =>
     return row?.businessId;
   }
 
+  // Demo accounts need no invitation: registration stays invitation-only, as in production.
   beforeAll(() => {
-    process.env.AUTH_ALLOWED_EMAILS = "*";
     process.env.EMAIL_DELIVERY = "fake";
   });
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env.AUTH_ALLOWED_EMAILS;
-    else process.env.AUTH_ALLOWED_EMAILS = originalAllowlist;
     if (originalDelivery === undefined) delete process.env.EMAIL_DELIVERY;
     else process.env.EMAIL_DELIVERY = originalDelivery;
     if (emails.length) await connection.db.delete(user).where(inArray(user.email, emails));
@@ -163,11 +159,13 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("seedDemoAccounts", () =>
 
   it("never changes a real account that shares an email, and writes nothing for the batch", async () => {
     const realEmail = demoEmail("real");
+    // The real Artisan signs up while registration is open.
+    process.env.REGISTRATION_MODE = "open";
     const signedUp = await auth.handler(new Request(`${origin}/api/auth/sign-up/email`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": `127.1.${subnet}.${++ip}` },
       body: JSON.stringify({ name: "Real Artisan", email: realEmail, password: "real-password" }),
-    }));
+    })).finally(() => { delete process.env.REGISTRATION_MODE; });
     expect(signedUp.status).toBe(200);
     const realUserId = (await signedUp.json()).user.id;
     const businessId = await businessIdFor(realEmail);
@@ -189,7 +187,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("seedDemoAccounts", () =>
 
   it("runs from the command line without printing passwords", async () => {
     const email = demoEmail("cli");
-    const env = { DATABASE_URL: process.env.TEST_DATABASE_URL, AUTH_ALLOWED_EMAILS: email, DEMO_ACCOUNTS: `${email}:cli-first-password` };
+    const env = { DATABASE_URL: process.env.TEST_DATABASE_URL, REGISTRATION_MODE: "invitation", DEMO_ACCOUNTS: `${email}:cli-first-password` };
     const created = await runScript([], env);
     expect(created.code, created.output).toBe(0);
     expect(created.output).toContain(`${email}: created`);

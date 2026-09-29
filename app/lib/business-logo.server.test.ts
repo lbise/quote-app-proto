@@ -20,7 +20,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("business logo", () => {
   const quotes = createQuoteHandler({ database: connection.db, auth });
   const logos = createBusinessLogoHandler({ database: connection.db, auth });
   const pdfs = createQuotePdfHandler({ database: connection.db, auth, renderer });
-  const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
+  const originalRegistration = process.env.REGISTRATION_MODE;
   const originalDelivery = process.env.EMAIL_DELIVERY;
 
   async function signIn(): Promise<string> {
@@ -66,13 +66,13 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("business logo", () => {
   }
 
   beforeAll(() => {
-    process.env.AUTH_ALLOWED_EMAILS = "*";
+    process.env.REGISTRATION_MODE = "open";
     process.env.EMAIL_DELIVERY = "fake";
   });
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env.AUTH_ALLOWED_EMAILS;
-    else process.env.AUTH_ALLOWED_EMAILS = originalAllowlist;
+    if (originalRegistration === undefined) delete process.env.REGISTRATION_MODE;
+    else process.env.REGISTRATION_MODE = originalRegistration;
     if (originalDelivery === undefined) delete process.env.EMAIL_DELIVERY;
     else process.env.EMAIL_DELIVERY = originalDelivery;
     await renderer.close();

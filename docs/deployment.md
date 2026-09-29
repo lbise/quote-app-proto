@@ -27,7 +27,7 @@ The image contains no runtime secrets. Set the following only in Dokploy's appli
 - `DATABASE_URL`: PostgreSQL connection string.
 - `BETTER_AUTH_SECRET`: at least 32 random characters.
 - `BETTER_AUTH_URL`: the canonical HTTPS application URL (`https://easy-quote.voidstation.ch` in production); it is used for origin checks and verification/reset links.
-- `AUTH_ALLOWED_EMAILS`: space, comma or newline separated normalized tester addresses that may sign up. An empty value denies all new registrations. It does not control access after sign-up: a signed-up User keeps access until an Administrator blocks them in the admin area.
+- `REGISTRATION_MODE`: optional, `invitation` (the default) or `open`. With `invitation`, people can sign up only through an Administrator's invitation link (see [Administrators](#administrators)). With `open`, anyone can sign up and becomes an active User once their email is verified; there is no approval step, and blocking is the only moderation. The admin area cannot change it: opening registration is a deliberate launch step (#46). Any other value stops the server at startup. It does not control access after sign-up: a signed-up User keeps access until an Administrator blocks them.
 - `ADMIN_EMAILS`: optional, space, comma or newline separated emails whose Users are always Administrators (see [Administrators](#administrators)). `*` is ignored.
 - `AUTH_TRUSTED_ORIGINS`: optional additional HTTPS origins, space separated. Include `https://dev.voidstation.ch` when serving the development deployment from that domain.
 - `EMAIL_DELIVERY=smtp`, `SMTP_HOST=mail.infomaniak.com`, `SMTP_PORT=587`, `SMTP_USER=auth@voidstation.ch`, `SMTP_PASSWORD` (dedicated device/app password), and `SMTP_FROM=auth@voidstation.ch`.
@@ -45,7 +45,7 @@ Optional, for demo accounts (see [Demo accounts](#demo-accounts)):
 
 - `DEMO_ACCOUNTS`: space-separated `email:password` entries. Keep it as a runtime secret. Passwords are 8 to 128 characters and cannot contain spaces.
 
-For local development, `EMAIL_DELIVERY=fake` captures messages in memory and never sends mail. Do not use `AUTH_ALLOWED_EMAILS=*` outside disposable local development.
+For local development, `EMAIL_DELIVERY=fake` captures messages in memory and never sends mail. The example `.env` opens registration; do not copy that to a deployment before launch.
 
 This first slice runs one application replica. The container migrates before it serves traffic, so two replicas can race on migrations. Before scaling, move migrations into a one-shot release step or add a migration lock, and set the service to start only after that step succeeds.
 
@@ -121,7 +121,7 @@ Before real data, prove persistence: create test data, redeploy the application,
 
 `npm run seed:demo` creates verified demo accounts with an empty Artisan Business. It sends no email. Run it separately in each deployment (production and `dev.voidstation.ch`), because each has its own database.
 
-1. In the Dokploy application environment, set `DEMO_ACCOUNTS`, for example `demo1@voidstation.ch:first-password demo2@voidstation.ch:second-password`, and add the same emails to `AUTH_ALLOWED_EMAILS`. Redeploy so the container receives the new environment.
+1. In the Dokploy application environment, set `DEMO_ACCOUNTS`, for example `demo1@voidstation.ch:first-password demo2@voidstation.ch:second-password`, Demo accounts need no invitation. Redeploy so the container receives the new environment.
 2. Open the application's container terminal in Dokploy and run `npm run seed:demo`. It prints `created` or `unchanged` for each email, never a password.
 3. To empty the demo accounts again, for example before handing them to another prospect, run `npm run seed:demo -- --reset`. This deletes each listed demo account with its Customers, Quotes, settings and logo, signs out its sessions, and recreates it empty with the password currently in `DEMO_ACCOUNTS`. Change a demo password by editing `DEMO_ACCOUNTS`, redeploying, and resetting.
 
@@ -129,11 +129,14 @@ The command marks the accounts it creates in the `demo_account` table and only e
 
 ## Administrators
 
-Administrators open the admin area at `/admin` from the navigation. Everyone else gets a not-found page there. The area lists every User with their status, Administrator role, Artisan Business and creation date. An Administrator can block, unblock, grant the Administrator role and remove it. Every such change is recorded with the acting Administrator, the User, the action and the time, and kept indefinitely.
+Administrators open the admin area at `/admin` from the navigation. Everyone else gets a not-found page there. The area lists every User with their status, Administrator role, Artisan Business and creation date. An Administrator can block, unblock, grant the Administrator role and remove it, and invite people. Every such change, and every invitation sent, resent or cancelled, is recorded with the acting Administrator, the User or invited email, the action and the time, and kept indefinitely.
 
 - Blocking ends all of the User's sessions at once and refuses sign-in. An Assistant Turn already running is allowed to finish. The User's Artisan Business, Quotes and Customers are kept, and unblocking restores access to them.
 - Users whose email is in `ADMIN_EMAILS` are Bootstrap Administrators: always Administrators, and never blocked, even if they were blocked before being listed. The admin area cannot block them or remove their role. Use it to create the first Administrator, and as the way back in if every other Administrator is lost: add an email, redeploy, and sign up or sign in with it.
 - An Administrator cannot block themselves or remove their own role. The last active Administrator granted in the admin area cannot be blocked or have their role removed.
+- **Invite** sends an email with a link to `/sign-up?invitation=…`, optionally granting the Administrator role up front. The invitee signs up there with the email filled in and locked, sets their own password, and verifies their email as usual. A link is tied to its email, works once, and expires after 7 days. Resending sends a new link valid for 7 days and makes the previous one stop working; cancelling makes the link stop working. An email that already belongs to a User, or already has a pending invitation, cannot be invited. Pending, expired and cancelled invitations are listed with the Users; once accepted, the invitation is replaced by its User. If the email cannot be sent, nothing is saved.
+- The invitation email and the sign-up page tell the person that Administrators can read their Quotes and conversations, and that Turn Traces are kept for up to 30 days (ADR 0007). The invitation email is in French and English, because the invitee's language is not known yet.
+- An invitation also applies when registration is open: an invited email that signs up without the link still gets the role it was invited with.
 
 The admin area also lets Administrators inspect every Artisan Business, read-only (#53). Nothing in these views edits a Quote, runs the assistant, publishes, archives, deletes or signs in as another User.
 

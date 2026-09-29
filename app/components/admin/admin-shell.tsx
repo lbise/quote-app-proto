@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { QuoteHeader } from '../quotes/quote-header';
+import type { RefusalCode } from '@/lib/administration.server';
 import type { UserStatus } from '@/lib/db/schema';
 import type { TurnOutcomeKind } from '@/lib/turn-trace';
 
@@ -43,6 +44,26 @@ export function formatNumber(locale: Locale, value: number) {
 /** Model costs are in US dollars and often under a cent. */
 export function formatCost(locale: Locale, value: number) {
   return new Intl.NumberFormat(locale === 'fr' ? 'fr-CH' : 'en-GB', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
+}
+
+/** What an admin area action returns. */
+export type AdminActionResult = { ok: true; intent: string } | { error: RefusalCode };
+
+/** Why an Administrator action was refused. */
+export function refusalMessage(locale: Locale, code: RefusalCode) {
+  return {
+    not_administrator: t(locale, 'Vous n’êtes plus administrateur.', 'You are no longer an Administrator.'),
+    user_not_found: t(locale, 'Cet utilisateur n’existe plus.', 'This User no longer exists.'),
+    self: t(locale, 'Vous ne pouvez pas vous bloquer ni retirer votre propre rôle d’administrateur.', 'You cannot block yourself or remove your own Administrator role.'),
+    bootstrap_administrator: t(locale, 'Cet administrateur est défini dans ADMIN_EMAILS. Il ne peut être ni bloqué ni rétrogradé ici.', 'This Administrator is set in ADMIN_EMAILS. They cannot be blocked or demoted here.'),
+    last_administrator: t(locale, 'C’est le dernier administrateur nommé ici. Nommez-en un autre avant de lui retirer le rôle.', 'This is the last Administrator granted here. Grant another before removing this role.'),
+    invalid_email: t(locale, 'Saisissez une adresse e-mail valide.', 'Enter a valid email address.'),
+    user_exists: t(locale, 'Cette adresse appartient déjà à un utilisateur.', 'This email already belongs to a User.'),
+    already_invited: t(locale, 'Cette adresse a déjà une invitation en attente. Renvoyez-la depuis la liste des utilisateurs.', 'This email already has a pending invitation. Resend it from the User list instead.'),
+    invitation_not_found: t(locale, 'Cette invitation n’existe plus.', 'This invitation no longer exists.'),
+    invitation_accepted: t(locale, 'Cette invitation a déjà été acceptée.', 'This invitation has already been accepted.'),
+    email_not_sent: t(locale, 'L’e-mail d’invitation n’a pas pu être envoyé. Rien n’a été enregistré ; réessayez plus tard.', 'The invitation email could not be sent. Nothing was saved; try again later.'),
+  }[code];
 }
 
 export function statusLabel(locale: Locale, status: UserStatus) {

@@ -19,7 +19,7 @@ async function runSetup(contents: string, answers: string[] = [], overrides: Nod
   const directory = await mkdtemp(join(tmpdir(), 'quote-dev-user-'));
   await writeFile(join(directory, '.env'), contents, { mode: 0o644 });
   const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'development', ...overrides };
-  for (const key of ['DATABASE_URL', 'AUTH_ALLOWED_EMAILS', 'BETTER_AUTH_URL', 'AUTH_TRUSTED_ORIGINS', 'EMAIL_DELIVERY', 'BETTER_AUTH_SECRET']) delete env[key];
+  for (const key of ['DATABASE_URL', 'REGISTRATION_MODE', 'BETTER_AUTH_URL', 'AUTH_TRUSTED_ORIGINS', 'EMAIL_DELIVERY', 'BETTER_AUTH_SECRET']) delete env[key];
   try {
     const result = await new Promise<{ code: number | null; output: string }>((resolve, reject) => {
       const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), script], { cwd: directory, env, stdio: 'pipe' });
@@ -60,9 +60,9 @@ it('refuses remote databases and connection-string host overrides', async () => 
 
 it.runIf(Boolean(process.env.TEST_DATABASE_URL))('creates a verified local Artisan who can sign in and open the protected Quote workspace', async () => {
   const email = `dev-command-${crypto.randomUUID()}@example.test`;
-  const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
+  const originalRegistration = process.env.REGISTRATION_MODE;
   const connection = connectDatabase(process.env.TEST_DATABASE_URL!);
-  const localConfig = `# Keep unrelated configuration\nDATABASE_URL=${process.env.TEST_DATABASE_URL}\nAUTH_ALLOWED_EMAILS=another@example.test\n`;
+  const localConfig = `# Keep unrelated configuration\nDATABASE_URL=${process.env.TEST_DATABASE_URL}\nREGISTRATION_MODE=invitation\n`;
   try {
     const result = await runSetup(localConfig, [email, password, password, 'http://192.168.1.20:5173']);
     expect(result.code, result.output).toBe(0);
@@ -71,14 +71,14 @@ it.runIf(Boolean(process.env.TEST_DATABASE_URL))('creates a verified local Artis
     expect(result.contents).not.toContain(password);
     expect(result.mode).toBe(0o600);
     const config = parse(result.contents);
-    expect(config.AUTH_ALLOWED_EMAILS).toContain('another@example.test');
-    expect(config.AUTH_ALLOWED_EMAILS).toContain(email);
+    // The account is created without an invitation, and registration stays as configured.
+    expect(config.REGISTRATION_MODE).toBe('invitation');
     expect(config.BETTER_AUTH_URL).toBe('http://192.168.1.20:5173');
     expect(config.AUTH_TRUSTED_ORIGINS).toContain('http://192.168.1.20:5173');
     expect(config.AUTH_TRUSTED_ORIGINS).toContain('http://localhost:5173');
     expect(config.BETTER_AUTH_SECRET.length).toBeGreaterThanOrEqual(32);
 
-    process.env.AUTH_ALLOWED_EMAILS = config.AUTH_ALLOWED_EMAILS;
+    process.env.REGISTRATION_MODE = config.REGISTRATION_MODE;
     const auth = createAuthForDatabase(connection.db);
     const signIn = await auth.handler(new Request('http://localhost:5173/api/auth/sign-in/email', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
@@ -101,8 +101,8 @@ it.runIf(Boolean(process.env.TEST_DATABASE_URL))('creates a verified local Artis
     }));
     expect(stillSignsIn.status).toBe(200);
   } finally {
-    if (originalAllowlist === undefined) delete process.env.AUTH_ALLOWED_EMAILS;
-    else process.env.AUTH_ALLOWED_EMAILS = originalAllowlist;
+    if (originalRegistration === undefined) delete process.env.REGISTRATION_MODE;
+    else process.env.REGISTRATION_MODE = originalRegistration;
     await connection.db.delete(user).where(eq(user.email, email));
     await connection.pool.end();
   }

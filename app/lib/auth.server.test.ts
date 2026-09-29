@@ -9,23 +9,23 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("Better Auth access rules
   const connection = connectDatabase(process.env.TEST_DATABASE_URL!);
   const email = `approved-${Date.now()}@example.com`;
   const auth = createAuthForDatabase(connection.db);
-  const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
+  const originalRegistration = process.env.REGISTRATION_MODE;
   const originalDelivery = process.env.EMAIL_DELIVERY;
 
   beforeAll(() => {
-    process.env.AUTH_ALLOWED_EMAILS = email;
+    delete process.env.REGISTRATION_MODE;
     process.env.EMAIL_DELIVERY = "fake";
   });
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env.AUTH_ALLOWED_EMAILS;
-    else process.env.AUTH_ALLOWED_EMAILS = originalAllowlist;
+    if (originalRegistration === undefined) delete process.env.REGISTRATION_MODE;
+    else process.env.REGISTRATION_MODE = originalRegistration;
     if (originalDelivery === undefined) delete process.env.EMAIL_DELIVERY;
     else process.env.EMAIL_DELIVERY = originalDelivery;
     await connection.pool.end();
   });
 
-  it("rejects an unapproved direct registration request", async () => {
+  it("rejects a direct registration request without an invitation by default", async () => {
     const response = await auth.handler(new Request("http://localhost:5173/api/auth/sign-up/email", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -34,7 +34,8 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("Better Auth access rules
     expect(response.status).toBe(403);
   });
 
-  it("accepts an approved registration and provisions one business", async () => {
+  it("accepts a registration once registration is open and provisions one business", async () => {
+    process.env.REGISTRATION_MODE = "open";
     const response = await auth.handler(new Request("http://localhost:5173/api/auth/sign-up/email", {
       method: "POST",
       headers: { "content-type": "application/json", "accept-language": "en-US" },

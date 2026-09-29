@@ -1,17 +1,21 @@
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
-import { isAdministrator, isBootstrapAdministrator, type SessionIdentity } from "./auth-config.server";
+import { isAdministrator, isBootstrapAdministrator, normalizeEmail, type SessionIdentity } from "./auth-config.server";
 import { getAuth } from "./auth.server";
 import type { Database } from "./db.server";
 import {
   administratorAction,
   artisanBusiness,
   businessDefaults,
+  invitation,
   session,
   user,
   type AdministratorActionKind,
+  type UserActionKind,
   type UserStatus,
 } from "./db/schema";
+import { invitationUrl, newInvitationToken } from "./invitations.server";
+import { sendInvitationEmail } from "./mail.server";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -36,7 +40,32 @@ export type AdministratorActionRecord = {
   createdAt: Date;
 };
 
-export type RefusalCode = "not_administrator" | "user_not_found" | "self" | "bootstrap_administrator" | "last_administrator";
+/** An invitation not yet accepted. It expires 7 days after it was last sent. */
+export type InvitationState = "pending" | "expired" | "cancelled";
+
+export type AdministeredInvitation = {
+  id: string;
+  email: string;
+  state: InvitationState;
+  /** Whether the invitee becomes an Administrator when they sign up. */
+  administrator: boolean;
+  invitedByEmail: string;
+  sentAt: Date;
+  expiresAt: Date;
+};
+
+export type RefusalCode =
+  | "not_administrator"
+  | "user_not_found"
+  | "self"
+  | "bootstrap_administrator"
+  | "last_administrator"
+  | "invalid_email"
+  | "user_exists"
+  | "already_invited"
+  | "invitation_not_found"
+  | "invitation_accepted"
+  | "email_not_sent";
 
 /** An administrator action refused by a safeguard. Nothing was changed or recorded. */
 export class AdministrationRefusal extends Error {
@@ -104,34 +133,23 @@ export async function listAdministratorActions(database: Database): Promise<Admi
  */
 export async function applyAdministratorAction(
   database: Database,
-  input: { actorUserId: string; targetUserId: string; action: AdministratorActionKind },
+  input: { actorUserId: string; targetUserId: string; action: UserActionKind },
 ): Promise<boolean> {
   return database.transaction(async (transaction) => {
-    // Serialise administrator changes, so two Administrators cannot each
-    // remove the other and leave no granted Administrator.
-    await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('administrator_action'))`);
-    const actor = await findUser(transaction, input.actorUserId);
-    if (!actor || !isAdministrator(actor)) throw new AdministrationRefusal("not_administrator");
+    const actor = await lockAsAdministrator(transaction, input.actorUserId);
     const target = await findUser(transaction, input.targetUserId);
     if (!target) throw new AdministrationRefusal("user_not_found");
 
     const changed = await changeUser(transaction, input.action, actor, target);
     if (!changed) return false;
-    await transaction.insert(administratorAction).values({
-      id: crypto.randomUUID(),
-      actorUserId: actor.id,
-      actorEmail: actor.email,
-      targetUserId: target.id,
-      targetEmail: target.email,
-      action: input.action,
-    });
+    await record(transaction, actor, input.action, target);
     return true;
   });
 }
 
 type UserRow = typeof user.$inferSelect;
 
-async function changeUser(transaction: Transaction, action: AdministratorActionKind, actor: UserRow, target: UserRow): Promise<boolean> {
+async function changeUser(transaction: Transaction, action: UserActionKind, actor: UserRow, target: UserRow): Promise<boolean> {
   const update = (values: Partial<Pick<UserRow, "status" | "administrator">>) =>
     transaction.update(user).set({ ...values, updatedAt: new Date() }).where(eq(user.id, target.id));
   const role = roleOf(target);
@@ -181,6 +199,147 @@ async function otherActiveGrantedAdministrator(transaction: Transaction, exceptU
 export async function assertAdministrator(database: Database, userId: string): Promise<void> {
   const [viewer] = await database.select().from(user).where(eq(user.id, userId)).limit(1);
   if (!viewer || !isAdministrator(viewer)) throw new AdministrationRefusal("not_administrator");
+}
+
+/**
+ * Serialise administrator changes, so two Administrators cannot each remove
+ * the other and leave no granted Administrator, and return the acting
+ * Administrator.
+ */
+async function lockAsAdministrator(transaction: Transaction, actorUserId: string): Promise<UserRow> {
+  await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('administrator_action'))`);
+  const actor = await findUser(transaction, actorUserId);
+  if (!actor || !isAdministrator(actor)) throw new AdministrationRefusal("not_administrator");
+  return actor;
+}
+
+async function record(transaction: Transaction, actor: UserRow, action: AdministratorActionKind, target: { id: string | null; email: string }) {
+  await transaction.insert(administratorAction).values({
+    id: crypto.randomUUID(),
+    actorUserId: actor.id,
+    actorEmail: actor.email,
+    targetUserId: target.id,
+    targetEmail: target.email,
+    action,
+  });
+}
+
+function invitationState(entry: { cancelledAt: Date | null; expiresAt: Date }, now = new Date()): InvitationState {
+  if (entry.cancelledAt) return "cancelled";
+  return entry.expiresAt.getTime() > now.getTime() ? "pending" : "expired";
+}
+
+/**
+ * Every invitation not yet accepted, newest first. An invitation whose email
+ * now belongs to a User is not listed: that User is.
+ */
+export async function listInvitations(database: Database): Promise<AdministeredInvitation[]> {
+  const rows = await database
+    .select({
+      id: invitation.id,
+      email: invitation.email,
+      administrator: invitation.administrator,
+      invitedByEmail: invitation.invitedByEmail,
+      sentAt: invitation.sentAt,
+      expiresAt: invitation.expiresAt,
+      cancelledAt: invitation.cancelledAt,
+    })
+    .from(invitation)
+    .leftJoin(user, eq(user.email, invitation.email))
+    .where(and(isNull(invitation.acceptedAt), isNull(user.id)))
+    .orderBy(desc(invitation.sentAt), desc(invitation.id));
+  const now = new Date();
+  return rows.map(({ cancelledAt, ...row }) => ({ ...row, state: invitationState({ cancelledAt, expiresAt: row.expiresAt }, now) }));
+}
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Invite an email to sign up, optionally as an Administrator, and email the
+ * invitee their link. An email with an expired or cancelled invitation is
+ * invited again with a new link. Nothing is saved or recorded if the email
+ * cannot be sent.
+ */
+export async function sendInvitation(
+  database: Database,
+  input: { actorUserId: string; email: string; administrator: boolean },
+): Promise<void> {
+  const email = normalizeEmail(input.email);
+  if (!emailPattern.test(email) || email.length > 254) throw new AdministrationRefusal("invalid_email");
+  await database.transaction(async (transaction) => {
+    const actor = await lockAsAdministrator(transaction, input.actorUserId);
+    const [existingUser] = await transaction.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
+    if (existingUser) throw new AdministrationRefusal("user_exists");
+    const [existing] = await transaction.select().from(invitation).where(eq(invitation.email, email)).limit(1);
+    if (existing && !existing.acceptedAt && invitationState(existing) === "pending") throw new AdministrationRefusal("already_invited");
+
+    const now = new Date();
+    const { token, tokenHash, expiresAt } = newInvitationToken(now);
+    const values = {
+      tokenHash,
+      administrator: input.administrator,
+      invitedByUserId: actor.id,
+      invitedByEmail: actor.email,
+      sentAt: now,
+      expiresAt,
+      cancelledAt: null,
+      acceptedAt: null,
+      acceptedUserId: null,
+    };
+    // An accepted invitation whose User was since deleted is replaced too.
+    if (existing) await transaction.update(invitation).set(values).where(eq(invitation.id, existing.id));
+    else await transaction.insert(invitation).values({ id: crypto.randomUUID(), email, ...values });
+    await record(transaction, actor, input.administrator ? "send_administrator_invitation" : "send_invitation", { id: null, email });
+    await emailInvitation({ to: email, url: invitationUrl(token), administrator: input.administrator });
+  });
+}
+
+/** Send an invitation again with a new link valid for 7 days. The previous link stops working. */
+export async function resendInvitation(database: Database, input: { actorUserId: string; invitationId: string }): Promise<void> {
+  await database.transaction(async (transaction) => {
+    const actor = await lockAsAdministrator(transaction, input.actorUserId);
+    const existing = await openInvitation(transaction, input.invitationId);
+    const now = new Date();
+    const { token, tokenHash, expiresAt } = newInvitationToken(now);
+    await transaction.update(invitation).set({ tokenHash, sentAt: now, expiresAt, cancelledAt: null }).where(eq(invitation.id, existing.id));
+    await record(transaction, actor, "resend_invitation", { id: null, email: existing.email });
+    await emailInvitation({ to: existing.email, url: invitationUrl(token), administrator: existing.administrator });
+  });
+}
+
+/**
+ * Cancel an invitation, so its link stops working. It stays listed as
+ * cancelled and can be sent again. Returns false, recording nothing, when it
+ * is already cancelled.
+ */
+export async function cancelInvitation(database: Database, input: { actorUserId: string; invitationId: string }): Promise<boolean> {
+  return database.transaction(async (transaction) => {
+    const actor = await lockAsAdministrator(transaction, input.actorUserId);
+    const existing = await openInvitation(transaction, input.invitationId);
+    if (existing.cancelledAt) return false;
+    await transaction.update(invitation).set({ cancelledAt: new Date() }).where(eq(invitation.id, existing.id));
+    await record(transaction, actor, "cancel_invitation", { id: null, email: existing.email });
+    return true;
+  });
+}
+
+/** Send the invitation email; a failure rolls the invitation back. */
+async function emailInvitation(message: Parameters<typeof sendInvitationEmail>[0]) {
+  try {
+    await sendInvitationEmail(message);
+  } catch (error) {
+    console.error("Invitation email could not be sent.", error instanceof Error ? error.message : error);
+    throw new AdministrationRefusal("email_not_sent");
+  }
+}
+
+/** An invitation that has not been accepted: its email does not belong to a User. */
+async function openInvitation(transaction: Transaction, id: string) {
+  const [existing] = await transaction.select().from(invitation).where(eq(invitation.id, id)).limit(1);
+  if (!existing) throw new AdministrationRefusal("invitation_not_found");
+  const [invitee] = await transaction.select({ id: user.id }).from(user).where(eq(user.email, existing.email)).limit(1);
+  if (existing.acceptedAt || invitee) throw new AdministrationRefusal("invitation_accepted");
+  return existing;
 }
 
 async function findUser(transaction: Transaction, id: string) {

@@ -27,11 +27,11 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("business defa
   const connection = connectDatabase(process.env.TEST_DATABASE_URL!);
   const auth = createAuthForDatabase(connection.db);
   const handler = createQuoteHandler({ database: connection.db, auth });
-  const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
+  const originalRegistration = process.env.REGISTRATION_MODE;
   const originalDelivery = process.env.EMAIL_DELIVERY;
 
   beforeAll(() => {
-    process.env.AUTH_ALLOWED_EMAILS = "*";
+    process.env.REGISTRATION_MODE = "open";
     process.env.EMAIL_DELIVERY = "fake";
   });
 
@@ -61,8 +61,8 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("business defa
   }
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env.AUTH_ALLOWED_EMAILS;
-    else process.env.AUTH_ALLOWED_EMAILS = originalAllowlist;
+    if (originalRegistration === undefined) delete process.env.REGISTRATION_MODE;
+    else process.env.REGISTRATION_MODE = originalRegistration;
     if (originalDelivery === undefined) delete process.env.EMAIL_DELIVERY;
     else process.env.EMAIL_DELIVERY = originalDelivery;
     await connection.pool.end();
@@ -175,8 +175,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("business defa
     expect((await laterQuote.json()).draft).toMatchObject(laterDefaults);
   });
 
-  // Blocked Users are refused in administration.server.test.ts. AUTH_ALLOWED_EMAILS
-  // only controls sign-up (#50), so it no longer affects signed-up Artisans.
+  // Blocked Users are refused in administration.server.test.ts.
   it("rejects unauthenticated defaults access", async () => {
     const unauthenticated = await handler(new Request(`${origin}/api/quotes`, {
       method: "POST",

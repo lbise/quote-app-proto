@@ -12,14 +12,14 @@ import { createQuoteHandler } from "./quotes.server";
 describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP boundary", () => {
   const connection = connectDatabase(process.env.TEST_DATABASE_URL!);
   const auth = createAuthForDatabase(connection.db);
-  const originalAllowlist = process.env.AUTH_ALLOWED_EMAILS;
+  const originalRegistration = process.env.REGISTRATION_MODE;
   const originalDelivery = process.env.EMAIL_DELIVERY;
   const origin = "http://localhost:5173";
   let cookie = "";
   let handler: ReturnType<typeof createQuoteHandler>;
 
   beforeAll(async () => {
-    process.env.AUTH_ALLOWED_EMAILS = "*";
+    process.env.REGISTRATION_MODE = "open";
     process.env.EMAIL_DELIVERY = "fake";
     const email = `quotes-${crypto.randomUUID()}@example.com`;
     const signedUp = await auth.handler(new Request(`${origin}/api/auth/sign-up/email`, {
@@ -37,8 +37,8 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("authenticated Quote HTTP
   });
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env.AUTH_ALLOWED_EMAILS;
-    else process.env.AUTH_ALLOWED_EMAILS = originalAllowlist;
+    if (originalRegistration === undefined) delete process.env.REGISTRATION_MODE;
+    else process.env.REGISTRATION_MODE = originalRegistration;
     if (originalDelivery === undefined) delete process.env.EMAIL_DELIVERY;
     else process.env.EMAIL_DELIVERY = originalDelivery;
     await connection.pool.end();

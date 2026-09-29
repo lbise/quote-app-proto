@@ -45,9 +45,9 @@ export default defineConfig({
       DATABASE_URL: browserDatabaseUrl,
       BETTER_AUTH_URL: baseURL,
       AUTH_TRUSTED_ORIGINS: baseURL,
-      // browser@example.com documents the browser-test identity. The isolated
-      // database also permits unique fixture accounts across repeated runs.
-      AUTH_ALLOWED_EMAILS: "browser@example.com *",
+      // Fixtures sign up unique accounts directly, so registration is open.
+      // Invitation-only sign-up is covered by the invitations integration tests.
+      REGISTRATION_MODE: "open",
       EMAIL_DELIVERY: "fake",
       QUOTE_AI_PROVIDER: "google",
       QUOTE_AI_MODEL: "gemini-2.5-flash",

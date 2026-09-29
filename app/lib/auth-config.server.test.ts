@@ -5,16 +5,21 @@ import {
   hasApprovedAccess,
   isAdministrator,
   trustedOrigins,
-  isEmailAllowed,
   normalizeEmail,
   parseLocaleCookie,
+  registrationMode,
 } from "./auth-config.server";
 
 describe("auth configuration", () => {
-  it("normalizes and matches the selected tester allowlist", () => {
+  it("normalizes emails", () => {
     expect(normalizeEmail("  Test@Example.COM ")).toBe("test@example.com");
-    expect(isEmailAllowed("Test@Example.com", "other@example.com test@example.com")).toBe(true);
-    expect(isEmailAllowed("nope@example.com", "test@example.com")).toBe(false);
+  });
+
+  it("is invitation-only unless the deployment opens registration", () => {
+    expect(registrationMode("")).toBe("invitation");
+    expect(registrationMode("invitation")).toBe("invitation");
+    expect(registrationMode("open")).toBe("open");
+    expect(() => registrationMode("Open")).toThrow("REGISTRATION_MODE");
   });
 
   it("approves only verified, active Users", () => {

@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 
-import { getAuth, USER_NOT_ACTIVE } from "./auth.server";
+import { getAuth, INVITATION_REQUIRED, USER_NOT_ACTIVE } from "./auth.server";
 
 export async function callAuthEndpoint(
   request: Request,
@@ -29,6 +29,13 @@ export async function isBlockedResponse(response: Response): Promise<boolean> {
   if (response.status !== 403) return false;
   const body = await response.clone().json().catch(() => undefined) as { code?: unknown } | undefined;
   return body?.code === USER_NOT_ACTIVE;
+}
+
+/** Whether Better Auth refused a sign-up because it needs a usable invitation link. */
+export async function isInvitationRequiredResponse(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false;
+  const body = await response.clone().json().catch(() => undefined) as { code?: unknown } | undefined;
+  return body?.code === INVITATION_REQUIRED;
 }
 
 export function redirectWithAuthCookies(response: Response, location: string): Response {

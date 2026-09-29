@@ -68,6 +68,10 @@ _Avoid_: Account, member
 A person who runs Easy Quote and can see and manage across every Artisan Business. Being an Administrator is a role added to a person, who may also be an Artisan with their own Artisan Business.
 _Avoid_: Operator, support, superuser
 
+**Invitation**:
+An Administrator's offer for one email to become a User, used through a single-use link that expires after 7 days. It can grant the Administrator role up front. Until it is accepted, an Invitation is not a User.
+_Avoid_: Invite code, pending User
+
 **Assistant Turn**:
 One Artisan message to the Quote assistant and everything the assistant did in response, ending with its changes committed, nothing changed, or its changes discarded.
 _Avoid_: Request, exchange, interaction

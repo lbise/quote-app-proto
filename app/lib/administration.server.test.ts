@@ -69,9 +69,9 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("administering
     expect(await response.json()).toEqual({ error: "access_denied" });
   });
 
-  it("keeps access for a signed-up User who is no longer in AUTH_ALLOWED_EMAILS", async () => {
-    const artisan = await harness.artisan("Unlisted Artisan");
-    process.env.AUTH_ALLOWED_EMAILS = "someone-else@example.test";
+  it("keeps access for a signed-up User once registration is invitation-only", async () => {
+    const artisan = await harness.artisan("Uninvited Artisan");
+    process.env.REGISTRATION_MODE = "invitation";
     try {
       expect((await artisan.request()).status).toBe(200);
       expect((await artisan.signIn()).status).toBe(200);

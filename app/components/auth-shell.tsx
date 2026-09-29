@@ -29,6 +29,8 @@ export function Field({
   autoComplete,
   defaultValue,
   minLength,
+  readOnly,
+  description,
 }: {
   label: string;
   name: string;
@@ -37,20 +39,26 @@ export function Field({
   autoComplete?: string;
   defaultValue?: string;
   minLength?: number;
+  readOnly?: boolean;
+  /** Shown under the field and announced with it. */
+  description?: string;
 }) {
   return (
     <label className="flex flex-col gap-2 text-sm font-medium" htmlFor={name}>
       {label}
       <input
-        className="h-10 rounded-md border bg-background px-3 font-normal outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-10 rounded-md border bg-background px-3 font-normal outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring read-only:bg-muted read-only:text-muted-foreground"
         id={name}
         name={name}
         type={type}
         required={required}
         defaultValue={defaultValue}
         minLength={minLength}
+        readOnly={readOnly}
+        aria-describedby={description ? `${name}-description` : undefined}
         autoComplete={autoComplete ?? (name === "email" ? "email" : name === "password" ? "current-password" : undefined)}
       />
+      {description ? <span id={`${name}-description`} className="font-normal text-muted-foreground">{description}</span> : null}
     </label>
   );
 }

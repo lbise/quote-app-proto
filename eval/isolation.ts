@@ -52,7 +52,7 @@ function evaluationEnvironment(databaseUrl: string): EnvironmentSnapshot {
     DATABASE_URL: databaseUrl,
     BETTER_AUTH_URL: "http://evaluation.local",
     BETTER_AUTH_SECRET: "evaluation-only-secret-not-used-by-runner",
-    AUTH_ALLOWED_EMAILS: "*",
+    REGISTRATION_MODE: "open",
     EMAIL_DELIVERY: "fake",
     QUOTE_AI_PROVIDER: "google",
     QUOTE_AI_MODEL: "gemini-2.5-flash",

@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link, useFetcher } from 'react-router';
-import { TriangleAlert } from 'lucide-react';
+import { CircleCheck, TriangleAlert, UserPlus } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { AdminShell, adminPaths, formatDate, t, Unnamed, UserStatusBadge, type LanguageChange, type Locale } from './admin-shell';
+import { AdminShell, adminPaths, formatDate, refusalMessage, t, Unnamed, UserStatusBadge, type AdminActionResult, type LanguageChange, type Locale } from './admin-shell';
+import { InvitationRow, InviteDialog, invitationConfirmation, type AdminInvitation, type InvitationAction } from './invitations';
 
-import type { AdministeredUser, AdministratorActionRecord, RefusalCode } from '@/lib/administration.server';
-import type { AdministratorActionKind as Action } from '@/lib/db/schema';
+import type { AdministeredUser, AdministratorActionRecord } from '@/lib/administration.server';
+import type { UserActionKind as Action } from '@/lib/db/schema';
 
 /** Loader data: dates arrive as ISO strings. */
 type Serialized<T> = Omit<T, 'createdAt'> & { createdAt: string };
 export type AdminUser = Serialized<AdministeredUser>;
 export type AdminActionRecord = Serialized<AdministratorActionRecord>;
+
+/** An action waiting for the Administrator's confirmation. */
+type PendingAction = { kind: 'user'; action: Action; target: AdminUser } | { kind: 'invitation'; action: InvitationAction; target: AdminInvitation };
 
 /** One record line: the acting Administrator, what they did, and to whom. */
 function recordSentence(locale: Locale, record: AdminActionRecord) {
@@ -23,18 +27,13 @@ function recordSentence(locale: Locale, record: AdminActionRecord) {
     case 'unblock': return <>{actor} {t(locale, 'a débloqué', 'unblocked')} {target}</>;
     case 'grant_administrator': return locale === 'fr' ? <>{actor} a nommé administrateur {target}</> : <>{actor} made {target} an Administrator</>;
     case 'remove_administrator': return <>{actor} {t(locale, 'a retiré le rôle d’administrateur à', 'removed the Administrator role from')} {target}</>;
+    case 'send_invitation': return <>{actor} {t(locale, 'a invité', 'invited')} {target}</>;
+    case 'send_administrator_invitation': return locale === 'fr' ? <>{actor} a invité {target} comme administrateur</> : <>{actor} invited {target} as an Administrator</>;
+    case 'resend_invitation': return <>{actor} {t(locale, 'a renvoyé l’invitation à', 'resent the invitation to')} {target}</>;
+    case 'cancel_invitation': return <>{actor} {t(locale, 'a annulé l’invitation de', 'cancelled the invitation to')} {target}</>;
   }
 }
 
-function refusalMessage(locale: Locale, code: RefusalCode) {
-  return {
-    not_administrator: t(locale, 'Vous n’êtes plus administrateur.', 'You are no longer an Administrator.'),
-    user_not_found: t(locale, 'Cet utilisateur n’existe plus.', 'This User no longer exists.'),
-    self: t(locale, 'Vous ne pouvez pas vous bloquer ni retirer votre propre rôle d’administrateur.', 'You cannot block yourself or remove your own Administrator role.'),
-    bootstrap_administrator: t(locale, 'Cet administrateur est défini dans ADMIN_EMAILS. Il ne peut être ni bloqué ni rétrogradé ici.', 'This Administrator is set in ADMIN_EMAILS. They cannot be blocked or demoted here.'),
-    last_administrator: t(locale, 'C’est le dernier administrateur nommé ici. Nommez-en un autre avant de lui retirer le rôle.', 'This is the last Administrator granted here. Grant another before removing this role.'),
-  }[code];
-}
 
 function confirmation(locale: Locale, action: Action, target: AdminUser) {
   const who = target.name || target.email;
@@ -62,11 +61,13 @@ function confirmation(locale: Locale, action: Action, target: AdminUser) {
   }[action];
 }
 
-export function AdminPage({ locale, onLanguage, currentUserId, users, actions }: {
-  locale: Locale; onLanguage: LanguageChange; currentUserId: string; users: AdminUser[]; actions: AdminActionRecord[];
+export function AdminPage({ locale, onLanguage, currentUserId, users, invitations, actions }: {
+  locale: Locale; onLanguage: LanguageChange; currentUserId: string; users: AdminUser[]; invitations: AdminInvitation[]; actions: AdminActionRecord[];
 }) {
-  const fetcher = useFetcher<{ ok: true } | { error: RefusalCode }>();
-  const [pending, setPending] = useState<{ action: Action; target: AdminUser } | null>(null);
+  const fetcher = useFetcher<AdminActionResult>();
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [inviting, setInviting] = useState(false);
+  const [invited, setInvited] = useState<string | null>(null);
   const busy = fetcher.state !== 'idle';
   const refusal = fetcher.state === 'idle' && fetcher.data && 'error' in fetcher.data ? fetcher.data.error : null;
 
@@ -74,20 +75,27 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
 
   function confirm() {
     if (!pending) return;
-    void fetcher.submit({ intent: pending.action, userId: pending.target.id }, { method: 'post' });
+    setInvited(null);
+    void fetcher.submit(pending.kind === 'user'
+      ? { intent: pending.action, userId: pending.target.id }
+      : { intent: pending.action, invitationId: pending.target.id }, { method: 'post' });
   }
 
-  const dialog = pending ? confirmation(locale, pending.action, pending.target) : null;
+  const dialog = pending ? pending.kind === 'user' ? confirmation(locale, pending.action, pending.target) : invitationConfirmation(locale, pending.action, pending.target) : null;
+  const userCount = users.length === 1 ? t(locale, '1 utilisateur', '1 User') : t(locale, `${users.length} utilisateurs`, `${users.length} Users`);
+  const invitationCount = invitations.length === 1 ? t(locale, '1 invitation', '1 invitation') : t(locale, `${invitations.length} invitations`, `${invitations.length} invitations`);
 
   return <AdminShell locale={locale} onLanguage={onLanguage} section="users" title={t(locale, 'Utilisateurs', 'Users')}
-    description={t(locale, 'Gérez qui peut se connecter à Easy Quote et qui peut l’administrer.', 'Manage who can sign in to Easy Quote and who can administer it.')}>
+    description={t(locale, 'Gérez qui peut se connecter à Easy Quote et qui peut l’administrer.', 'Manage who can sign in to Easy Quote and who can administer it.')}
+    actions={<Button type="button" onClick={() => { setInvited(null); setInviting(true); }}><UserPlus />{t(locale, 'Inviter', 'Invite')}</Button>}>
 
       {refusal && <Alert variant="destructive" className="qp-admin-alert"><TriangleAlert /><AlertTitle>{t(locale, 'Action refusée', 'Action refused')}</AlertTitle><AlertDescription>{refusalMessage(locale, refusal)}</AlertDescription></Alert>}
+      {invited && <Alert className="qp-admin-alert" role="status"><CircleCheck /><AlertTitle>{t(locale, 'Invitation envoyée', 'Invitation sent')}</AlertTitle><AlertDescription>{t(locale, `${invited} a reçu un lien pour créer son compte, valable 7 jours.`, `${invited} has been emailed a link to create their account, valid for 7 days.`)}</AlertDescription></Alert>}
 
       <section className="qp-panel" aria-labelledby="admin-users-heading">
         <header className="qp-panel-header">
           <h2 id="admin-users-heading">{t(locale, 'Utilisateurs', 'Users')}</h2>
-          <p>{users.length === 1 ? t(locale, '1 utilisateur', '1 User') : t(locale, `${users.length} utilisateurs`, `${users.length} Users`)}</p>
+          <p>{invitations.length ? `${userCount} · ${invitationCount}` : userCount}</p>
         </header>
         <div className="qp-admin-table-scroll">
           <table className="qp-admin-table">
@@ -111,13 +119,15 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
                   <td><time dateTime={entry.createdAt}>{formatDate(locale, entry.createdAt)}</time></td>
                   <td><div className="qp-admin-actions">
                     {entry.status === 'blocked'
-                      ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setPending({ action: 'unblock', target: entry })}>{t(locale, 'Débloquer', 'Unblock')}</Button>
-                      : !self && !bootstrap && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setPending({ action: 'block', target: entry })}>{t(locale, 'Bloquer', 'Block')}</Button>}
-                    {entry.administrator === 'none' && <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setPending({ action: 'grant_administrator', target: entry })}>{t(locale, 'Nommer administrateur', 'Make Administrator')}</Button>}
-                    {entry.administrator === 'granted' && !self && <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setPending({ action: 'remove_administrator', target: entry })}>{t(locale, 'Retirer le rôle', 'Remove Administrator')}</Button>}
+                      ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setPending({ kind: 'user', action: 'unblock', target: entry })}>{t(locale, 'Débloquer', 'Unblock')}</Button>
+                      : !self && !bootstrap && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setPending({ kind: 'user', action: 'block', target: entry })}>{t(locale, 'Bloquer', 'Block')}</Button>}
+                    {entry.administrator === 'none' && <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setPending({ kind: 'user', action: 'grant_administrator', target: entry })}>{t(locale, 'Nommer administrateur', 'Make Administrator')}</Button>}
+                    {entry.administrator === 'granted' && !self && <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setPending({ kind: 'user', action: 'remove_administrator', target: entry })}>{t(locale, 'Retirer le rôle', 'Remove Administrator')}</Button>}
                   </div></td>
                 </tr>;
               })}
+              {invitations.map(entry => <InvitationRow key={entry.id} locale={locale} invitation={entry} busy={busy}
+                onAction={action => setPending({ kind: 'invitation', action, target: entry })} />)}
             </tbody>
           </table>
         </div>
@@ -126,7 +136,7 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
       <section className="qp-panel" aria-labelledby="admin-record-heading">
         <header className="qp-panel-header">
           <h2 id="admin-record-heading">{t(locale, 'Historique des actions', 'Administrator actions')}</h2>
-          <p>{t(locale, 'Chaque blocage, déblocage et changement de rôle, du plus récent au plus ancien.', 'Every block, unblock and role change, newest first.')}</p>
+          <p>{t(locale, 'Chaque blocage, déblocage, changement de rôle et invitation, du plus récent au plus ancien.', 'Every block, unblock, role change and invitation, newest first.')}</p>
         </header>
         {actions.length === 0
           ? <p className="qp-admin-empty">{t(locale, 'Aucune action pour le moment.', 'No actions yet.')}</p>
@@ -148,10 +158,12 @@ export function AdminPage({ locale, onLanguage, currentUserId, users, actions }:
           <p className="qp-admin-identity">{pending.target.email}</p>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>{t(locale, 'Annuler', 'Cancel')}</AlertDialogCancel>
-            <Button type="button" variant={pending.action === 'block' ? 'destructive' : 'default'} disabled={busy} onClick={confirm}>{dialog.confirm}</Button>
+            <Button type="button" variant={pending.action === 'block' || pending.action === 'cancel_invitation' ? 'destructive' : 'default'} disabled={busy} onClick={confirm}>{dialog.confirm}</Button>
           </AlertDialogFooter>
         </>}
       </AlertDialogContent>
     </AlertDialog>
+
+    <InviteDialog locale={locale} open={inviting} onClose={() => setInviting(false)} onSent={email => { setInviting(false); setInvited(email); }} />
   </AdminShell>;
 }
