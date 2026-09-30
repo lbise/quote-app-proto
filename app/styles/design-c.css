@@ -852,7 +852,9 @@ html[data-design="c"][data-badge="outline"] .qp-document-status [data-slot='badg
 html[data-design="c"] .qp-document-status [data-slot='badge'][data-variant='secondary'] { background: var(--c-n3); color: var(--c-n10); }
 html[data-design="c"] .qp-save { font-size: var(--text-sm); color: var(--c-n10); }
 html[data-design="c"] .qp-toolbar-actions { gap: 8px; }
-html[data-design="c"] .qp-review-rail { width: 188px; padding: 10px 12px 0 0; border-right: 1px solid var(--c-n5); }
+/* The rail keeps the approved widths from quotes.css: 176px, 140px at ≤ 1200px, 52px collapsed. */
+html[data-design="c"] .qp-review-rail { padding: 10px 12px 0 0; border-right: 1px solid var(--c-n5); }
+html[data-design="c"] .qp-review-rail[data-collapsed='true'] { padding-right: var(--space-xs); }
 html[data-design="c"][data-panels="tinted"] .qp-review-rail { border-right-color: transparent; }
 html[data-design="c"] .qp-outline-heading { padding: 8px 8px 8px 10px; font-size: var(--text-xs); color: var(--c-n10); }
 html[data-design="c"] .qp-outline-heading span:first-child { font-size: var(--text-sm); font-weight: 600; color: var(--c-n12); }
