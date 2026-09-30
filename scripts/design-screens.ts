@@ -309,9 +309,10 @@ async function capture(context: BrowserContext, name: string, device: Device, id
       await page.waitForFunction(() => (document.getElementById('settings-business-name') as HTMLInputElement | null)?.value !== '');
     }
     await settle(page);
-    // Pages with sticky save bars are shown as the viewport a person sees;
-    // full-page captures would pin the bar mid-page.
-    return await page.screenshot({ fullPage: name === 'signin' || name === 'quotes', animations: 'disabled' });
+    // Phones are shown as the screen a person sees: full-page captures pin the
+    // fixed tab bar and actions mid-page. So are pages with sticky save bars.
+    const fullPage = device === 'desktop' && (name === 'signin' || name === 'quotes');
+    return await page.screenshot({ fullPage, animations: 'disabled' });
   } finally {
     await page.close();
   }
