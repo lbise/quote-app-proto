@@ -1,4 +1,4 @@
-import { createCompleteQuote, expect, test } from "./fixtures";
+import { createCompleteQuote, expect, test, chooseInterfaceLanguage } from "./fixtures";
 
 // The browser suite shares an Artisan Business across tests. Do not leave
 // registration defaults behind for unrelated new-Quote scenarios.
@@ -107,7 +107,7 @@ test("new Quotes copy defaults without filling or refreshing existing drafts", a
   await saveSettings(page, "Quote defaults");
   await page.goto(incompleteUrl);
   await expect(page.locator(".qp-business-name")).toHaveText("Entreprise à renseigner");
-  await page.getByRole("button", { name: "My Quotes", exact: true }).click();
+  await page.getByRole("link", { name: "My Quotes", exact: true }).click();
   await page.getByRole("button", { name: "New Quote", exact: true }).click();
   const paper = page.getByRole("article");
   await expect(paper).toContainText("Atelier des Tilleuls");
@@ -172,7 +172,7 @@ test("quote-local business and VAT edits autosave and undo without changing defa
   await expect(terms.getByLabel("Terms", { exact: true })).toHaveValue("");
   await terms.getByRole("button", { name: "Cancel" }).click();
   await expect(paper).toContainText("Acompte convenu de 15 %. Solde à 45 jours.");
-  await page.getByLabel("Interface language / Langue de l’interface").selectOption("fr");
+  await chooseInterfaceLanguage(page, "fr");
   await expect(paper.getByRole("button", { name: "Modifier les coordonnées de l’entreprise" })).toBeVisible();
   await page.setViewportSize({ width: 800, height: 900 });
   await page.getByRole("radio", { name: "Devis", exact: true }).click();
@@ -227,7 +227,7 @@ for (const locale of ["en", "fr"] as const) {
     const seeded = await createCompleteQuote(artisan);
     const { page } = artisan;
     await page.goto(`/quotes?id=${seeded.id}`);
-    await page.getByLabel("Interface language / Langue de l’interface").selectOption(locale);
+    await chooseInterfaceLanguage(page, locale);
     await page.setViewportSize({ width: 800, height: 900 });
     await page.getByRole("radio", { name: locale === "en" ? "Quote" : "Devis", exact: true }).click();
     const details = page.getByRole("button", { name: locale === "en" ? "Edit business details" : "Modifier les coordonnées de l’entreprise" });
@@ -249,7 +249,7 @@ for (const locale of ["en", "fr"] as const) {
     const { page, api, baseURL } = artisan;
     const reset = await api.post("/api/quotes", { headers: { origin: baseURL }, data: { action: "defaults-save", defaults: {} } });
     expect(reset.ok()).toBe(true);
-    await page.getByLabel("Interface language / Langue de l’interface").selectOption(locale);
+    await chooseInterfaceLanguage(page, locale);
     await expect(page.locator(".qp-app")).toHaveAttribute("lang", locale);
     await page.goto("/settings/vat");
     const defaults = page.getByRole("region", { name: locale === "en" ? "VAT" : "TVA" });

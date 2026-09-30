@@ -117,6 +117,19 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("later revisio
     expect(await steps.read(detail.id)).toMatchObject({ draft: null, revisions: [{ number: 1 }, { number: 2 }] });
   });
 
+  it("lists the total of the listed version, and none while its pricing is incomplete", async () => {
+    const published = await publishedQuote();
+    const entry = async () => (await steps.list()).quotes.find((candidate) => candidate.id === published.id);
+    const frozen = (await steps.read(published.id)).revisions[0].calculation as { total: number };
+    expect(await entry()).toMatchObject({ total: frozen.total });
+
+    let detail = await steps.newDraft(published);
+    expect(await entry()).toMatchObject({ total: frozen.total });
+    const [first, ...rest] = detail.draft!.lines;
+    detail = await steps.save(detail, { ...detail.draft!, lines: [{ ...first, mode: "fixed", amount: "" }, ...rest] });
+    expect(await entry()).toMatchObject({ hasDraft: true, total: null });
+  });
+
   it("publishes a later Working Draft exactly once under competing requests", async () => {
     const published = await publishedQuote();
     let detail = await steps.newDraft(published);

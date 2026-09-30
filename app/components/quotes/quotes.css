@@ -1,5 +1,4 @@
 /* Quote workspace: document review with a collapsible assistant. */
-@import './quote-tokens.css';
 @import '@fontsource-variable/space-grotesk';
 html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 .qp-app { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-body); font-size: var(--text-base); line-height: 1.5; height: 100dvh; display: flex; flex-direction: column; padding-bottom: 16px; }
@@ -22,9 +21,6 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 .qp-wordmark > span:first-child { font-weight: 400; }
 .qp-brand-dot { color: var(--color-accent); }
 .qp-header-divider { width: 1px; height: 24px; background: var(--color-rule); }
-.qp-project-heading { display: flex; align-items: baseline; gap: var(--space-sm); flex: 1; justify-content: center; font-size: var(--text-sm); }
-.qp-project-heading span { color: var(--color-muted); white-space: nowrap; }
-.qp-project-heading strong { font-weight: 500; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-business-label { color: var(--color-muted); font-size: var(--text-sm); }
 .qp-header-end select { border: none; background: var(--color-transparent); }
 .qp-avatar { width: 32px; height: 32px; display: grid; place-items: center; background: var(--color-canvas); color: var(--color-muted); border-radius: 50%; font-size: 11px; }
@@ -246,7 +242,6 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 .qp-layout-b .qp-line-content { gap: var(--space-xs); grid-template-columns: 20px minmax(0, 1fr) 75px; }
 .qp-layout-b .qp-line-content-editable { grid-template-columns: 20px minmax(0, 1fr) 75px auto; }
 .qp-layout-b .qp-line { padding-top: var(--space-sm); }
-.qp-layout-b .qp-project-heading { justify-content: start; }
 .qp-narrow-tabs { display: none; }
 @media (min-width: 1001px) {
   [data-assistant-collapsed='true'] .qp-split { grid-template-columns: minmax(0, 1fr); }
@@ -280,12 +275,6 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 .qp-search-label { display: flex; flex-direction: column; gap: var(--space-xs); max-width: 400px; font-size: var(--text-sm); margin-bottom: var(--space-xl); }
 .qp-list-controls { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--space-md); margin-bottom: var(--space-xl); }
 .qp-list-controls .qp-search-label { flex: 0 1 400px; margin-bottom: 0; }
-.qp-list-row { display: flex; align-items: center; gap: var(--space-xs); border-top: 1px solid var(--color-rule); }
-.qp-list-open { flex: 1; text-align: left; display: flex; align-items: center; gap: var(--space-lg); padding: var(--space-lg) 0; }
-.qp-list-open > div { flex: 1; display: flex; flex-direction: column; gap: var(--space-2xs); }
-.qp-list-row strong { font-size: var(--text-md); font-weight: 550; }
-.qp-list-open > div > span { font-size: var(--text-sm); color: var(--color-muted); }
-.qp-list-price { font-variant-numeric: tabular-nums; }
 .qp-list-footnote { font-size: var(--text-sm); margin-top: var(--space-xl); color: var(--color-muted); }
 .qp-list-empty, .qp-empty-document { display: flex; align-items: start; flex-direction: column; gap: var(--space-md); padding-block: var(--space-3xl); }
 .qp-list-empty h2, .qp-empty-document h2 { font-size: var(--text-lg); }
@@ -293,7 +282,6 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 @media (hover: hover) {
   .qp-prompt-examples button:hover, .qp-outline > button:hover { background: var(--color-accent-soft); color: var(--color-accent); }
   .qp-line:hover .qp-line-actions, .qp-line:focus-within .qp-line-actions { opacity: 1; }
-  .qp-list-row:hover { background: var(--color-chat); color: var(--color-ink); }
 }
 @media (min-width: 1600px) {
   .qp-workspace { padding-inline: var(--space-xl); }
@@ -305,7 +293,6 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 }
 @media (max-width: 1200px) {
   .qp-business-label { display: none; }
-  .qp-project-heading { justify-content: start; }
   .qp-review-rail { width: 140px; padding-right: var(--space-xs); }
   .qp-layout-b .qp-document-status { gap: var(--space-xs); }
   .qp-work-toolbar { gap: var(--space-xs); }
@@ -317,12 +304,12 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
   .qp-app-header { min-height: 60px; padding: var(--space-sm) var(--space-md); }
   .qp-header-end { gap: var(--space-xs); }
   .qp-header-divider, .qp-avatar { display: none; }
-  .qp-project-heading { justify-content: start; overflow: hidden; }
   .qp-assistant-toggle { display: none; }
   .qp-workspace { padding-inline: var(--space-md); }
   .qp-narrow-tabs { display: flex; flex-shrink: 0; align-items: center; gap: var(--space-xs); padding-block: var(--space-2xs); }
   .qp-narrow-tabs [data-slot='toggle-group-item'] { min-height: 44px; }
-  .qp-undo > span { display: none; }
+  .qp-undo .qp-label-long { display: none; }
+  .qp-undo .qp-label-short { display: inline; }
   .qp-undo { min-width: 44px; }
   .qp-work-toolbar { flex-wrap: wrap; }
   .qp-document-status { flex: 1; }
@@ -343,10 +330,6 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
 @media (max-width: 600px) {
   .qp-app { padding-bottom: max(var(--space-xs), env(safe-area-inset-bottom)); }
   .qp-app-header { min-height: 56px; gap: var(--space-xs); padding: var(--space-2xs) var(--space-xs); }
-  .qp-app-header:has(.qp-project-heading) .qp-wordmark { display: none; }
-  .qp-app-header:has(.qp-project-heading) .qp-back-label { display: none; }
-  .qp-project-heading { gap: var(--space-xs); }
-  .qp-project-heading > span { display: none; }
   .qp-chat-scroller { flex: 1; min-height: 0; height: auto; }
   .qp-conversation, .qp-document-pane { overflow: clip; }
   .qp-panel-heading, .qp-compose-area, .qp-document-tools { flex-shrink: 0; }
@@ -365,8 +348,11 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
   .qp-wordmark { font-size: 23px; }
   .qp-app [data-slot='button'], .qp-modal [data-slot='button'] { min-height: 44px; }
   .qp-app [data-slot='button'][data-size^='icon'], .qp-modal [data-slot='button'][data-size^='icon'] { width: 44px; }
-  .qp-toolbar-actions { flex: 1 0 100%; justify-content: end; }
-  .qp-toolbar-actions > [data-slot='button'] { font-size: 12px; }
+  /* A status row, then one row of actions that share the width. */
+  .qp-document-status { flex: 1 0 100%; }
+  .qp-toolbar-actions { flex: 1 0 100%; flex-wrap: nowrap; justify-content: stretch; gap: var(--space-2xs); }
+  .qp-toolbar-actions > [data-slot='button'] { flex: 1 1 auto; font-size: 13px; padding-inline: var(--space-xs); }
+  .qp-toolbar-actions > select { flex: 0 1 7.5rem; }
   .qp-work-toolbar { padding: var(--space-xs) var(--space-2xs); gap: var(--space-xs); }
   .qp-save, .qp-document-status [data-slot='badge'] { font-size: 11px; }
   .qp-document-status { gap: var(--space-xs); }
@@ -413,10 +399,6 @@ html:has(.qp-app), html:has(.qp-app) body { overflow-x: clip; }
   .qp-modal-actions > button { width: 100%; font-size: 12px; }
   .qp-quote-list { padding: var(--space-lg); }
   .qp-list-heading { flex-wrap: wrap; }
-  .qp-list-open { flex-wrap: wrap; gap: var(--space-sm); }
-  .qp-list-open > div { flex-basis: 75%; }
-  .qp-list-row strong { font-size: var(--text-base); }
-  .qp-list-price { margin-left: auto; }
 }
 /* Keep capture usable in landscape and when the available viewport is short.
    Quote actions remain available in the Devis/Quote panel. */

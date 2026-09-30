@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 import {
   Links,
   Meta,
@@ -20,8 +20,19 @@ import {
 } from "./lib/auth-config.server";
 import { getSession } from "./lib/auth.server";
 import { quoteAIDisclosure } from "./lib/quote-ai-config.server";
+import { parseAppearance, themeScript, type Appearance } from "./lib/appearance";
+import { DesignSwitcher } from "./components/design-switcher";
 
 import "./app.css";
+// Global so every page, including sign-in, can use the tokens. Scoped with
+// zero specificity; see app/styles/README.md for the override order.
+import "./components/quotes/quote-tokens.css";
+import "./styles/shell.css";
+import "./styles/theme-0-dark.css";
+import "./styles/design-a.css";
+import "./styles/design-b.css";
+import "./styles/design-c.css";
+import "./styles/design-switcher.css";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -30,6 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Shows the admin area's navigation entry. The area checks access itself.
   let administrator = false;
+  let email: string | null = null;
 
   // Health and auth resource requests must remain useful without a database
   // connection. The protected application gets the persisted profile choice.
@@ -40,6 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         const profile = await getArtisanForUser(current.user.id);
         locale = interfaceLanguage(profile?.interfaceLanguage);
         administrator = isAdministrator(current.user);
+        email = current.user.email;
       }
     } catch {
       // The child route will report an unavailable protected request. Rendering
@@ -48,18 +61,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   return Response.json(
-    { locale, administrator, quoteAI: quoteAIDisclosure() },
+    { locale, administrator, email, quoteAI: quoteAIDisclosure(), ...parseAppearance(request.headers.get("cookie")) },
     { headers: { "Set-Cookie": localeCookie(locale) } },
   );
 }
 
 export function Layout({ children }: Readonly<{ children: ReactNode }>) {
-  const { locale } = useLoaderData<typeof loader>() as { locale: InterfaceLanguage };
+  const { locale, design = "0", theme = "system" } = (useLoaderData<typeof loader>() ?? {}) as { locale: InterfaceLanguage } & Partial<Appearance>;
+  // React may drop the resolved theme when the loader's choice changes; the
+  // head script sets it again before paint.
+  useLayoutEffect(() => { window.__eqApplyTheme?.(); }, [design, theme]);
+  const resolved = theme === "system" ? undefined : theme;
   return (
-    <html lang={locale}>
+    // The head script resolves the system theme before hydration.
+    <html lang={locale} data-design={design} data-theme={theme} data-theme-resolved={resolved} className={resolved === "dark" ? "dark" : undefined} suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <Meta />
         <Links />
       </head>
@@ -73,5 +92,8 @@ export function Layout({ children }: Readonly<{ children: ReactNode }>) {
 }
 
 export default function App() {
-  return <Outlet />;
+  return <>
+    <Outlet />
+    {!import.meta.env.PROD && <DesignSwitcher />}
+  </>;
 }

@@ -1,0 +1,5 @@
+/* Design direction A · Plaque émaillée
+   Imported globally by app/root.tsx. Every rule must be scoped under
+   html[data-design="a"] (dark: html[data-design="a"][data-theme-resolved="dark"]).
+   Font packages: add @import '@fontsource-variable/<family>'; lines at the top
+   of this file (before any rule). Read app/styles/README.md first. */

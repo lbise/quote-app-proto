@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import { expect, test, chooseInterfaceLanguage } from "./fixtures";
 
 const interfaces = {
   en: {
@@ -87,7 +87,7 @@ for (const locale of ["en", "fr"] as const) {
       const { page } = artisan;
       // Search appears after the hydrated page has loaded the Quote list.
       await expect(page.getByRole("textbox", { name: /Search Quotes|Rechercher un devis/ })).toBeVisible();
-      await page.getByLabel("Interface language / Langue de l’interface").selectOption(locale);
+      await chooseInterfaceLanguage(page, locale);
       await page.getByRole("button", { name: copy.newQuote, exact: true }).click();
       await expect(page).toHaveURL(/\/quotes\?id=.+/);
     });

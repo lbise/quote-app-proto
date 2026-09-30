@@ -30,8 +30,8 @@ export default function SignIn() {
   const actionData = useActionData<typeof action>();
   return (
     <AuthShell locale={locale}>
-      <section className="flex flex-col gap-6">
-        <header className="flex flex-col gap-2">
+      <section className="eq-auth-card flex flex-col gap-6">
+        <header className="eq-auth-heading flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight">{text.title}</h1>
           <p className="text-muted-foreground">{text.intro}</p>
         </header>
@@ -40,9 +40,9 @@ export default function SignIn() {
           <Field label={text.email} name="email" type="email" />
           <Field label={text.password} name="password" type="password" />
           <FormMessage message={actionData?.error} />
-          <button className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" type="submit">{text.submit}</button>
+          <button className="eq-auth-submit h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" type="submit">{text.submit}</button>
         </Form>
-        <nav className="flex flex-col gap-2 text-sm">
+        <nav className="eq-auth-links flex flex-col gap-2 text-sm">
           <Link className="underline underline-offset-4" to="/forgot-password">{text.forgot}</Link>
           <Link className="underline underline-offset-4" to="/sign-up">{text.signup}</Link>
         </nav>

@@ -1,0 +1,5 @@
+/* Design direction B · Carnet de devis
+   Imported globally by app/root.tsx. Every rule must be scoped under
+   html[data-design="b"] (dark: html[data-design="b"][data-theme-resolved="dark"]).
+   Font packages: add @import '@fontsource-variable/<family>'; lines at the top
+   of this file (before any rule). Read app/styles/README.md first. */

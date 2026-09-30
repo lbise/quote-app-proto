@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { QuoteHeader } from '../quotes/quote-header';
+import { AppShell } from '../app-shell';
 import type { RefusalCode } from '@/lib/administration.server';
 import type { UserStatus } from '@/lib/db/schema';
 import type { TurnOutcomeKind } from '@/lib/turn-trace';
@@ -115,8 +115,7 @@ export function AdminShell({ locale, onLanguage, section, title, description, ba
     { id: 'businesses' as const, to: '/admin/businesses', label: t(locale, 'Entreprises', 'Businesses') },
     { id: 'turns' as const, to: '/admin/turns', label: t(locale, 'Tours de l’assistant', 'Assistant Turns') },
   ];
-  return <div className="qp-app qp-page" lang={locale}>
-    <QuoteHeader current="admin" locale={locale} onLanguage={language => void onLanguage(language)} onList={() => undefined} />
+  return <AppShell className="qp-page" current="admin" locale={locale} onLanguage={onLanguage}>
     <main className="qp-admin" data-wide={wide || undefined}>
       <nav className="qp-admin-sections" aria-label={t(locale, 'Administration', 'Administration')}>
         {sections.map(entry => <Link key={entry.id} to={entry.to} aria-current={entry.id === section ? 'page' : undefined}>{entry.label}</Link>)}
@@ -131,5 +130,5 @@ export function AdminShell({ locale, onLanguage, section, title, description, ba
       </div>
       {children}
     </main>
-  </div>;
+  </AppShell>;
 }

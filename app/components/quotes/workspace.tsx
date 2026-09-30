@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, ArrowRight, ArrowUp, Check, CheckCheck, CopyPlus, FileDown, FileText, LockKeyhole, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, Pencil, Plus, RotateCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRight, ArrowUp, Check, CheckCheck, CopyPlus, FileDown, FileText, LockKeyhole, MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, Pencil, Plus, RotateCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '../ui/alert';
@@ -23,7 +23,7 @@ import { deleteQuote, useQuote, type QuoteRecord, type StartedFrom } from './use
 import { quoteSourceName, type QuoteSource } from '../../lib/quote-start-from';
 import { DeleteQuoteDialog, QuoteActionsMenu } from './quote-lifecycle';
 import { downloadPdf } from './pdf-download';
-import { QuoteHeader } from './quote-header';
+import { AppShell } from '../app-shell';
 import { AssistantDisclosure } from './assistant-disclosure';
 import { AssistantDebug } from './assistant-debug';
 import { AssistantMarkdown } from './assistant-markdown';
@@ -39,6 +39,11 @@ const clone = <T,>(value: T): T => structuredClone(value);
 // A line's first control can be a missing-field warning. Focus returns to its Edit button.
 const lineEditButton = '.qp-line-actions button';
 const formatMoney = (value: number | null) => value === null ? '—' : swissAmount(value);
+/**
+ * A toolbar label with a shorter form for phones. The full label stays the
+ * accessible name, and the short one is part of it (label in name).
+ */
+const shortened = (full: string, short: string) => <><span className="qp-label-long">{full}</span><span className="qp-label-short" aria-hidden="true">{short}</span><span className="qp-label-short-name sr-only">{full}</span></>;
 
 export default function QuoteWorkspace({ initial, locale, startedFrom, onList, onLanguage, onStarted }: {
   initial: QuoteRecord; locale: 'en' | 'fr';
@@ -308,17 +313,17 @@ export default function QuoteWorkspace({ initial, locale, startedFrom, onList, o
     <div className="qp-document-status"><Badge variant={readOnly ? 'secondary' : 'outline'}>{readOnly ? <LockKeyhole data-icon="inline-start" /> : <Pencil data-icon="inline-start" />}{readRevision !== null ? t(`Révision publiée ${readRevision + 1}`, `Published revision ${readRevision + 1}`) : readOnly ? t('Brouillon en lecture seule', 'Read-only working draft') : t('Brouillon de travail', 'Working draft')}</Badge>{!readOnly && status}</div>
     <div className="qp-toolbar-actions">
       {revisions.length > 0 && <select aria-label={t('Version du devis', 'Quote version')} value={readRevision === null ? 'draft' : String(readRevision)} onChange={e => setReadRevision(e.target.value === 'draft' ? null : Number(e.target.value))} disabled={save !== 'saved' || ai === 'processing' || busy}>{record.draft && !archived && <option value="draft">{t('Brouillon', 'Draft')}</option>}{revisions.map((r, i) => <option key={r.number} value={i}>{t('Révision', 'Revision')} {r.number}</option>)}</select>}
-      {!readOnly && <Button variant="ghost" disabled={!record.canUndo || save !== 'saved' || busy || ai === 'processing'} onClick={() => void mutate('undo')} className="qp-undo" aria-label={t('Annuler la dernière modification', 'Undo last change')} title={t('Annuler la dernière modification', 'Undo last change')}><RotateCcw data-icon="inline-start" /><span>{t('Annuler la dernière modification', 'Undo last change')}</span></Button>}
+      {/* Narrow screens show the short label; the accessible name keeps the full one. */}
+      {!readOnly && <Button variant="ghost" disabled={!record.canUndo || save !== 'saved' || busy || ai === 'processing'} onClick={() => void mutate('undo')} className="qp-undo" aria-label={t('Annuler la dernière modification', 'Undo last change')} title={t('Annuler la dernière modification', 'Undo last change')}><RotateCcw data-icon="inline-start" /><span className="qp-label-long">{t('Annuler la dernière modification', 'Undo last change')}</span><span className="qp-label-short" aria-hidden="true">{t('Annuler', 'Undo')}</span></Button>}
       {readRevision !== null
-        ? <Button variant="outline" disabled={pdf === 'preparing'} onClick={() => void downloadQuoteDocument(revisions[readRevision].number)}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : t('Télécharger le PDF', 'Download PDF')}</Button>
-        : <Button variant="outline" disabled={pdf === 'preparing' || busy} onClick={() => void downloadDraftPreview()}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : t('Aperçu PDF', 'PDF preview')}</Button>}
-      {archived ? null : readOnly ? <Button disabled={busy} onClick={() => void newRevision()}><Pencil data-icon="inline-start" />{record.draft ? t('Reprendre', 'Resume draft') : t('Nouvelle révision', 'New revision')}</Button> : <Button onClick={() => openModal('publish')}><Check data-icon="inline-start" />{t('Relire et publier', 'Review & publish')}</Button>}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={t('Autres actions du devis', 'More Quote actions')} title={t('Autres actions du devis', 'More Quote actions')}><MoreHorizontal /></Button></DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="qp-line-menu" lang={locale}><DropdownMenuGroup>
-          <DropdownMenuItem disabled={!canStartFrom} onSelect={() => void startFromOnScreen()}><CopyPlus />{quoteSourceName(onScreen, locale, 'menu')}</DropdownMenuItem>
-        </DropdownMenuGroup></DropdownMenuContent>
-      </DropdownMenu>
+        ? <Button variant="outline" className="qp-pdf-action" disabled={pdf === 'preparing'} onClick={() => void downloadQuoteDocument(revisions[readRevision].number)}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : shortened(t('Télécharger le PDF', 'Download PDF'), 'PDF')}</Button>
+        : <Button variant="outline" className="qp-pdf-action" disabled={pdf === 'preparing' || busy} onClick={() => void downloadDraftPreview()}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : shortened(t('Aperçu PDF', 'PDF preview'), 'PDF')}</Button>}
+      {archived ? null : readOnly ? <Button className="qp-primary-action" disabled={busy} onClick={() => void newRevision()}><Pencil data-icon="inline-start" />{record.draft ? shortened(t('Reprendre', 'Resume draft'), t('Reprendre', 'Resume')) : shortened(t('Nouvelle révision', 'New revision'), t('Réviser', 'Revise'))}</Button> : <Button className="qp-primary-action" onClick={() => openModal('publish')}><Check data-icon="inline-start" />{shortened(t('Relire et publier', 'Review & publish'), t('Publier', 'Publish'))}</Button>}
+      <QuoteActionsMenu locale={locale} quote={quote} archived={archived}
+        label={{ text: t('Plus', 'More'), name: t('Plus d’actions du devis', 'More Quote actions') }}
+        onStartFrom={() => void startFromOnScreen()} startFromLabel={quoteSourceName(onScreen, locale, 'menu')} startFromDisabled={!canStartFrom}
+        archiveDisabled={busy || ai === 'processing'} deleteDisabled={busy}
+        onArchive={() => void changeArchived(true)} onRestore={() => void changeArchived(false)} onDelete={() => setConfirmDelete(true)} />
     </div>
     {(pdf === 'failed' || previewExcludedProposal) && <p className={`qp-pdf-status${pdf === 'failed' ? ' qp-pdf-status-failed' : ''}`} role="status">{pdf === 'failed'
       ? t('Le PDF n’a pas pu être préparé. Vérifiez que les modifications sont enregistrées et votre connexion, puis réessayez.', 'The PDF could not be prepared. Check that changes are saved and your connection, then try again.')
@@ -462,13 +467,12 @@ export default function QuoteWorkspace({ initial, locale, startedFrom, onList, o
   </section>;
 
 
-  return <div className="qp-app qp-variant-b" data-narrow-panel={narrowPanel} data-assistant-collapsed={assistantCollapsed} lang={locale}>
-    <QuoteHeader locale={locale} onLanguage={onLanguage} onList={onList} quote={quote} quoteActions={<QuoteActionsMenu locale={locale} quote={quote} archived={archived} disabled={busy} archiveDisabled={ai === 'processing'} onArchive={() => void changeArchived(true)} onRestore={() => void changeArchived(false)} onDelete={() => setConfirmDelete(true)} />} />
+  return <AppShell className="qp-variant-b qp-workspace-shell" quote={quote} locale={locale} onLanguage={onLanguage} data-narrow-panel={narrowPanel} data-assistant-collapsed={assistantCollapsed}>
     {error && <Alert variant="destructive" className="qp-request-error"><TriangleAlert /><AlertTitle>{t('Action non enregistrée', 'Action not saved')}</AlertTitle><AlertDescription>{error === 'reference_in_use' ? t('Cette référence appartient déjà à un autre devis. Modifiez-la dans la référence du devis.', 'Another Quote already uses this reference. Change it in the Quote reference.') : error.includes('conflict') || error.includes('stale') ? t('Ce devis a changé dans une autre fenêtre. Vos modifications restent visibles. Copiez-les avant de recharger.', 'This Quote changed in another window. Your edits remain visible. Copy them before reloading.') : t('Vos modifications restent visibles. Vérifiez les valeurs et votre connexion, puis réessayez.', 'Your edits remain visible. Check the values and your connection, then retry.')}</AlertDescription></Alert>}
     <main className="qp-workspace"><h1 className="sr-only">{t('Préparer un devis', 'Prepare a Quote')}</h1>
       {archived && <Alert role="status" className="qp-archived-banner"><Archive /><AlertTitle>{t('Devis archivé', 'Archived Quote')}</AlertTitle><AlertDescription><p>{t('Ce devis est en lecture seule. Restaurez-le pour le modifier ou le publier.', 'This Quote is read-only. Restore it to edit or publish it.')}{record.draft && revisions.length > 0 && <> {t('Des modifications non publiées sont conservées et reviendront à la restauration.', 'Unpublished changes are kept and come back when you restore it.')}</>}</p><Button variant="outline" size="sm" disabled={busy} onClick={() => void changeArchived(false)}><ArchiveRestore data-icon="inline-start" />{t('Restaurer', 'Restore')}</Button></AlertDescription></Alert>}
       {startedNotice && <Alert role="status" className="qp-started-banner"><CopyPlus /><AlertTitle>{quoteSourceName(startedNotice.from, locale, 'notice', startedNotice.reference)}</AlertTitle><AlertDescription>{t('Les travaux et les prix ont été copiés. Ajoutez le client, l’adresse du chantier et une éventuelle remise.', 'The work and prices were copied. Add the Customer, site address and any discount.')}</AlertDescription><AlertAction><Button variant="ghost" size="icon-sm" aria-label={t('Fermer l’avis', 'Dismiss notice')} title={t('Fermer', 'Dismiss')} onClick={() => setStartedNotice(undefined)}><X /></Button></AlertAction></Alert>}
-      <ToggleGroup className="qp-narrow-tabs" type="single" value={narrowPanel} onValueChange={value => { if (value === 'chat' || value === 'quote') setNarrowPanel(value); }} aria-label={t('Espace de travail', 'Workspace view')}><ToggleGroupItem value="chat" aria-controls="qp-assistant"><MessageSquare data-icon="inline-start" />{t('Conversation', 'Conversation')}</ToggleGroupItem><ToggleGroupItem value="quote" aria-controls="qp-quote-document"><FileText data-icon="inline-start" />{t('Devis', 'Quote')}</ToggleGroupItem></ToggleGroup>
+      <ToggleGroup className="qp-narrow-tabs eq-segmented" type="single" variant="outline" spacing={0} value={narrowPanel} onValueChange={value => { if (value === 'chat' || value === 'quote') setNarrowPanel(value); }} aria-label={t('Espace de travail', 'Workspace view')}><ToggleGroupItem value="chat" aria-controls="qp-assistant"><MessageSquare data-icon="inline-start" />{t('Conversation', 'Conversation')}</ToggleGroupItem><ToggleGroupItem value="quote" aria-controls="qp-quote-document"><FileText data-icon="inline-start" />{t('Devis', 'Quote')}</ToggleGroupItem></ToggleGroup>
       <div className="qp-layout qp-layout-b"><div id="qp-review-outline" className="qp-review-rail" hidden={!quote.sections.length} data-collapsed={!showOutline}>{outline}</div><div className="qp-review-main">{toolbar}<div className="qp-split">{quoteDocument}{chat}</div></div></div>
     </main>
     {editLine && !readOnly && <LineEditor focusField={focusField} line={editLine} lineNumber={quote.lines.some(line => line.id === editLine.id) ? quote.lines.findIndex(line => line.id === editLine.id) + 1 : undefined} sections={quote.sections} locale={locale} onClose={closeModal} onApply={line => {
@@ -497,5 +501,5 @@ export default function QuoteWorkspace({ initial, locale, startedFrom, onList, o
       {pdf === 'failed' && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{t('PDF indisponible', 'PDF unavailable')}</AlertTitle><AlertDescription>{t('Le PDF n’a pas pu être préparé. La révision est bien publiée. Réessayez.', 'The PDF could not be prepared. The revision is published. Try again.')}</AlertDescription></Alert>}
       <div className="qp-modal-actions"><Button variant="outline" onClick={closeModal}>{t('Fermer', 'Close')}</Button><Button disabled={pdf === 'preparing'} onClick={() => void downloadQuoteDocument(revisions[readRevision].number)}><FileDown data-icon="inline-start" />{pdf === 'preparing' ? t('Préparation du PDF…', 'Preparing PDF…') : t('Télécharger le devis', 'Download Quote')}</Button></div>
     </DialogContent></Dialog>}
-  </div>;
+  </AppShell>;
 }

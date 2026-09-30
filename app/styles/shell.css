@@ -1,0 +1,107 @@
+/* App shell and shared structure for design 0. Imported globally by root.tsx
+   before the design files. Design files restyle these with
+   html[data-design="x"] … selectors; see app/styles/README.md. */
+
+/* Structure. The workspace is a full-height flex column: the main area takes
+   the remaining height and never scrolls itself. Any other nav placement must
+   keep .eq-shell-main a min-height: 0 flex or grid child with a definite
+   height inside the workspace. */
+.eq-shell-main { display: block; min-width: 0; }
+.qp-workspace-shell > .eq-shell-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.eq-shell-header { position: relative; }
+
+/* Breadcrumb inside a Quote. */
+.eq-breadcrumb { flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); }
+.eq-breadcrumb ol { display: flex; align-items: baseline; gap: var(--space-xs); min-width: 0; }
+.eq-breadcrumb li { display: flex; align-items: baseline; gap: var(--space-xs); min-width: 0; white-space: nowrap; }
+.eq-breadcrumb li:first-child { flex-shrink: 0; }
+.eq-breadcrumb li + li::before { content: '/'; color: var(--color-input-rule); }
+.eq-breadcrumb a { color: var(--color-muted); border-radius: var(--radius-control); }
+.eq-breadcrumb a:hover { color: var(--color-ink); text-decoration: underline; text-underline-offset: 3px; }
+.eq-breadcrumb [aria-current] { display: flex; align-items: baseline; gap: var(--space-sm); min-width: 0; overflow: hidden; }
+.eq-breadcrumb-reference { color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.eq-breadcrumb strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.eq-breadcrumb a:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* Account menu. The short "Account" label is part of the accessible name
+   everywhere and visible where the email is hidden. */
+.eq-shell-account { flex-shrink: 0; }
+.eq-account-trigger { max-width: 18rem; color: var(--color-muted); font-weight: 500; }
+.eq-account-trigger:hover { color: var(--color-ink); }
+.eq-account-short { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.eq-account-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eq-account-identity { display: flex; flex-direction: column; gap: 2px; max-width: 18rem; }
+.eq-account-identity strong { color: var(--color-ink); font-weight: 550; overflow-wrap: anywhere; }
+.eq-account-menu [data-slot='dropdown-menu-radio-item'] { min-height: 36px; cursor: pointer; }
+
+/* Toolbar labels with a phone form (workspace). */
+.qp-label-short, .qp-label-short-name { display: none; }
+
+/* Conversation / Quote segmented control on narrow screens. */
+.qp-narrow-tabs.eq-segmented { width: 100%; }
+.qp-narrow-tabs.eq-segmented { gap: 0; }
+.qp-narrow-tabs.eq-segmented [data-slot='toggle-group-item'] { flex: 1; border-color: var(--color-input-rule); background: var(--color-paper); color: var(--color-muted); }
+.qp-narrow-tabs.eq-segmented [data-slot='toggle-group-item'][data-state='on'] { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; }
+
+/* Quote list table. */
+.eq-quote-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.eq-quote-table th { padding: var(--space-xs) var(--space-sm); color: var(--color-muted); font-weight: 550; text-align: start; white-space: nowrap; border-bottom: 1px solid var(--color-rule); }
+.eq-quote-table td { padding: var(--space-md) var(--space-sm); border-bottom: 1px solid var(--color-rule); vertical-align: middle; }
+.eq-quote-table th:first-child, .eq-quote-table td:first-child { padding-inline-start: 0; }
+.eq-quote-table th:last-child, .eq-quote-table td:last-child { padding-inline-end: 0; width: 1%; }
+.eq-quote-table tbody tr { cursor: pointer; }
+.eq-quote-table .eq-col-reference, .eq-quote-table .eq-col-updated { color: var(--color-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eq-quote-table .eq-col-amount { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eq-quote-table td.eq-col-amount { color: var(--color-ink); font-weight: 550; }
+.eq-quote-table .qp-list-open { color: var(--color-ink); font-size: var(--text-base); font-weight: 550; border-radius: var(--radius-control); }
+.eq-quote-table .qp-list-open:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.qp-list-missing { color: var(--color-muted); }
+.eq-status { white-space: nowrap; }
+@media (hover: hover) {
+  .eq-quote-table tbody tr:hover { background: var(--color-chat); }
+  .eq-quote-table tbody tr:hover .qp-list-open { text-decoration: underline; text-underline-offset: 3px; }
+}
+@media (max-width: 760px) {
+  /* Rows become stacked cards: project and actions, then details. */
+  .eq-quote-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .eq-quote-table, .eq-quote-table tbody { display: block; }
+  .eq-quote-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-sm); row-gap: var(--space-2xs); padding: var(--space-md) 0; border-bottom: 1px solid var(--color-rule); }
+  .eq-quote-table td { display: block; padding: 0 !important; border: 0; }
+  .eq-quote-table .eq-col-project { grid-column: 1; grid-row: 1; }
+  .eq-quote-table td.eq-col-actions { grid-column: 2; grid-row: 1 / span 2; width: auto; align-self: start; justify-self: end; margin-top: calc(-1 * var(--space-2xs)); }
+  .eq-quote-table .eq-col-customer { grid-column: 1; grid-row: 2; color: var(--color-muted); }
+  .eq-quote-table .eq-col-reference { grid-column: 1; grid-row: 3; }
+  .eq-quote-table .eq-col-status { grid-column: 1; grid-row: 4; }
+  .eq-quote-table .eq-col-amount { grid-column: 2; grid-row: 3; text-align: end; }
+  .eq-quote-table .eq-col-updated { grid-column: 2; grid-row: 4; text-align: end; }
+}
+
+/* Customers: alphabetical groups. The index is off unless a design shows it;
+   the letter headings stay available to screen readers. */
+.eq-alpha-index { display: none; }
+.eq-alpha-heading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.eq-alpha-group + .eq-alpha-group { border-top: 1px solid var(--color-rule); }
+.eq-alpha-group { scroll-margin-top: calc(72px + var(--space-md)); }
+
+@media (max-width: 1200px) {
+  .eq-account-email { display: none; }
+  .eq-account-short { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+}
+@media (max-width: 1000px) {
+  /* Inside a Quote the breadcrumb leads back to the list, so the wordmark
+     gives way to it on tablets. */
+  .eq-shell[data-shell-mode='quote'] .eq-shell-brand { display: none; }
+  .eq-shell[data-shell-mode='quote'] .eq-shell-nav .eq-nav-link > svg { display: none; }
+}
+@media (max-width: 800px) {
+  .eq-shell-nav .eq-nav-link > svg { display: none; }
+}
+@media (max-width: 600px) {
+  .eq-breadcrumb { flex: 1 1 0; }
+  .eq-breadcrumb-reference { display: none; }
+  .eq-shell-nav .eq-nav-link { min-width: 0; padding-inline: var(--space-2xs); font-size: 13px; }
+  .eq-shell-nav .eq-nav-link > span { overflow: hidden; text-overflow: ellipsis; }
+  .qp-label-long { display: none; }
+  .qp-label-short { display: inline; }
+  .qp-label-short-name { display: inline; }
+}

@@ -73,8 +73,9 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("Publication t
 
     // The reference is listed separately from the revision number, and the list records nothing about sending or acceptance.
     const listed = (await steps.list()).quotes.find((entry) => entry.id === published.id)!;
-    expect(listed).toMatchObject({ reference: quote.reference, revision: 1, hasDraft: false });
-    expect(Object.keys(listed).sort()).toEqual(["archived", "customerName", "hasDraft", "id", "reference", "revision", "title", "updatedAt"]);
+    // The listed total is the revision's frozen total.
+    expect(listed).toMatchObject({ reference: quote.reference, revision: 1, hasDraft: false, total: 65_211 });
+    expect(Object.keys(listed).sort()).toEqual(["archived", "customerName", "hasDraft", "id", "reference", "revision", "title", "total", "updatedAt"]);
 
     // Publication cannot be undone, overwritten or repeated without a new Working Draft.
     for (const body of [

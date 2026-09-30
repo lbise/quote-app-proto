@@ -33,6 +33,12 @@ export async function setInterfaceLanguage(page: Page, locale: "en" | "fr") {
   await expect(page.locator(".qp-app")).toHaveAttribute("lang", locale);
 }
 
+/** Switch the interface language from the account menu in the app header. */
+export async function chooseInterfaceLanguage(page: Page, locale: "en" | "fr") {
+  await page.getByRole("button", { name: /^(Account|Compte)\b/ }).click();
+  await page.getByRole("menuitemradio", { name: locale === "fr" ? "Français" : "English" }).click();
+}
+
 export async function requestQuote(artisan: Artisan, body: Record<string, unknown>): Promise<QuoteResponse> {
   await artisan.page.goto("/quotes");
   return artisan.page.evaluate(async (requestBody) => {

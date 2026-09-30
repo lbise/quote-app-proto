@@ -10,7 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { QuoteData } from '@/lib/quote';
 import { BusinessLogoField } from '../quotes/business-logo-field';
-import { QuoteHeader } from '../quotes/quote-header';
+import { AppShell } from '../app-shell';
+import { setAppearance, themes, useAppearance, type Theme } from '@/lib/appearance';
 
 type Locale = 'fr' | 'en';
 type Defaults = Partial<QuoteData>;
@@ -24,7 +25,7 @@ function sectionCopy(locale: Locale) {
     business: { icon: Building2, label: t(locale, 'Entreprise', 'Business'), hint: t(locale, 'Nom, adresse, logo', 'Name, address, logo'), title: t(locale, 'Votre entreprise', 'Your business'), description: t(locale, 'Ces coordonnées sont copiées dans chaque nouveau devis. Les devis existants gardent celles qu’ils contiennent.', 'These details are copied into each new Quote. Existing Quotes keep the details they already have.') },
     vat: { icon: Percent, label: t(locale, 'TVA', 'VAT'), hint: t(locale, 'Assujettissement, numéro', 'Registration, identifier'), title: t(locale, 'TVA', 'VAT'), description: t(locale, 'Le statut TVA des nouveaux devis. Vous pouvez le laisser à préciser et commencer un devis quand même.', 'The VAT status of new Quotes. You can leave it to confirm and still start a Quote.') },
     quotes: { icon: FileText, label: t(locale, 'Devis', 'Quote defaults'), hint: t(locale, 'Conditions par défaut', 'Default terms'), title: t(locale, 'Valeurs par défaut des devis', 'Quote defaults'), description: t(locale, 'Ajoutées à chaque nouveau devis. Vous pouvez toujours les modifier dans un devis.', 'Added to each new Quote. You can still change them on each Quote.') },
-    account: { icon: UserRound, label: t(locale, 'Compte', 'Account'), hint: t(locale, 'Langue, déconnexion', 'Language, sign out'), title: t(locale, 'Compte', 'Account'), description: t(locale, 'Vos préférences sur cet espace Easy Quote.', 'Your preferences for this Easy Quote workspace.') },
+    account: { icon: UserRound, label: t(locale, 'Compte', 'Account'), hint: t(locale, 'Langue, thème, déconnexion', 'Language, theme, sign out'), title: t(locale, 'Compte', 'Account'), description: t(locale, 'Vos préférences sur cet espace Easy Quote.', 'Your preferences for this Easy Quote workspace.') },
   } satisfies Record<SettingsSection, unknown>;
 }
 
@@ -32,6 +33,7 @@ export function SettingsPage({ locale, onLanguage, section, email }: {
   locale: Locale; onLanguage: (locale: Locale) => Promise<boolean>; section: SettingsSection; email: string;
 }) {
   const copy = sectionCopy(locale);
+  const { theme } = useAppearance();
   const current = copy[section];
   const [defaults, setDefaults] = useState<Defaults>({});
   const [saved, setSaved] = useState<Defaults>({});
@@ -190,8 +192,7 @@ export function SettingsPage({ locale, onLanguage, section, email }: {
     </FieldGroup>
     : null;
 
-  return <div className="qp-app qp-page" lang={locale}>
-    <QuoteHeader current="settings" locale={locale} onLanguage={language => void onLanguage(language)} onList={() => undefined} />
+  return <AppShell className="qp-page" current="settings" locale={locale} onLanguage={language => void changeLanguage(language)}>
     <main className="qp-settings">
       <div className="qp-page-heading">
         <div><h1>{t(locale, 'Paramètres', 'Settings')}</h1><p>{t(locale, 'Les valeurs par défaut s’appliquent aux nouveaux devis. Les devis existants ne changent jamais.', 'Defaults apply to new Quotes. Existing Quotes never change.')}</p></div>
@@ -221,7 +222,16 @@ export function SettingsPage({ locale, onLanguage, section, email }: {
               <FieldDescription id="settings-language-help">{t(locale, 'Change uniquement la langue de l’application. Vos devis gardent leur propre langue.', 'Changes only the app’s language. Your Quotes keep their own language.')}</FieldDescription>
               {languageError && <FieldError>{t(locale, 'La langue n’a pas été changée. Réessayez.', 'The language was not changed. Try again.')}</FieldError>}
             </Field>
-            <Form method="post" action="/?index" className="qp-account-signout">
+            <Field>
+              <FieldLabel id="settings-theme-label">{t(locale, 'Thème', 'Theme')}</FieldLabel>
+              <ToggleGroup type="single" variant="outline" value={theme} onValueChange={value => { if ((themes as readonly string[]).includes(value)) setAppearance('theme', value as Theme); }} aria-labelledby="settings-theme-label" aria-describedby="settings-theme-help">
+                <ToggleGroupItem value="light">{t(locale, 'Clair', 'Light')}</ToggleGroupItem>
+                <ToggleGroupItem value="dark">{t(locale, 'Sombre', 'Dark')}</ToggleGroupItem>
+                <ToggleGroupItem value="system">{t(locale, 'Système', 'System')}</ToggleGroupItem>
+              </ToggleGroup>
+              <FieldDescription id="settings-theme-help">{t(locale, 'Système suit le réglage de votre appareil. Enregistré sur cet appareil.', 'System follows your device setting. Saved on this device.')}</FieldDescription>
+            </Field>
+            <Form method="post" action="/sign-out" className="qp-account-signout">
               <Button type="submit" variant="outline"><LogOut data-icon="inline-start" />{t(locale, 'Se déconnecter', 'Sign out')}</Button>
             </Form>
           </div> : <form id="settings-form" onSubmit={event => void save(event)} noValidate>
@@ -254,5 +264,5 @@ export function SettingsPage({ locale, onLanguage, section, email }: {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </div>;
+  </AppShell>;
 }

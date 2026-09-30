@@ -1,0 +1,40 @@
+/* Dark theme for design 0 (the current look). Overrides the tokens in
+   app/components/quotes/quote-tokens.css; the shadcn variables follow through
+   its mapping block. Pages outside .qp-app (sign-in, sign-up…) use shadcn's
+   .dark variables from app.css, which the head script toggles. */
+html[data-theme-resolved='dark'] { color-scheme: dark; }
+html[data-theme-resolved='light'] { color-scheme: light; }
+
+html[data-design='0'][data-theme-resolved='dark'] {
+  --color-paper: oklch(23% .014 255);
+  --color-canvas: oklch(17.5% .012 255);
+  --color-chat: oklch(20.5% .013 255);
+  --color-ink: oklch(93% .008 250);
+  --color-muted: oklch(72% .016 252);
+  --color-rule: oklch(33% .016 255);
+  --color-input-rule: oklch(50% .018 255);
+  --color-accent: oklch(74% .13 256);
+  --color-accent-ink: oklch(18% .02 256);
+  --color-accent-soft: oklch(31% .06 256);
+  --color-focus: oklch(76% .14 256);
+  --color-warning: oklch(82% .12 80);
+  --color-warning-soft: oklch(29% .045 80);
+  --color-error: oklch(74% .16 25);
+  --color-error-soft: oklch(29% .06 25);
+  --color-success: oklch(78% .12 155);
+  --color-changed: oklch(29% .05 155);
+  --color-switcher: oklch(93% .008 250);
+  --color-switcher-ink: oklch(18% .012 255);
+  --color-overlay: oklch(5% 0 0 / .55);
+  --color-shadow: oklch(0% 0 0 / .45);
+  /* Set by app-pages.css for document-scrolled pages. */
+  --color-hover: oklch(29% .018 255);
+}
+/* The shadcn variables quote-tokens.css does not map (card, accent used by
+   menu item focus, secondary buttons). */
+html[data-design='0'][data-theme-resolved='dark']:has(.qp-app) {
+  --card: var(--color-paper);
+  --card-foreground: var(--color-ink);
+  --accent: var(--color-accent-soft);
+  --accent-foreground: var(--color-ink);
+}

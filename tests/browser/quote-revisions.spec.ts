@@ -29,7 +29,7 @@ for (const locale of ['en', 'fr'] as const) {
     expect(published.ok).toBe(true);
     await setInterfaceLanguage(page, locale);
 
-    const row = (target: Page) => target.locator('.qp-list-row').filter({ has: target.getByText(`Maison des Tilleuls SA · ${seeded.draft.reference}`, { exact: true }) });
+    const row = (target: Page) => target.locator('.qp-list-row').filter({ has: target.getByRole('cell', { name: seeded.draft.reference, exact: true }) });
     const openFromList = async (badge: string) => {
       await page.goto('/quotes');
       await expect(row(page)).toContainText(badge);

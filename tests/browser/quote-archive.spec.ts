@@ -15,7 +15,7 @@ async function publishWithPendingDraft(artisan: Parameters<typeof createComplete
   return seeded;
 }
 
-const row = (page: Page, reference: string) => page.locator(".qp-list-row").filter({ has: page.getByText(new RegExp(`· ${reference}$`)) });
+const row = (page: Page, reference: string) => page.locator(".qp-list-row").filter({ has: page.getByRole("cell", { name: reference, exact: true }) });
 
 test("an Artisan archives, restores and deletes Quotes from the list", async ({ artisan }) => {
   const { page } = artisan;
@@ -76,7 +76,7 @@ test("an Archived published Quote opens read-only and restores with its unpublis
   await page.goto(`/quotes?id=${seeded.id}`);
   await expect(page.getByText("Working draft", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: `Actions for Quote ${seeded.draft.reference} Bibliothèque agrandie` }).click();
+  await page.getByRole("button", { name: "More Quote actions" }).click();
   await page.getByRole("menuitem", { name: "Archive" }).click();
   const banner = page.locator(".qp-archived-banner");
   await expect(banner).toContainText("Archived Quote");
@@ -116,7 +116,7 @@ test("an Archived Working Draft opens read-only in French and can be deleted fro
   await expect(page.getByRole("button", { name: "Modifier la ligne 1" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Aperçu PDF" })).toBeEnabled();
 
-  await page.getByRole("button", { name: /^Actions du devis/ }).click();
+  await page.getByRole("button", { name: "Plus d’actions du devis" }).click();
   await expect(page.getByRole("menuitem", { name: "Restaurer" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Supprimer…" }).click();
   const dialog = page.getByRole("alertdialog", { name: "Supprimer ce devis définitivement ?" });

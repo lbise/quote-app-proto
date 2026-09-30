@@ -42,3 +42,9 @@ export function redirectWithAuthCookies(response: Response, location: string): R
   return redirect(location, { headers: response.headers });
 }
 
+
+/** End the current session and go to sign-in. */
+export async function signOut(request: Request): Promise<Response> {
+  const response = await callAuthEndpoint(request, "/sign-out", {});
+  return redirectWithAuthCookies(response, "/sign-in");
+}

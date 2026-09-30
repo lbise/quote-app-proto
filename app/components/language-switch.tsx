@@ -6,7 +6,7 @@ export function LanguageSwitch({ locale }: { locale: InterfaceLanguage }) {
   const location = useLocation();
   const next = locale === "en" ? "fr" : "en";
   return (
-    <Form method="post" action="/language" className="flex items-center gap-2 text-sm">
+    <Form method="post" action="/language" className="eq-auth-language flex items-center gap-2 text-sm">
       <span className="text-muted-foreground">{locale === "en" ? "Language" : "Langue"}</span>
       <input type="hidden" name="locale" value={next} />
       <input type="hidden" name="returnTo" value={`${location.pathname}${location.search}`} />

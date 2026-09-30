@@ -26,6 +26,7 @@ export default [
   route("forgot-password", "routes/forgot-password.tsx"),
   route("reset-password", "routes/reset-password.tsx"),
   route("language", "routes/language.ts"),
+  route("sign-out", "routes/sign-out.ts"),
   route("api/auth/*", "routes/auth.$.ts"),
   route("health/live", "routes/health.live.ts"),
   route("health/ready", "routes/health.ready.ts"),

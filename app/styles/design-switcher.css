@@ -1,0 +1,28 @@
+/* Development-only design switcher. Deliberately independent of every design's
+   tokens so it looks the same in all directions and themes. Do not restyle it
+   from a design file. */
+.eq-design-switcher, .eq-design-switcher-tab {
+  position: fixed; left: 12px; bottom: 12px; z-index: 2147483000;
+  display: flex; align-items: center; gap: 6px;
+  font: 500 12px/1.2 system-ui, sans-serif; color: #f4f4f5;
+  background: rgb(24 24 27 / .92); border: 1px solid rgb(255 255 255 / .16);
+  border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / .25);
+  backdrop-filter: blur(6px);
+}
+.eq-design-switcher { padding: 4px; flex-wrap: wrap; max-width: calc(100vw - 24px); }
+.eq-design-switcher > div { display: flex; gap: 2px; }
+.eq-design-switcher > div + div { padding-left: 6px; border-left: 1px solid rgb(255 255 255 / .16); }
+.eq-design-switcher button { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 4px 9px; border-radius: 999px; color: inherit; cursor: pointer; }
+.eq-design-switcher button:hover { background: rgb(255 255 255 / .1); }
+.eq-design-switcher button[aria-pressed='true'] { background: #f4f4f5; color: #18181b; }
+.eq-design-switcher button span { opacity: .75; }
+.eq-design-switcher-close { padding-inline: 6px !important; }
+.eq-design-switcher svg, .eq-design-switcher-tab svg { width: 14px; height: 14px; }
+.eq-design-switcher-tab { left: 0; bottom: 96px; padding: 6px 8px 6px 6px; border-radius: 0 999px 999px 0; border-left: 0; cursor: pointer; opacity: .8; }
+.eq-design-switcher-tab:hover { opacity: 1; }
+.eq-design-switcher :focus-visible, .eq-design-switcher-tab:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+@media (max-width: 600px) {
+  .eq-design-switcher { border-radius: 12px; bottom: 96px; left: 6px; }
+  .eq-design-switcher button span { display: none; }
+}
+@media print { .eq-design-switcher, .eq-design-switcher-tab { display: none; } }

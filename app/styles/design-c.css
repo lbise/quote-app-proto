@@ -1,0 +1,5 @@
+/* Design direction C · Standard
+   Imported globally by app/root.tsx. Every rule must be scoped under
+   html[data-design="c"] (dark: html[data-design="c"][data-theme-resolved="dark"]).
+   Font packages: add @import '@fontsource-variable/<family>'; lines at the top
+   of this file (before any rule). Read app/styles/README.md first. */

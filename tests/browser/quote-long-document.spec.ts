@@ -1,4 +1,4 @@
-import { createLongQuote, expect, test } from "./fixtures";
+import { createLongQuote, expect, test, chooseInterfaceLanguage } from "./fixtures";
 
 test("the long French Quote keeps approved section navigation, focus, and desk geometry across interface languages", async ({ artisan }) => {
   const seeded = await createLongQuote(artisan);
@@ -27,7 +27,7 @@ test("the long French Quote keeps approved section navigation, focus, and desk g
   expect(quoteRatio).toBeCloseTo(0.58, 3);
   expect(conversationBox!.x - documentBox!.x - documentBox!.width).toBe(16);
   await page.evaluate(() => document.fonts.ready);
-  await expect(page.locator(".qp-app")).toHaveScreenshot("long-quote-desk.png", { animations: "disabled" });
+  await expect(page.locator(".qp-app")).toHaveScreenshot("long-quote-desk.png", { animations: "disabled", mask: [page.locator(".eq-account-email")] });
 
   await page.getByRole("button", { name: "Section actions Cuisine", exact: true }).click();
   await expect(page.getByRole("button", { name: "Insert section below", exact: true })).toBeVisible();
@@ -50,8 +50,8 @@ test("the long French Quote keeps approved section navigation, focus, and desk g
   await laundry.click();
   await expect(laundry).toHaveAttribute("aria-current", "true");
 
-  await page.getByLabel("Interface language / Langue de l’interface").selectOption("fr");
-  await expect(page.getByRole("button", { name: "Mes devis" })).toBeVisible();
+  await chooseInterfaceLanguage(page, "fr");
+  await expect(page.getByRole("link", { name: "Mes devis" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Réduire les sections" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Agencements intérieurs sur mesure" })).toBeVisible();
   await expect(page.locator(".qp-quote-section h3").filter({ hasText: "Cuisine" })).toBeVisible();

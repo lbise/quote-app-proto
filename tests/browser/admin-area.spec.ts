@@ -53,7 +53,7 @@ test("an Administrator blocks a User, who can no longer sign in, then unblocks t
 
     const restored = await signIn(browser, target.email);
     try {
-      await expect(restored.page).toHaveURL(/\/$/);
+      await expect(restored.page).toHaveURL(/\/quotes$/);
     } finally { await restored.context.close(); }
   } finally { await admin.context.close(); }
 });

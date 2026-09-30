@@ -22,7 +22,7 @@ export type QuoteRecord = {
   /** Present only in a debug-enabled assistant action response; never persisted. */
   assistantDebug?: QuoteAssistantSuccessDebug;
 };
-export type QuoteList = { quotes: { id: string; reference: string; title: string; customerName: string; hasDraft: boolean; archived: boolean; revision: number; updatedAt: string }[] };
+export type QuoteList = { quotes: { id: string; reference: string; title: string; customerName: string; hasDraft: boolean; archived: boolean; revision: number; /** Total of the listed version in cents; null while incomplete. */ total: number | null; updatedAt: string }[] };
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, public details?: unknown) { super(code); }

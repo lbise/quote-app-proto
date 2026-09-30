@@ -36,8 +36,8 @@ export default function Verify() {
   const actionData = useActionData<typeof action>();
   return (
     <AuthShell locale={locale}>
-      <section className="flex flex-col gap-6">
-        <header className="flex flex-col gap-2">
+      <section className="eq-auth-card flex flex-col gap-6">
+        <header className="eq-auth-heading flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight">{text.title}</h1>
           <p className="text-muted-foreground">{text.intro}</p>
         </header>
@@ -47,7 +47,7 @@ export default function Verify() {
           <input type="hidden" name="locale" value={locale} />
           <Field label={text.email} name="email" type="email" required defaultValue={email} />
           <FormMessage message={actionData?.error} />
-          <button className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" type="submit">{text.resend}</button>
+          <button className="eq-auth-submit h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" type="submit">{text.resend}</button>
         </Form>
         <Link className="text-sm underline underline-offset-4" to="/sign-in">{text.back}</Link>
       </section>

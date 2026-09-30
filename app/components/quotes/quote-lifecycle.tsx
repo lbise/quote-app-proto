@@ -15,18 +15,26 @@ const titleOf = (quote: QuoteIdentity, locale: Locale) => quote.title || (locale
  * Archive/Restore and Delete for one Quote. Active Quotes offer Archive, Archived
  * Quotes offer Restore; both offer Delete, which asks for confirmation first.
  * With `onStartFrom`, it also offers starting a new Quote from this one.
+ * With `label`, the trigger shows that text next to its icon (the workspace's
+ * "More" menu); otherwise it is an icon button named after the Quote.
  */
-export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDisabled, onArchive, onRestore, onDelete, onStartFrom, onMenuClosed }: {
+export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDisabled, deleteDisabled, onArchive, onRestore, onDelete, onStartFrom, startFromLabel, startFromDisabled, label, onMenuClosed }: {
   locale: Locale;
   quote: QuoteIdentity;
   archived: boolean;
   disabled?: boolean;
   /** Archive or Restore is unavailable, for example while an assistant change is pending. */
   archiveDisabled?: boolean;
+  deleteDisabled?: boolean;
   onArchive: () => void;
   onRestore: () => void;
   onDelete: () => void;
   onStartFrom?: () => void;
+  /** Names the version a new Quote starts from; defaults to "New Quote from…". */
+  startFromLabel?: string;
+  startFromDisabled?: boolean;
+  /** Visible trigger text, with an accessible name that includes it. */
+  label?: { text: string; name: string };
   /** Called instead of returning focus to the trigger when an action removed it. */
   onMenuClosed?: (event: Event) => void;
 }) {
@@ -34,11 +42,13 @@ export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDis
   const name = `${quote.reference} ${titleOf(quote, locale)}`;
   return <DropdownMenu>
     <DropdownMenuTrigger asChild>
-      <Button variant="ghost" size="icon-sm" disabled={disabled} aria-label={t(`Actions du devis ${name}`, `Actions for Quote ${name}`)} title={t('Actions du devis', 'Quote actions')}><MoreHorizontal /></Button>
+      {label
+        ? <Button variant="outline" disabled={disabled} className="qp-more-actions" aria-label={label.name}><MoreHorizontal data-icon="inline-start" /><span>{label.text}</span></Button>
+        : <Button variant="ghost" size="icon-sm" disabled={disabled} aria-label={t(`Actions du devis ${name}`, `Actions for Quote ${name}`)} title={t('Actions du devis', 'Quote actions')}><MoreHorizontal /></Button>}
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="qp-line-menu" lang={locale} onCloseAutoFocus={onMenuClosed}>
       {onStartFrom && <><DropdownMenuGroup>
-        <DropdownMenuItem onSelect={onStartFrom}><CopyPlus />{t('Nouveau devis à partir de…', 'New Quote from…')}</DropdownMenuItem>
+        <DropdownMenuItem disabled={startFromDisabled} onSelect={onStartFrom}><CopyPlus />{startFromLabel ?? t('Nouveau devis à partir de…', 'New Quote from…')}</DropdownMenuItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator /></>}
       <DropdownMenuGroup>
@@ -48,7 +58,7 @@ export function QuoteActionsMenu({ locale, quote, archived, disabled, archiveDis
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
-        <DropdownMenuItem variant="destructive" onSelect={onDelete}><Trash2 />{t('Supprimer…', 'Delete…')}</DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" disabled={deleteDisabled} onSelect={onDelete}><Trash2 />{t('Supprimer…', 'Delete…')}</DropdownMenuItem>
       </DropdownMenuGroup>
     </DropdownMenuContent>
   </DropdownMenu>;

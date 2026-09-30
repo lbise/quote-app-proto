@@ -1,5 +1,11 @@
-/* Approved layout B v0.4 tokens, scoped to the Quote workspace. */
-html:has(.qp-app) {
+/* Approved layout B v0.4 tokens for the application pages (.qp-app).
+   The token blocks use :where() so they have zero specificity: a design
+   direction (html[data-design="a"]) or dark theme overrides them regardless of
+   stylesheet order. They stay unlayered, so they still beat Tailwind's
+   @layer theme variables of the same name (--text-sm, --ease-out…).
+   The last block maps shadcn variables to the tokens. It keeps html:has(.qp-app)
+   specificity so it beats app.css :root and .dark. See app/styles/README.md. */
+:where(html:has(.qp-app)) {
   --font-body: 'Geist Variable', sans-serif;
   --font-display: 'Geist Variable', sans-serif;
   --font-document: 'Geist Variable', sans-serif;
@@ -50,7 +56,7 @@ html:has(.qp-app) {
   --color-transparent: transparent;
   --z-switcher: 40;
 }
-html:has(.qp-app) {
+:where(html:has(.qp-app)) {
   --font-display: var(--font-technical);
   --color-paper: oklch(99% .003 250);
   --color-canvas: oklch(95% .009 250);

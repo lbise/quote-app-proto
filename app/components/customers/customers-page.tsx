@@ -8,7 +8,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/c
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { randomUUID } from '@/lib/random-id';
-import { QuoteHeader } from '../quotes/quote-header';
+import { AppShell } from '../app-shell';
 
 type Locale = 'fr' | 'en';
 type Customer = { id: string; name: string; address: string; contact: string };
@@ -19,6 +19,21 @@ const t = (locale: Locale, fr: string, en: string) => locale === 'fr' ? fr : en;
 const emptyFields = (): CustomerFields => ({ name: '', address: '', contact: '' });
 const fieldsOf = (customer: CustomerFields): CustomerFields => ({ name: customer.name, address: customer.address, contact: customer.contact });
 const normalizeSearch = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+/** The index letter of a name: its first letter without accents, or # for anything else. */
+const initialOf = (name: string) => {
+  const letter = normalizeSearch(name.trim()).charAt(0).toLocaleUpperCase('fr-CH');
+  return /^[A-Z]$/.test(letter) ? letter : '#';
+};
+/** Customers grouped by initial, in the list's order. */
+function groupByInitial(customers: Customer[]) {
+  const groups: { letter: string; customers: Customer[] }[] = [];
+  for (const customer of customers) {
+    const letter = initialOf(customer.name);
+    const group = groups.find(entry => entry.letter === letter);
+    if (group) group.customers.push(customer); else groups.push({ letter, customers: [customer] });
+  }
+  return groups.sort((a, b) => a.letter === '#' ? 1 : b.letter === '#' ? -1 : a.letter.localeCompare(b.letter));
+}
 
 export function CustomersPage({ locale, onLanguage }: { locale: Locale; onLanguage: (locale: Locale) => Promise<boolean> }) {
   const [params] = useSearchParams();
@@ -138,6 +153,7 @@ export function CustomersPage({ locale, onLanguage }: { locale: Locale; onLangua
   }
 
   const count = customers.length;
+  const groups = groupByInitial(filtered);
   const statusText = saving ? t(locale, 'Enregistrement…', 'Saving…')
     : notice && notice.id === selection && !dirty ? notice.text
     : dirty ? t(locale, 'Modifications non enregistrées', 'Unsaved changes')
@@ -158,14 +174,31 @@ export function CustomersPage({ locale, onLanguage }: { locale: Locale; onLangua
       <p><strong>{t(locale, 'Aucun client enregistré.', 'No saved Customers yet.')}</strong> {t(locale, 'Ajoutez les clients avec qui vous travaillez souvent. Vous pouvez aussi en enregistrer un depuis un devis.', 'Add the Customers you work with often. You can also save one from a Quote.')}</p>
     </div>}
     {status === 'ready' && count > 0 && filtered.length === 0 && <p className="qp-customer-message" role="status">{t(locale, 'Aucun client ne correspond à votre recherche.', 'No Customers match your search.')}</p>}
-    {status === 'ready' && filtered.length > 0 && <ul className="qp-customer-rows">
-      {filtered.map(customer => <li key={customer.id}>
-        <Link to={`/customers?id=${encodeURIComponent(customer.id)}`} aria-current={customer.id === selection ? 'true' : undefined}>
-          <span><strong>{customer.name}</strong><span>{customer.address.replace(/\n+/g, ', ')}</span>{customer.contact && <span>{customer.contact}</span>}</span>
-          <ChevronRight />
-        </Link>
-      </li>)}
-    </ul>}
+    {status === 'ready' && filtered.length > 0 && <>
+      {/* Hidden unless a design shows it; see app/styles/README.md. */}
+      <nav className="eq-alpha-index" aria-label={t(locale, 'Index alphabétique des clients', 'Customers by initial')}>
+        {groups.map(group => <a key={group.letter} href={`#customers-${group.letter === '#' ? 'other' : group.letter}`} onClick={event => {
+          event.preventDefault();
+          const first = document.getElementById(`customers-${group.letter === '#' ? 'other' : group.letter}`)?.querySelector<HTMLElement>('a');
+          first?.scrollIntoView({ block: 'nearest' });
+          first?.focus({ preventScroll: true });
+        }} aria-label={group.letter === '#' ? t(locale, 'Autres', 'Other') : group.letter}>{group.letter}</a>)}
+      </nav>
+      <div className="qp-customer-groups">{groups.map(group => {
+        const id = `customers-${group.letter === '#' ? 'other' : group.letter}`;
+        return <section key={group.letter} className="eq-alpha-group" id={id} aria-labelledby={`${id}-heading`}>
+          <h3 className="eq-alpha-heading" id={`${id}-heading`}>{group.letter === '#' ? t(locale, 'Autres', 'Other') : group.letter}</h3>
+          <ul className="qp-customer-rows">
+            {group.customers.map(customer => <li key={customer.id}>
+              <Link to={`/customers?id=${encodeURIComponent(customer.id)}`} aria-current={customer.id === selection ? 'true' : undefined}>
+                <span><strong>{customer.name}</strong><span>{customer.address.replace(/\n+/g, ', ')}</span>{customer.contact && <span>{customer.contact}</span>}</span>
+                <ChevronRight />
+              </Link>
+            </li>)}
+          </ul>
+        </section>;
+      })}</div>
+    </>}
   </section>;
 
   const detail = <section className="qp-panel qp-customer-detail" aria-labelledby="customer-detail-heading">
@@ -210,8 +243,7 @@ export function CustomersPage({ locale, onLanguage }: { locale: Locale; onLangua
     </form>}
   </section>;
 
-  return <div className="qp-app qp-page" lang={locale}>
-    <QuoteHeader current="customers" locale={locale} onLanguage={language => void onLanguage(language)} onList={() => undefined} />
+  return <AppShell className="qp-page" current="customers" locale={locale} onLanguage={onLanguage}>
     <main className="qp-customers" data-view={selection === null ? 'list' : 'detail'}>
       <div className="qp-page-heading">
         <div><h1>{t(locale, 'Clients', 'Customers')}</h1><p>{status !== 'ready' ? '\u00a0' : count === 1 ? t(locale, '1 client enregistré', '1 saved Customer') : t(locale, `${count} clients enregistrés`, `${count} saved Customers`)}</p></div>
@@ -232,5 +264,5 @@ export function CustomersPage({ locale, onLanguage }: { locale: Locale; onLangua
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </div>;
+  </AppShell>;
 }

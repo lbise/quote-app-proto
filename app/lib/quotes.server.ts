@@ -308,6 +308,20 @@ export async function businessDefaultsFor(database: Store, businessId: string): 
   return defaultsFrom(savedDefaults?.defaults, false);
 }
 
+/**
+ * The total of the version the list describes, in cents: the Working Draft's,
+ * calculated as the workspace does, else the latest Published Revision's frozen
+ * total. Null while pricing or the VAT status is incomplete.
+ */
+function listedTotal(draft: unknown, publishedCalculation: unknown): number | null {
+  if (draft !== null) {
+    const calculation = calculateQuote(draft);
+    return calculation.errors.length ? null : calculation.total;
+  }
+  const total = (publishedCalculation as { total?: unknown } | undefined)?.total;
+  return typeof total === "number" ? total : null;
+}
+
 async function readList(database: Store, businessId: string) {
   const records = await database.select().from(quote).where(eq(quote.businessId, businessId)).orderBy(desc(quote.updatedAt));
   const revisions = await database.select().from(quoteRevision).where(eq(quoteRevision.businessId, businessId));
@@ -316,7 +330,7 @@ async function readList(database: Store, businessId: string) {
     quotes: records.map((record) => {
       const latest = revisions.filter((revision) => revision.quoteId === record.id).sort((a, b) => b.number - a.number)[0];
       const document = (record.draft ?? latest?.quote ?? {}) as Partial<QuoteData>;
-      return { id: record.id, reference: record.reference, title: document.title ?? record.title, customerName: document.customerName ?? "", hasDraft: record.draft !== null, archived: record.archivedAt !== null, revision: latest?.number ?? 0, updatedAt: record.updatedAt.toISOString() };
+      return { id: record.id, reference: record.reference, title: document.title ?? record.title, customerName: document.customerName ?? "", hasDraft: record.draft !== null, archived: record.archivedAt !== null, revision: latest?.number ?? 0, total: listedTotal(record.draft, latest?.calculation), updatedAt: record.updatedAt.toISOString() };
     }),
     customers: customers.map((entry) => ({ id: entry.id, name: entry.name, address: entry.address, contact: entry.contact })),
     defaults: await businessDefaultsFor(database, businessId),

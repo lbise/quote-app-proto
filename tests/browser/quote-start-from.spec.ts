@@ -19,7 +19,7 @@ async function publishWithPendingDraft(artisan: Parameters<typeof createComplete
   return seeded;
 }
 
-const row = (page: Page, reference: string) => page.locator(".qp-list-row").filter({ has: page.getByText(new RegExp(`· ${reference}$`)) });
+const row = (page: Page, reference: string) => page.locator(".qp-list-row").filter({ has: page.getByRole("cell", { name: reference, exact: true }) });
 
 /** The new Quote's workspace, opened with the notice. Returns its reference. */
 async function expectStartedQuote(page: Page, notice: string, sourceId: string) {
@@ -44,7 +44,7 @@ test("an Artisan starts a new Quote from the version on screen in the workspace"
   await expect(page.getByRole("button", { name: "Edit Quote title" })).toContainText("Bibliothèque agrandie");
   await expect(page.getByTestId("quote-line")).toHaveCount(2);
   await expect(page.getByText("Étagère supplémentaire")).toBeVisible();
-  await expect(page.locator(".qp-project-heading")).not.toContainText(reference);
+  await expect(page.locator(".eq-breadcrumb")).not.toContainText(reference);
 
   await page.getByRole("button", { name: "More Quote actions" }).click();
   await expect(page.getByRole("menuitem", { name: "New Quote from the Working Draft" })).toBeEnabled();

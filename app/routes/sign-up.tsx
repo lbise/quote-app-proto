@@ -89,8 +89,8 @@ export default function SignUp() {
     const invalid = page.reason === "invalid_invitation";
     return (
       <AuthShell locale={locale}>
-        <section className="flex flex-col gap-6">
-          <header className="flex flex-col gap-2">
+        <section className="eq-auth-card flex flex-col gap-6">
+          <header className="eq-auth-heading flex flex-col gap-2">
             <h1 className="text-3xl font-semibold tracking-tight">{invalid ? text.invalidTitle : text.invitationOnlyTitle}</h1>
             <p className="text-muted-foreground">{invalid ? text.invalid : text.invitationOnly}</p>
           </header>
@@ -104,8 +104,8 @@ export default function SignUp() {
   const invitation = page.form === "invitation" ? page : null;
   return (
     <AuthShell locale={locale}>
-      <section className="flex flex-col gap-6">
-        <header className="flex flex-col gap-2">
+      <section className="eq-auth-card flex flex-col gap-6">
+        <header className="eq-auth-heading flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight">{text.title}</h1>
           <p className="text-muted-foreground">{invitation ? text.invitedIntro : text.intro}</p>
         </header>
@@ -120,7 +120,7 @@ export default function SignUp() {
           <Field label={text.confirmPassword} name="confirmPassword" type="password" autoComplete="new-password" minLength={8} />
           <p className="text-sm text-muted-foreground">{registrationDisclosure[locale]}</p>
           <FormMessage message={actionData?.error} />
-          <button className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" type="submit">{text.submit}</button>
+          <button className="eq-auth-submit h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground" type="submit">{text.submit}</button>
         </Form>
         <Link className="text-sm underline underline-offset-4" to="/sign-in">{text.existing}</Link>
       </section>
