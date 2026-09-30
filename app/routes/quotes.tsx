@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Archive, FileText, Plus, TriangleAlert } from 'lucide-react';
 import type { Route } from './+types/quotes';
@@ -60,7 +60,6 @@ export default function Quotes() {
   const immediateCopyKeys = useRef(new Map<string, string>());
   // Focus target after an action removed a row from the current tab.
   const nextFocus = useRef<string | null>(null);
-  const rows = useRef<HTMLTableSectionElement | null>(null);
   const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
 
   useEffect(() => {
@@ -95,7 +94,8 @@ export default function Quotes() {
   }
   function restoreFocus() {
     requestAnimationFrame(() => {
-      const row = nextFocus.current && rows.current?.querySelector<HTMLElement>(`[data-quote-id="${CSS.escape(nextFocus.current)}"] .qp-list-open`);
+      // The table or the grouped phone list, whichever is shown.
+      const row = nextFocus.current && [...document.querySelectorAll<HTMLElement>(`[data-quote-id="${CSS.escape(nextFocus.current)}"] .qp-list-open`)].find(link => link.getClientRects().length > 0);
       nextFocus.current = null;
       (row || document.querySelector<HTMLElement>('.qp-list-tabs [data-state="active"]'))?.focus();
     });
@@ -158,7 +158,7 @@ export default function Quotes() {
   const quoteLink = (quoteId: string) => `/quotes?id=${encodeURIComponent(quoteId)}`;
   return <AppShell className="qp-page qp-variant-b" current="quotes" locale={locale} onLanguage={changeLanguage}>
     <main className="qp-quote-list">
-      <div className="qp-list-heading"><div><p>{t('Votre atelier', 'Your workshop')}</p><h1>{t('Mes devis', 'My Quotes')}</h1></div><Button disabled={creating} onClick={() => void create()}><Plus data-icon="inline-start" />{t('Nouveau devis', 'New Quote')}</Button></div>
+      <div className="qp-list-heading"><div><p>{t('Votre atelier', 'Your workshop')}</p><h1>{t('Mes devis', 'My Quotes')}</h1></div><Button className="eq-list-new" disabled={creating} onClick={() => void create()}><Plus data-icon="inline-start" />{t('Nouveau devis', 'New Quote')}</Button></div>
       {error && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{t('Chargement impossible', 'Could not load')}</AlertTitle><AlertDescription>{t('Vérifiez votre connexion puis réessayez.', 'Check your connection and retry.')}<Button variant="outline" onClick={() => setAttempt(v => v + 1)}>{t('Réessayer', 'Retry')}</Button></AlertDescription></Alert>}
       {!list && !error && <p role="status">{t('Chargement…', 'Loading…')}</p>}
       {actionFailed && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{t('Action non enregistrée', 'Action not saved')}</AlertTitle><AlertDescription>{t('Vérifiez votre connexion puis réessayez.', 'Check your connection and retry.')}</AlertDescription></Alert>}
@@ -186,7 +186,7 @@ export default function Quotes() {
               <th scope="col" className="eq-col-updated">{t('Modifié le', 'Updated')}</th>
               <th scope="col" className="eq-col-actions"><span className="sr-only">{t('Actions', 'Actions')}</span></th>
             </tr></thead>
-            <tbody ref={rows}>{visible().map(q => <tr className="qp-list-row" key={q.id} data-quote-id={q.id}
+            <tbody>{visible().map(q => <tr className="qp-list-row" key={q.id} data-quote-id={q.id}
               // The whole row opens the Quote; the Project link is its keyboard and assistive-technology target.
               onClick={event => { if (!(event.target as Element).closest('a, button, [role="menu"], [role="dialog"]') && !window.getSelection()?.toString()) navigate(quoteLink(q.id)); }}>
               <td className="eq-col-reference">{q.reference}</td>
@@ -197,12 +197,53 @@ export default function Quotes() {
               <td className="eq-col-updated"><time dateTime={q.updatedAt}>{updated.format(new Date(q.updatedAt))}</time></td>
               <td className="eq-col-actions"><QuoteActionsMenu locale={locale} quote={q} archived={q.archived} disabled={startingFrom} onStartFrom={() => startNewQuoteFrom(q)} onArchive={() => void setArchived(q, true)} onRestore={() => void setArchived(q, false)} onDelete={() => setDeleting(q)} onMenuClosed={event => { if (nextFocus.current !== null) event.preventDefault(); }} /></td>
             </tr>)}</tbody>
-          </table>{!visible().length && <p className="qp-list-footnote">{t('Aucun devis ne correspond à cette recherche.', 'No Quote matches this search.')}</p>}</>}</TabsContent>)}
+          </table>
+          <GroupedQuotes locale={locale} tab={value} quotes={visible()} updated={updated} menu={q => <QuoteActionsMenu locale={locale} quote={q} archived={q.archived} disabled={startingFrom} onStartFrom={() => startNewQuoteFrom(q)} onArchive={() => void setArchived(q, true)} onRestore={() => void setArchived(q, false)} onDelete={() => setDeleting(q)} onMenuClosed={event => { if (nextFocus.current !== null) event.preventDefault(); }} />} />
+          {!visible().length && <p className="qp-list-footnote">{t('Aucun devis ne correspond à cette recherche.', 'No Quote matches this search.')}</p>}</>}</TabsContent>)}
       </Tabs>}
+      {/* Phones with the grouped list: within thumb reach, above the bottom tab bar. */}
+      {list && <div className="eq-list-new-bar"><Button className="eq-list-new-fixed" size="lg" disabled={creating} onClick={() => void create()}><Plus data-icon="inline-start" />{t('Nouveau devis', 'New Quote')}</Button></div>}
       <DeleteQuoteDialog locale={locale} quote={deleting} onCancel={() => setDeleting(null)} onConfirm={remove} />
       <StartFromDialog locale={locale} quote={choosingSource} onCancel={() => setChoosingSource(null)} onConfirm={(from, requestId) => choosingSource ? copyFrom(choosingSource, from, requestId) : Promise.resolve(false)} />
     </main>
   </AppShell>;
+}
+
+type ListedQuote = QuoteList['quotes'][number];
+
+/**
+ * The phone list (≤ 640px with data-mobile-list="grouped", see
+ * std-structure.css): active Quotes grouped by what the Artisan does next.
+ * A Working Draft, including one on top of Published Revisions, is still to
+ * finish; the others' latest version is a Published Revision. Archived Quotes
+ * stay in the Archived tab, as one group.
+ */
+function GroupedQuotes({ locale, tab, quotes, updated, menu }: { locale: 'fr' | 'en'; tab: 'active' | 'archived'; quotes: ListedQuote[]; updated: Intl.DateTimeFormat; menu: (quote: ListedQuote) => ReactNode }) {
+  const t = (fr: string, en: string) => locale === 'fr' ? fr : en;
+  const groups = tab === 'archived'
+    ? [{ id: 'archived', label: t('Archivés', 'Archived'), quotes }]
+    : [
+      { id: 'to-finish', label: t('À terminer', 'To finish'), quotes: quotes.filter(q => q.hasDraft) },
+      { id: 'published', label: t('Publiés', 'Published'), quotes: quotes.filter(q => !q.hasDraft) },
+    ];
+  return <div className="eq-quote-groups">
+    {groups.filter(group => group.quotes.length).map(group => <section key={group.id} className="eq-quote-group" data-group={group.id} aria-labelledby={`quote-group-${tab}-${group.id}`}>
+      <h2 className="eq-quote-group-heading" id={`quote-group-${tab}-${group.id}`}>
+        <span>{group.label}</span>
+        <span className="eq-quote-group-count"><span className="sr-only">, </span>{group.quotes.length}<span className="sr-only">{group.quotes.length === 1 ? t(' devis', ' Quote') : t(' devis', ' Quotes')}</span></span>
+      </h2>
+      <ul className="eq-quote-items">{group.quotes.map(q => <li key={q.id} className="eq-quote-item" data-quote-id={q.id}>
+        <Link className="qp-list-open eq-quote-item-open" to={`/quotes?id=${encodeURIComponent(q.id)}`}>
+          <span className="eq-quote-item-title">{q.title || t('Nouveau devis', 'New Quote')}</span>
+          <span className="eq-quote-item-amount">{q.total === null ? <span aria-label={t('Total à compléter', 'Total incomplete')}>—</span> : <><span className="sr-only">{t('Total CHF ', 'Total CHF ')}</span>{swissAmount(q.total)}</>}</span>
+          <span className="eq-quote-item-customer">{q.customerName || <span className="qp-list-missing">{t('Sans destinataire', 'No Customer')}</span>}</span>
+          <span className="eq-quote-item-meta">{q.reference}<span aria-hidden="true"> · </span><span className="sr-only">, {t('modifié le', 'updated')} </span><time dateTime={q.updatedAt}>{updated.format(new Date(q.updatedAt))}</time></span>
+          <span className="eq-quote-item-status"><QuoteStatus locale={locale} quote={q} /></span>
+        </Link>
+        <div className="eq-quote-item-actions">{menu(q)}</div>
+      </li>)}</ul>
+    </section>)}
+  </div>;
 }
 
 /**

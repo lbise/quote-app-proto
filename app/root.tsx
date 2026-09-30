@@ -20,7 +20,7 @@ import {
 } from "./lib/auth-config.server";
 import { getSession } from "./lib/auth.server";
 import { quoteAIDisclosure } from "./lib/quote-ai-config.server";
-import { parseAppearance, themeScript, type Appearance } from "./lib/appearance";
+import { appearanceAttributes, normalizeAppearance, parseAppearance, themeScript, type Appearance } from "./lib/appearance";
 import { DesignSwitcher } from "./components/design-switcher";
 
 import "./app.css";
@@ -29,8 +29,7 @@ import "./app.css";
 import "./components/quotes/quote-tokens.css";
 import "./styles/shell.css";
 import "./styles/theme-0-dark.css";
-import "./styles/design-a.css";
-import "./styles/design-b.css";
+import "./styles/std-structure.css";
 import "./styles/design-c.css";
 import "./styles/design-switcher.css";
 
@@ -67,14 +66,17 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export function Layout({ children }: Readonly<{ children: ReactNode }>) {
-  const { locale, design = "0", theme = "system" } = (useLoaderData<typeof loader>() ?? {}) as { locale: InterfaceLanguage } & Partial<Appearance>;
+  const data = (useLoaderData<typeof loader>() ?? {}) as { locale: InterfaceLanguage } & Partial<Appearance>;
+  const appearance = normalizeAppearance(data);
+  const { design, theme } = appearance;
   // React may drop the resolved theme when the loader's choice changes; the
   // head script sets it again before paint.
   useLayoutEffect(() => { window.__eqApplyTheme?.(); }, [design, theme]);
   const resolved = theme === "system" ? undefined : theme;
   return (
-    // The head script resolves the system theme before hydration.
-    <html lang={locale} data-design={design} data-theme={theme} data-theme-resolved={resolved} className={resolved === "dark" ? "dark" : undefined} suppressHydrationWarning>
+    // The head script resolves the system theme before hydration. The
+    // attributes are the design contract; see app/styles/README.md.
+    <html lang={data.locale} {...appearanceAttributes(appearance)} data-theme-resolved={resolved} className={resolved === "dark" ? "dark" : undefined} suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

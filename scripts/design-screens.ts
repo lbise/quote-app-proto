@@ -1,12 +1,13 @@
-// Screenshots of the main pages in each design direction and theme, taken
+// Screenshots of the main pages in each design, preset, navigation and theme, taken
 // against a running dev server. Seeds a dedicated demo account with French
 // Swiss sample data in the local development database first.
 //
 //   npm run design:screens
-//   npm run design:screens -- --design=0,a --theme=dark --page=quotes,workspace --device=mobile
+//   npm run design:screens -- --design=c --preset=foret --nav=sidebar --theme=dark --page=quotes,workspace --device=mobile
 //   npm run design:screens -- --base-url=http://192.168.1.20:5173 --no-seed
 //
-// Output: .impeccable/review/designs/<design>-<theme>-<page>-<desktop|mobile>.png
+// Output: .impeccable/review/designs/c-<preset>-<nav>-<theme>-<page>-<device>.png
+// for Standard and 0-<theme>-<page>-<device>.png for the current design
 // (git-ignored). See app/styles/README.md.
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -15,7 +16,9 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 
 loadDotenv({ quiet: true });
 
-const designs = ['0', 'a', 'b', 'c'] as const;
+const designs = ['0', 'c'] as const;
+const presets = ['graphite', 'sarcelle', 'foret', 'indigo'] as const;
+const navs = ['topbar', 'sidebar'] as const;
 const themes = ['light', 'dark'] as const;
 const pages = ['signin', 'quotes', 'workspace', 'customers', 'settings'] as const;
 const devices = { desktop: { width: 1440, height: 900 }, mobile: { width: 390, height: 844 } } as const;
@@ -23,7 +26,7 @@ type Device = keyof typeof devices;
 
 const account = { email: 'design-review@easy-quote.test', password: 'design-review-password' };
 const outputDir = resolve('.impeccable/review/designs');
-const usage = `Usage: npm run design:screens -- [--base-url=URL] [--design=0,a,b,c] [--theme=light,dark] [--page=${pages.join(',')}] [--device=desktop,mobile] [--no-seed]`;
+const usage = `Usage: npm run design:screens -- [--base-url=URL] [--design=0,c] [--preset=${presets.join(',')}] [--nav=${navs.join(',')}] [--theme=light,dark] [--page=${pages.join(',')}] [--device=desktop,mobile] [--no-seed]`;
 
 class ScriptError extends Error {}
 
@@ -42,11 +45,15 @@ function options() {
     if (unknown.length) throw new ScriptError(`Unknown --${name} ${unknown.join(', ')}. Choose from ${all.join(', ')}.`);
     return chosen;
   };
-  for (const key of args.keys()) if (!['base-url', 'design', 'theme', 'page', 'device', 'no-seed', 'help'].includes(key)) throw new ScriptError(usage);
+  for (const key of args.keys()) if (!['base-url', 'design', 'preset', 'nav', 'theme', 'page', 'device', 'no-seed', 'help'].includes(key)) throw new ScriptError(usage);
   if (args.has('help')) { console.info(usage); process.exit(0); }
   return {
     baseURL: (args.get('base-url') ?? process.env.DESIGN_SCREENS_URL ?? 'http://localhost:5173').replace(/\/$/, ''),
     designs: list('design', designs),
+    // By default every preset with the top bar, plus the sidebar for Graphite.
+    looks: args.has('nav')
+      ? list('preset', presets).flatMap(preset => list('nav', navs).map(nav => ({ preset, nav })))
+      : list('preset', presets).flatMap(preset => [{ preset, nav: 'topbar' as const }, ...(preset === 'graphite' && !args.has('preset') ? [{ preset, nav: 'sidebar' as const }] : [])]),
     themes: list('theme', themes),
     pages: list('page', pages),
     devices: list('device', Object.keys(devices) as Device[]),
@@ -255,12 +262,16 @@ async function seed(baseURL: string) {
 
 // --- Screenshots -----------------------------------------------------------
 
-async function newContext(browser: Browser, baseURL: string, device: Device, design: string, theme: string, session?: Session) {
+type Look = { preset: typeof presets[number]; nav: typeof navs[number] };
+
+async function newContext(browser: Browser, baseURL: string, device: Device, design: string, theme: string, look: Look, session?: Session) {
   const context = await browser.newContext({ baseURL, viewport: devices[device], deviceScaleFactor: device === 'mobile' ? 2 : 1, isMobile: device === 'mobile', hasTouch: device === 'mobile', locale: 'fr-CH', colorScheme: theme as 'light' | 'dark' });
   const url = baseURL;
   await context.addCookies([
     { name: 'eq-design', value: design, url },
     { name: 'eq-theme', value: theme, url },
+    // Preset, navigation and phone list; see app/lib/appearance.ts.
+    { name: 'eq-look', value: encodeURIComponent(new URLSearchParams({ ...look, mobileList: 'grouped' }).toString()), url },
     ...(session ? [...session.cookies].map(([name, value]) => ({ name, value, url })) : []),
   ]);
   return context;
@@ -268,7 +279,7 @@ async function newContext(browser: Browser, baseURL: string, device: Device, des
 
 async function settle(page: Page) {
   // The switcher is for people comparing designs, not part of them.
-  await page.addStyleTag({ content: '.eq-design-switcher, .eq-design-switcher-tab { display: none !important; } *, *::before, *::after { caret-color: transparent !important; }' });
+  await page.addStyleTag({ content: '.eq-ds, .eq-ds-pill, .eq-phone { display: none !important; } *, *::before, *::after { caret-color: transparent !important; }' });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(250);
 }
@@ -281,7 +292,8 @@ async function capture(context: BrowserContext, name: string, device: Device, id
       await page.locator('h1').waitFor();
     } else if (name === 'quotes') {
       await page.goto('/quotes');
-      await page.locator('.eq-quote-table tbody tr').first().waitFor();
+      // Phones may show the grouped list instead of the table.
+      await page.locator('.eq-quote-table tbody tr').first().waitFor({ state: 'attached' });
     } else if (name === 'workspace') {
       await page.goto(`/quotes?id=${encodeURIComponent(ids.workspace)}`);
       if (device === 'mobile') {
@@ -319,13 +331,16 @@ async function main() {
   const { writeFile } = await import('node:fs/promises');
   let count = 0;
   try {
-    for (const design of settings.designs) for (const theme of settings.themes) for (const device of settings.devices) {
-      const signedIn = await newContext(browser, settings.baseURL, device, design, theme, session);
-      const signedOut = await newContext(browser, settings.baseURL, device, design, theme);
+    // Design 0 ignores the dials, so it is captured once per theme.
+    const runs = settings.designs.flatMap((design): { design: string; look: Look; prefix: string }[] => design === '0' ? [{ design, look: { preset: 'graphite', nav: 'topbar' } as Look, prefix: '0' }]
+      : settings.looks.map(look => ({ design, look, prefix: `${design}-${look.preset}-${look.nav}` })));
+    for (const { design, look, prefix } of runs) for (const theme of settings.themes) for (const device of settings.devices) {
+      const signedIn = await newContext(browser, settings.baseURL, device, design, theme, look, session);
+      const signedOut = await newContext(browser, settings.baseURL, device, design, theme, look);
       try {
         for (const name of settings.pages) {
           const image = await capture(name === 'signin' ? signedOut : signedIn, name, device, { workspace, customer });
-          const file = `${outputDir}/${design}-${theme}-${name}-${device}.png`;
+          const file = `${outputDir}/${prefix}-${theme}-${name}-${device}.png`;
           await writeFile(file, image);
           count += 1;
           console.info(file.replace(`${process.cwd()}/`, ''));

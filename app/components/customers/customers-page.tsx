@@ -209,7 +209,7 @@ export function CustomersPage({ locale, onLanguage }: { locale: Locale; onLangua
         : t(locale, 'Choisissez un client dans la liste pour voir ou modifier ses coordonnées.', 'Choose a Customer from the list to view or edit their details.')}</p>
     </div> : <form onSubmit={event => void save(event)} noValidate>
       <header className="qp-panel-header">
-        <Link className="qp-back-link" to="/customers"><ArrowLeft />{t(locale, 'Tous les clients', 'All Customers')}</Link>
+        <Link className="qp-back-link" to="/customers" aria-label={t(locale, 'Retour aux clients', 'Back to Customers')}><ArrowLeft aria-hidden="true" />{t(locale, 'Clients', 'Customers')}</Link>
         <h2 id="customer-detail-heading">{record?.name || t(locale, 'Nouveau client', 'New Customer')}</h2>
         <p>{t(locale, 'Modifier une fiche ne change jamais les devis existants. Pour utiliser un client, choisissez-le depuis le bloc client d’un devis.', 'Editing a record never changes existing Quotes. To use a Customer, choose them from the Customer block of a Quote.')}</p>
       </header>

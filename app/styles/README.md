@@ -1,28 +1,65 @@
-# Design directions: handoff
+# Designs: handoff
 
-The app ships four visual designs on one DOM. Design `0` is the current look. Designs `a` (Plaque émaillée), `b` (Carnet de devis) and `c` (Standard) are empty and each gets its own CSS file. This file tells a direction agent what it may restyle and how.
+The app ships two visual designs on one DOM. Design `0` is the current look, kept for comparison. Design `c` (Standard, `app/styles/design-c.css`) is the base: one design with taste dials and four presets. Designs A and B were withdrawn; a cookie that still names them falls back to `c`.
 
 ## Rules
 
-- Write only in your file: `app/styles/design-a.css`, `design-b.css` or `design-c.css`. `app/root.tsx` imports all three globally, after `shell.css` and `theme-0-dark.css`.
-- Scope every rule under `html[data-design="x"]`. Dark rules go under `html[data-design="x"][data-theme-resolved="dark"]`. Never write an unscoped selector.
-- Change CSS only. Don't edit TSX, add or remove elements, change copy, or hide labels that are visible in design 0. If a direction needs a hook that doesn't exist, report it and don't add it yourself.
+- Standard's look lives in `app/styles/design-c.css`. `app/styles/std-structure.css` holds base styles for markup only Standard shows (the grouped phone list); it uses `:where()` so design-c.css can refine it. `app/root.tsx` imports both globally, after `shell.css` and `theme-0-dark.css`.
+- Scope every rule under `html[data-design="c"]` (plus a dial attribute when it depends on one). Dark rules go under `html[data-design="c"][data-theme-resolved="dark"]`. Never write an unscoped selector.
+- Change CSS only. Don't edit TSX, add or remove elements, change copy, or hide labels that are visible in design 0. If a design needs a hook that doesn't exist, report it and don't add it yourself.
 - Keep focus outlines, 44px touch targets below 600px, and WCAG AA contrast in both themes.
-- Don't restyle `.eq-design-switcher` (`design-switcher.css`). Don't touch `eval/`, `app/components/quote-prototype/` or the PDF layouts in `app/lib/quote-layouts/`.
+- Don't restyle the development switcher (`.eq-ds`, `.eq-ds-pill`, `.eq-phone`, in `design-switcher.css`). Don't touch `eval/`, `app/components/quote-prototype/` or the PDF layouts in `app/lib/quote-layouts/`.
 
-## How the design and theme are chosen
+## The `<html>` contract
 
-| Cookie      | Values                  | Default  |
-|-------------|-------------------------|----------|
-| `eq-design` | `0`, `a`, `b`, `c`      | `0`      |
-| `eq-theme`  | `light`, `dark`, `system` | `system` |
+The root loader reads the cookies (`app/lib/appearance.ts`), validates every value and renders these attributes on `<html>`. The switcher changes them at once without a reload. Design `0` ignores the dials.
 
-The root loader reads both cookies (`app/lib/appearance.ts`) and renders `<html data-design data-theme>`. When the theme isn't `system`, the server also renders `data-theme-resolved`. An inline head script (`themeScript`) runs before first paint. It resolves `system` through `prefers-color-scheme`, sets `data-theme-resolved="light|dark"`, toggles the shadcn `.dark` class to match, and follows system changes.
+| Attribute | Values | Default |
+|---|---|---|
+| `data-design` | `0`, `c` | `c` |
+| `data-theme` | `light`, `dark`, `system` | `system` |
+| `data-preset` | `graphite`, `sarcelle`, `foret`, `indigo`, `custom` | `graphite` |
+| `data-font` | `geist`, `inter`, `hanken`, `figtree`, `source` | preset |
+| `data-accent` | `graphite`, `teal`, `indigo`, `forest`, `red`, `ochre` | preset |
+| `data-neutral` | `cool`, `neutral`, `warm` | preset |
+| `data-radius` | `sharp` (4px), `medium` (8px), `soft` (12px) | preset |
+| `data-density` | `compact`, `comfortable` (phones ≤ 640px always comfortable) | preset |
+| `data-accent-use` | `minimal` (primary buttons, focus, links), `rich` (also current nav item, selection, active tabs, section highlight) | preset |
+| `data-panels` | `lines` (white surfaces, 1px borders), `tinted` (grey ground, raised white panels) | preset |
+| `data-badge` | `dot`, `pill`, `outline` | preset |
+| `data-nav` | `topbar`, `sidebar` | `topbar` |
+| `data-mobile-list` | `table`, `grouped` | `grouped` |
+
+Presets set the eight dials; changing any dial makes `data-preset="custom"`. Navigation and the phone list are independent of the preset.
+
+| Preset | font | accent | neutral | radius | density | accent use | panels | badge |
+|---|---|---|---|---|---|---|---|---|
+| `graphite` | inter | graphite | neutral | medium | compact | minimal | lines | dot |
+| `sarcelle` | geist | teal | cool | medium | comfortable | rich | lines | pill |
+| `foret` | figtree | forest | warm | soft | comfortable | rich | tinted | pill |
+| `indigo` | hanken | indigo | cool | sharp | compact | minimal | lines | outline |
+
+### Cookies
+
+| Cookie | Holds |
+|---|---|
+| `eq-design` | `0` or `c` |
+| `eq-theme` | `light`, `dark` or `system` |
+| `eq-look` | URL-encoded query string: `preset`, the eight dials (`font`, `accent`, `neutral`, `radius`, `density`, `accentUse`, `panels`, `badge`), `nav`, `mobileList` |
+
+A named preset in `eq-look` fixes every dial whatever else the cookie says; with `preset=custom` each valid dial is kept and an invalid one takes Graphite's value. All three last a year (`Path=/`, `SameSite=Lax`).
+
+When the theme isn't `system`, the server also renders `data-theme-resolved`. An inline head script (`themeScript`) runs before first paint. It resolves `system` through `prefers-color-scheme`, sets `data-theme-resolved="light|dark"`, toggles the shadcn `.dark` class to match, and follows system changes.
 
 - Style dark mode with `[data-theme-resolved="dark"]`. Don't use `[data-theme="dark"]` or `@media (prefers-color-scheme)`, because they miss `system`.
 - `html[data-theme-resolved]` already sets `color-scheme` (`theme-0-dark.css`).
-- People change the theme in the account menu (Light / Dark / System) and in Settings › Account. In development, the switcher at the bottom left also changes the design. Both set a cookie for 1 year (`Path=/`, `SameSite=Lax`) and update `<html>` at once without a reload.
-- The switcher is hidden from automated browsers (`navigator.webdriver`), so tests and screenshots never show it.
+- People change the theme in the account menu (Light / Dark / System) and in Settings › Account.
+
+### Development switcher
+
+In development only (`!import.meta.env.PROD`), a pill at the bottom left opens the Apparence panel: Design (Actuel / Standard), Preset, a Réglages disclosure with every dial, Navigation, Liste mobile, Thème and a Téléphone switch. It is hidden from automated browsers (`navigator.webdriver`), so tests and screenshots never show it.
+
+Téléphone (screens ≥ 720px) shows the current page in a 390×844 `<iframe>` on a dimmed backdrop. The frame's window name is `eq-phone-preview`; a document loaded under that name renders no switcher and no frame of its own. The frame follows the outer page's navigation, the outer switcher posts each change to it (`postMessage`, same origin), and Escape (inside or outside the frame), the close button or the backdrop closes it. "Ouvrir en plein écran" opens the page in a phone-sized window. The on/off state lives in `sessionStorage`.
 
 ## Tokens and specificity
 
@@ -30,10 +67,10 @@ The tokens live in `app/components/quotes/quote-tokens.css`. It is imported glob
 
 | Block | Selector | Specificity | To override it |
 |---|---|---|---|
-| Design tokens (`--color-*`, `--font-*`, `--space-*`, `--text-*`, `--radius-*`…) | `:where(html:has(.qp-app))` | 0 | `html[data-design="x"]` |
-| shadcn mapping (`--background`, `--primary`, `--border`, `--ring`, `--popover`…) | `html:has(.qp-app)` | 0,1,1 | `html[data-design="x"]:has(.qp-app)` |
-| `--color-hover` and page background (app-pages.css) | `html:has(.qp-page)` | 0,1,1 | `html[data-design="x"]:has(.qp-page)` |
-| shadcn defaults (auth pages) | `:root`, `.dark` in app.css | 0,1,0 | `html[data-design="x"]`, `html[data-design="x"].dark` |
+| Design tokens (`--color-*`, `--font-*`, `--space-*`, `--text-*`, `--radius-*`…) | `:where(html:has(.qp-app))` | 0 | `html[data-design="c"]` |
+| shadcn mapping (`--background`, `--primary`, `--border`, `--ring`, `--popover`…) | `html:has(.qp-app)` | 0,1,1 | `html[data-design="c"]:has(.qp-app)` |
+| `--color-hover` and page background (app-pages.css) | `html:has(.qp-page)` | 0,1,1 | `html[data-design="c"]:has(.qp-page)` |
+| shadcn defaults (auth pages) | `:root`, `.dark` in app.css | 0,1,0 | `html[data-design="c"]`, `html[data-design="c"].dark` |
 
 Usually you only need to set the design tokens. The shadcn mapping follows them.
 
@@ -69,7 +106,7 @@ Usually you only need to set the design tokens. The shadcn mapping follows them.
 
 ### Fonts
 
-Install the family with npm (`@fontsource-variable/<family>` or `@fontsource/<family>`) and put `@import '@fontsource-variable/<family>';` at the very top of your design file, before any rule. Then set `--font-*` under your scope. Geist Variable (app.css) and Space Grotesk Variable (quotes.css) are already loaded. Keep the family list short: all three design files load on every page.
+The candidate families are installed: `@fontsource-variable/geist`, `inter`, `hanken-grotesk`, `figtree` and `source-sans-3`. Import them at the very top of design-c.css, before any rule, and map `data-font` to `--font-*`. Geist Variable (app.css) and Space Grotesk Variable (quotes.css) are already loaded.
 
 ### Hard-coded values left to override
 
@@ -134,12 +171,15 @@ The workspace needs a full-height split. `.qp-app` is `height: 100dvh; display: 
 - Columns (class on both `th` and `td`): `.eq-col-reference`, `.eq-col-project` (holds the row's real link `a.qp-list-open`), `.eq-col-customer` (`.qp-list-missing` when empty), `.eq-col-status`, `.eq-col-amount` (right-aligned, tabular figures, `—` when incomplete), `.eq-col-updated` (`<time>`), `.eq-col-actions` (row menu).
 - Rows: `tr.qp-list-row[data-quote-id]`. The whole row is clickable.
 - Status: `.eq-status[data-status="working-draft|published|archived"][data-revision]`. Archived rows prefix `.eq-status-archived`.
-- At ≤760px, rows stack as grid cards (see `shell.css`). You can replace that layout.
+- At ≤760px, rows stack as grid cards (see `shell.css`). You can replace that layout. This is the phone layout when `data-mobile-list="table"`.
+- Grouped phone list (Standard, ≤ 640px, `data-mobile-list="grouped"`; hidden otherwise, the table is hidden instead): `.eq-quote-groups` > `section.eq-quote-group[data-group="to-finish|published|archived"]` > `h2.eq-quote-group-heading` (label + `.eq-quote-group-count`) + `ul.eq-quote-items` > `li.eq-quote-item[data-quote-id]` > `a.qp-list-open.eq-quote-item-open` (`.eq-quote-item-title`, `.eq-quote-item-amount`, `.eq-quote-item-customer`, `.eq-quote-item-meta` with reference and `<time>`, `.eq-quote-item-status` with the `.eq-status` badge) + `.eq-quote-item-actions` (row menu). "To finish" holds every Working Draft, including one on top of Published Revisions; "Published" the Quotes whose latest version is a Published Revision; the Archived tab shows one "Archived" group.
+- `.eq-list-new-bar` > `.eq-list-new-fixed`: the thumb-reach New Quote button, fixed above `--eq-shell-bottom-offset`. It shows with the grouped list, which hides the heading's `.eq-list-new`.
 - Empty states: `.qp-list-empty`, `.qp-list-footnote`.
 
 ## Customers (`customers-page.tsx`)
 
 - `.qp-customers[data-view="list|detail"]` > `.qp-page-heading`, `.qp-customers-layout` > `.qp-customer-list` + `.qp-customer-detail` (both `.qp-panel`).
+- ≤ 1000px it is list → detail: `data-view="detail"` (a Customer or `?id=new` in the URL) shows only the detail, led by `.qp-back-link` ("← Clients", back to `/customers`).
 - List: `.qp-customer-search`, `nav.eq-alpha-index` (letter links `a[href="#customers-X"]`, or `#customers-other` for `#`). Then `.qp-customer-groups` > `section.eq-alpha-group#customers-X` > `h3.eq-alpha-heading` + `ul.qp-customer-rows` > `li > a[aria-current="true"]` for the selected Customer.
 - `.eq-alpha-index` is `display: none` and `.eq-alpha-heading` is visually hidden in design 0. To show them, set `display: flex|grid` on the index and undo the clip on the headings (`position: static; width: auto; height: auto; overflow: visible; clip-path: none`). Letter links scroll to the group and focus its first Customer.
 - States: `.qp-customer-empty`, `.qp-customer-message`, `.qp-customer-placeholder`.
@@ -156,28 +196,29 @@ The workspace needs a full-height split. `.qp-app` is `height: 100dvh; display: 
 
 ## Auth pages (`auth-shell.tsx`, `routes/sign-in.tsx` and the others)
 
-These pages have no `.qp-app`, so the quote tokens don't apply. They use shadcn variables (`--background`, `--foreground`, `--primary`, `--primary-foreground`, `--muted-foreground`, `--border`, `--input`, `--ring`, `--destructive`). Set those under `html[data-design="x"]` and `html[data-design="x"].dark`.
+These pages have no `.qp-app`, so the quote tokens don't apply. They use shadcn variables (`--background`, `--foreground`, `--primary`, `--primary-foreground`, `--muted-foreground`, `--border`, `--input`, `--ring`, `--destructive`). Set those under `html[data-design="c"]` and `html[data-design="c"].dark`.
 
 Hooks: `main.eq-auth` > `.eq-auth-top` (`.eq-auth-brand`, `.eq-auth-language`), `section.eq-auth-card` > `header.eq-auth-heading` (`h1`, intro `p`), `form` with `label.eq-auth-field` > `input.eq-auth-input` + `.eq-auth-description`, `.eq-auth-message` (error), `button.eq-auth-submit`, `nav.eq-auth-links`. The pages: sign-in, sign-up, verify, forgot-password and reset-password.
 
 ## Dark theme
 
 - Design 0 dark: `theme-0-dark.css` overrides the colour tokens under `html[data-design='0'][data-theme-resolved='dark']`, plus `--card` and `--accent`. Use it as a checklist of tokens to set. Auth pages in design 0 dark use app.css `.dark`.
-- Your dark theme is the same token set under `html[data-design="x"][data-theme-resolved="dark"]` (specificity 0,2,1). That selector already beats the shadcn mapping and `--color-hover`, so you don't need the `:has()` forms there.
+- Your dark theme is the same token set under `html[data-design="c"][data-theme-resolved="dark"]` (specificity 0,2,1). That selector already beats the shadcn mapping and `--color-hover`, so you don't need the `:has()` forms there.
 
 ## Screenshots
 
 The dev server must be running (default `http://localhost:5173`), and `DATABASE_URL` must point to a loopback database whose name ends in `_local`.
 
 ```sh
-npm run design:screens                                   # seed, then every design × light/dark × page × device
-npm run design:screens -- --design=a --theme=light,dark  # one direction
+npm run design:screens                                   # seed, then design 0 and Standard (see below) × light/dark × page × device
+npm run design:screens -- --design=c --preset=foret --nav=topbar,sidebar --theme=dark
 npm run design:screens -- --page=quotes,workspace --device=mobile --no-seed
 npm run design:screens -- --base-url=http://127.0.0.1:5173
 ```
 
+- By default Standard is captured with every preset in the top bar, plus Graphite with the sidebar. `--preset` and `--nav` pick the combinations (all chosen presets × all chosen navs once `--nav` is given). The phone list is always `grouped`.
 - Pages: `signin`, `quotes`, `workspace` (the sectioned Quote with 11 lines; the mobile capture shows the Quote pane), `customers` (with a detail open), `settings` (Business section).
 - Devices: `desktop` 1440×900 and `mobile` 390×844 (at 2×).
-- Output: `.impeccable/review/designs/<design>-<theme>-<page>-<desktop|mobile>.png`. It's git-ignored.
+- Output: `.impeccable/review/designs/c-<preset>-<nav>-<theme>-<page>-<desktop|mobile>.png` for Standard and `0-<theme>-<page>-<desktop|mobile>.png` for design 0. It's git-ignored.
 - Seeding resets the demo account `design-review@easy-quote.test` each run, so the data is always the same: 7 French Swiss Customers and 6 Quotes (sectioned working draft, published, published with a newer draft, incomplete pricing, archived, no Customer). Add `--no-seed` to reuse the existing data.
-- The design and theme come from the `eq-design` / `eq-theme` cookies. The script only captures `light` and `dark`, not `system`.
+- The design, theme and look come from the `eq-design`, `eq-theme` and `eq-look` cookies. The script only captures `light` and `dark`, not `system`.

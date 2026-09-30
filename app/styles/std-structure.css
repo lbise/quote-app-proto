@@ -1,0 +1,72 @@
+/* Structure for markup that only design "c" (Standard) shows: the grouped
+   phone Quote list and its fixed "New Quote" button. Base styles read the
+   shared tokens (see app/styles/README.md) and use :where() so design-c.css
+   can refine them at low specificity. The display switches are not wrapped,
+   so they win over the design files' table rules. */
+
+.eq-quote-groups, .eq-list-new-bar { display: none; }
+
+@media (max-width: 640px) {
+  html[data-design="c"][data-mobile-list="grouped"] .eq-quote-table,
+  html[data-design="c"][data-mobile-list="grouped"] .qp-list-heading .eq-list-new { display: none; }
+  html[data-design="c"][data-mobile-list="grouped"] .eq-quote-groups { display: grid; }
+  html[data-design="c"][data-mobile-list="grouped"] .eq-list-new-bar { display: flex; }
+  /* Room for the fixed button so the last Quote can scroll clear of it. */
+  html[data-design="c"][data-mobile-list="grouped"] .qp-quote-list { padding-bottom: calc(var(--space-3xl, 4rem) + var(--space-xl, 2rem)); }
+
+  :where(html[data-design="c"]) .eq-quote-groups { gap: var(--space-lg, 1.5rem); }
+  :where(html[data-design="c"]) .eq-quote-group-heading {
+    display: flex; align-items: baseline; gap: var(--space-xs, .5rem);
+    margin: 0 0 var(--space-2xs, .25rem); padding-inline: var(--space-2xs, .25rem);
+    font-size: var(--text-sm); font-weight: 600; color: var(--color-ink);
+  }
+  :where(html[data-design="c"]) .eq-quote-group-count { color: var(--color-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+  :where(html[data-design="c"]) .eq-quote-items {
+    margin: 0; padding: 0; list-style: none;
+    background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-panel);
+    overflow: clip;
+  }
+  :where(html[data-design="c"]) .eq-quote-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  :where(html[data-design="c"]) .eq-quote-item + .eq-quote-item { border-top: 1px solid var(--color-rule); }
+  :where(html[data-design="c"]) .eq-quote-item-open {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-sm, .75rem); row-gap: 2px;
+    min-height: 44px; padding: var(--space-sm, .75rem) 0 var(--space-sm, .75rem) var(--space-md, 1rem);
+    color: inherit; text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :where(html[data-design="c"]) .eq-quote-item-open:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; border-radius: var(--radius-panel); }
+  :where(html[data-design="c"]) .eq-quote-item-open:active { background: var(--color-hover, var(--color-chat)); }
+  :where(html[data-design="c"]) .eq-quote-item-title {
+    grid-column: 1; min-width: 0; overflow: hidden; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+    font-size: var(--text-base); font-weight: 550; line-height: 1.35; color: var(--color-ink); text-wrap: pretty;
+  }
+  :where(html[data-design="c"]) .eq-quote-item-amount {
+    grid-column: 2; grid-row: 1; justify-self: end; align-self: start;
+    font-size: var(--text-base); font-weight: 550; color: var(--color-ink); font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  :where(html[data-design="c"]) .eq-quote-item-customer {
+    grid-column: 1 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--text-sm); color: var(--color-ink);
+  }
+  :where(html[data-design="c"]) .eq-quote-item-meta {
+    grid-column: 1; align-self: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--text-sm); color: var(--color-muted); font-variant-numeric: tabular-nums;
+  }
+  :where(html[data-design="c"]) .eq-quote-item-status { grid-column: 2; justify-self: end; align-self: center; }
+  :where(html[data-design="c"]) .eq-quote-item-actions { align-self: center; padding-inline: var(--space-2xs, .25rem); }
+  :where(html[data-design="c"]) .eq-quote-item-actions button { min-width: 44px; min-height: 44px; }
+
+  :where(html[data-design="c"]) .eq-list-new-bar {
+    position: fixed; z-index: 20; left: 0; right: 0;
+    bottom: calc(var(--eq-shell-bottom-offset, env(safe-area-inset-bottom, 0px)) + var(--space-sm, .75rem));
+    justify-content: center; padding-inline: var(--space-md, 1rem);
+    pointer-events: none;
+  }
+  :where(html[data-design="c"]) .eq-list-new-fixed {
+    pointer-events: auto; width: 100%; max-width: 28rem; min-height: 48px;
+    border-radius: var(--radius-panel); font-size: var(--text-base);
+    box-shadow: 0 8px 20px -8px var(--color-shadow, rgb(0 0 0 / .35)), 0 1px 2px var(--color-shadow, rgb(0 0 0 / .2));
+  }
+}
+@media print { .eq-quote-groups, .eq-list-new-bar { display: none; } }
