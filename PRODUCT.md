@@ -60,6 +60,13 @@ Speech input is a confirmed product goal, not a shipped capability. The current 
 - Calculate amounts consistently while keeping commercial review and Publication under the Artisan's control.
 - Support French-speaking Swiss artisans first while preserving the existing separation between interface language and Quote language.
 
+## Brand commitments
+
+- The main application follows the polished product-software standard, not an invented visual world. Its quality bar is Linear, Stripe and Vercel. Bexio and Klara are explicitly not references.
+- Mobile first: the phone view is judged first. The desk view must keep the Quote and the assistant side by side, so navigation must not take horizontal space in the Quote workspace.
+- "Easy Quote" is a placeholder name. Do not build identity on the wordmark.
+- Light and dark themes are both supported. The app follows the system setting until the user chooses one.
+
 ## Evidence on hand
 
 - `CONTEXT.md` defines the domain language and ownership rules.
