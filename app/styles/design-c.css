@@ -462,6 +462,9 @@ html[data-design="c"] .qp-modal input, html[data-design="c"] .qp-modal textarea,
 html[data-design="c"] .qp-app input::placeholder, html[data-design="c"] .qp-app textarea::placeholder, html[data-design="c"] .qp-modal input::placeholder, html[data-design="c"] .qp-modal textarea::placeholder { color: var(--c-n9); opacity: 1; }
 html[data-design="c"] .qp-app input:hover:not(:disabled):not(:focus), html[data-design="c"] .qp-app textarea:hover:not(:disabled):not(:focus), html[data-design="c"] .qp-app select:hover:not(:disabled) { border-color: var(--c-n8); }
 html[data-design="c"] .qp-app input:focus-visible, html[data-design="c"] .qp-app textarea:focus-visible, html[data-design="c"] .qp-modal input:focus-visible, html[data-design="c"] .qp-modal textarea:focus-visible, html[data-design="c"] .qp-app select:focus-visible { border-color: var(--c-focus); outline: 2px solid color-mix(in oklch, var(--c-focus) 30%, transparent); outline-offset: 0; }
+/* A missing or invalid field keeps its state colour on hover and focus; the focus ring still shows. */
+html[data-design="c"] :is(.qp-app, .qp-modal) [data-slot='field'][data-missing] :is(input, textarea, select):is(*, :hover, :focus-visible) { border-color: var(--color-warning); }
+html[data-design="c"] :is(.qp-app, .qp-modal) [data-slot='field'][data-invalid] :is(input, textarea, select):is(*, :hover, :focus-visible) { border-color: var(--destructive); }
 html[data-design="c"] .qp-app .qp-composer [data-slot='textarea'], html[data-design="c"] .qp-app .qp-composer [data-slot='textarea']:focus-visible { box-shadow: none; outline: none; border: 0; background: transparent; }
 html[data-design="c"] .qp-app .qp-jump select { border: 0; box-shadow: none; background-color: transparent; }
 html[data-design="c"] .qp-app input[type='checkbox'], html[data-design="c"] .qp-app input[type='radio'] { accent-color: var(--c-accent); }
