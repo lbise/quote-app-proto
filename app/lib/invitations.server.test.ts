@@ -13,6 +13,7 @@ import {
 } from "./administration.server";
 import { authBaseUrl } from "./auth-config.server";
 import { invitation, user } from "./db/schema";
+import { defaultInvitationMessage, defaultInvitationSubject } from "./invitation-email";
 import { invitationForSignUp, signUpPage } from "./invitations.server";
 import { capturedAuthEmails, clearCapturedEmails } from "./mail.server";
 import { quoteHttpHarness } from "./quote-http.test-support";
@@ -59,18 +60,22 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("invitations a
   }));
 
   /** Invite an email and return the token from the link in the invitation email. */
-  async function invite(email: string, options: { administrator?: boolean } = {}) {
-    await sendInvitation(database, { actorUserId: administrator.userId, email, administrator: options.administrator ?? false });
+  async function invite(email: string, options: { administrator?: boolean; subject?: string; message?: string } = {}) {
+    await sendInvitation(database, { actorUserId: administrator.userId, email, ...options, administrator: options.administrator ?? false });
     return latestToken(email);
   }
 
+  const latestEmail = (email: string) => capturedAuthEmails().filter((message) => message.to === email).at(-1);
+
   function latestToken(email: string) {
-    const sent = capturedAuthEmails().filter((message) => message.to === email).at(-1);
+    const sent = latestEmail(email);
     expect(sent, `no invitation email to ${email}`).toBeDefined();
     const token = sent!.text.match(/\/sign-up\?invitation=([\w-]+)/)?.[1];
     expect(token).toBeDefined();
     return token!;
   }
+
+  const linkOf = (token: string) => `${authBaseUrl()}/sign-up?invitation=${token}`;
 
   const invitationOf = async (email: string) => (await listInvitations(database)).find((entry) => entry.email === email);
   const userOf = async (email: string) => (await database.select().from(user).where(eq(user.email, email)))[0];
@@ -103,17 +108,79 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("invitations a
     expect(await signUpPage(database, "unknown-token")).toEqual({ form: "closed", reason: "invalid_invitation", registration: "open" });
   });
 
-  it("emails the invitee a link to sign up with, which tells them what Administrators can read", async () => {
+  it("emails the invitee a link to sign up with, in the default text when the Administrator wrote none", async () => {
     const email = freshEmail();
-    await invite(email);
+    const token = await invite(email);
 
     const [sent] = capturedAuthEmails();
     expect(sent.to).toBe(email);
-    expect(sent.text).toContain(`${authBaseUrl()}/sign-up?invitation=`);
+    expect(sent.subject).toBe(defaultInvitationSubject);
+    expect(sent.text).toBe(defaultInvitationMessage(false).replaceAll("{lien}", linkOf(token)));
     expect(sent.text).toMatch(/7 days/);
-    expect(sent.text).toMatch(/Administrators can read your Quotes and your conversations/);
-    expect(sent.text).toMatch(/30 days/);
+    // The sign-up page, not the email, tells them what Administrators can read.
+    expect(sent.text).not.toMatch(/Administrators can read/);
     expect(await invitationOf(email)).toMatchObject({ state: "pending", administrator: false, invitedByEmail: administrator.email });
+  });
+
+  it("emails the subject and message the Administrator wrote, with each {lien} replaced by the link", async () => {
+    const email = freshEmail();
+    const token = await invite(email, { subject: "  Rejoignez-nous  ", message: "\r\nBonjour <script>x</script>,\r\n\r\n{lien}\r\nou {lien}\r\n" });
+
+    const sent = latestEmail(email)!;
+    expect(sent.subject).toBe("Rejoignez-nous");
+    expect(sent.text).toBe(`Bonjour <script>x</script>,\n\n${linkOf(token)}\nou ${linkOf(token)}`);
+    expect(sent.html).toContain("Bonjour &lt;script&gt;x&lt;/script&gt;,");
+    expect(sent.html).not.toContain("<script>");
+    expect(sent.html.match(/<a href=/g)).toHaveLength(2);
+    const [stored] = await database.select().from(invitation).where(eq(invitation.email, email));
+    expect(stored).toMatchObject({ emailSubject: "Rejoignez-nous", emailMessage: "Bonjour <script>x</script>,\n\n{lien}\nou {lien}" });
+  });
+
+  it("adds the link at the end of a message without {lien}", async () => {
+    const email = freshEmail();
+    const token = await invite(email, { subject: "Invitation", message: "Venez essayer Easy Quote." });
+
+    expect(latestEmail(email)!.text).toBe(`Venez essayer Easy Quote.\n\n${linkOf(token)}`);
+  });
+
+  it("refuses a subject or message that is empty, too long or a subject on several lines, and sends nothing", async () => {
+    const email = freshEmail();
+    const send = (text: { subject?: string; message?: string }) => refusal(sendInvitation(database, { actorUserId: administrator.userId, email, administrator: false, ...text }));
+
+    expect(await send({ subject: "   " })).toBe("invalid_email_subject");
+    expect(await send({ subject: "a".repeat(201) })).toBe("invalid_email_subject");
+    expect(await send({ subject: "Line one\nLine two" })).toBe("invalid_email_subject");
+    expect(await send({ message: " \n\n " })).toBe("invalid_email_message");
+    expect(await send({ message: "a".repeat(5001) })).toBe("invalid_email_message");
+    expect(await invitationOf(email)).toBeUndefined();
+    expect(latestEmail(email)).toBeUndefined();
+
+    await invite(email, { subject: "a".repeat(200), message: `  ${"a".repeat(5000)}  ` });
+    expect(await invitationOf(email)).toMatchObject({ state: "pending" });
+  });
+
+  it("resends the same subject and message with the new link", async () => {
+    const email = freshEmail();
+    const first = await invite(email, { subject: "Votre accès", message: "Lien : {lien}" });
+
+    await resendInvitation(database, { actorUserId: administrator.userId, invitationId: (await invitationOf(email))!.id });
+    const second = latestToken(email);
+
+    expect(second).not.toBe(first);
+    expect(latestEmail(email)).toMatchObject({ subject: "Votre accès", text: `Lien : ${linkOf(second)}` });
+  });
+
+  it("resends an invitation without stored text in the default text for its role", async () => {
+    const email = freshEmail();
+    await invite(email, { administrator: true, subject: "Custom", message: "Custom {lien}" });
+    await database.update(invitation).set({ emailSubject: null, emailMessage: null }).where(eq(invitation.email, email));
+
+    await resendInvitation(database, { actorUserId: administrator.userId, invitationId: (await invitationOf(email))!.id });
+
+    expect(latestEmail(email)).toMatchObject({
+      subject: defaultInvitationSubject,
+      text: defaultInvitationMessage(true).replaceAll("{lien}", linkOf(latestToken(email))),
+    });
   });
 
   it("signs up the invitee through their link, once, as an active User with the role they were invited with", async () => {
@@ -202,9 +269,12 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL)).sequential("invitations a
     const first = await invite(email);
     await cancelInvitation(database, { actorUserId: administrator.userId, invitationId: (await invitationOf(email))!.id });
 
-    const second = await invite(email, { administrator: true });
+    const second = await invite(email, { administrator: true, subject: "Second try", message: "Again: {lien}" });
 
     expect(await invitationOf(email)).toMatchObject({ state: "pending", administrator: true });
+    expect(latestEmail(email)).toMatchObject({ subject: "Second try", text: `Again: ${linkOf(second)}` });
+    const [stored] = await database.select().from(invitation).where(eq(invitation.email, email));
+    expect(stored).toMatchObject({ emailSubject: "Second try", emailMessage: "Again: {lien}" });
     expect((await signUp(email, first)).status).toBe(403);
     expect((await signUp(email, second)).status).toBe(200);
   });

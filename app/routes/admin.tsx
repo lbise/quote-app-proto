@@ -47,7 +47,14 @@ export async function action({ request }: Route.ActionArgs) {
   const actorUserId = administrator.id;
   try {
     if (intent === 'invite') {
-      await sendInvitation(database, { actorUserId, email: String(form.get('email') ?? ''), administrator: form.get('administrator') === 'on' });
+      const text = (name: string) => { const value = form.get(name); return typeof value === 'string' ? value : undefined; };
+      await sendInvitation(database, {
+        actorUserId,
+        email: String(form.get('email') ?? ''),
+        administrator: form.get('administrator') === 'on',
+        subject: text('subject'),
+        message: text('message'),
+      });
       return { ok: true as const, intent };
     }
     if (intent === 'resend_invitation' || intent === 'cancel_invitation') {

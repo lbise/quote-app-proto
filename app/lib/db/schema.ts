@@ -103,6 +103,11 @@ export const invitation = pgTable(
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     acceptedUserId: text("accepted_user_id").references(() => user.id, { onDelete: "set null" }),
+    // The subject and message the Administrator wrote, with {lien} where the
+    // link goes. Resending sends them again with the new link. Null means the
+    // default text for the invitation's role.
+    emailSubject: text("email_subject"),
+    emailMessage: text("email_message"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

@@ -14,6 +14,13 @@ import {
   type UserActionKind,
   type UserStatus,
 } from "./db/schema";
+import {
+  defaultInvitationMessage,
+  defaultInvitationSubject,
+  INVITATION_MESSAGE_MAX_LENGTH,
+  INVITATION_SUBJECT_MAX_LENGTH,
+  normalizeInvitationText,
+} from "./invitation-email";
 import { invitationUrl, newInvitationToken } from "./invitations.server";
 import { sendInvitationEmail } from "./mail.server";
 
@@ -61,6 +68,8 @@ export type RefusalCode =
   | "bootstrap_administrator"
   | "last_administrator"
   | "invalid_email"
+  | "invalid_email_subject"
+  | "invalid_email_message"
   | "user_exists"
   | "already_invited"
   | "invitation_not_found"
@@ -254,18 +263,37 @@ export async function listInvitations(database: Database): Promise<AdministeredI
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** The subject the Administrator wrote: one line of 1 to 200 characters. */
+function invitationSubject(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const subject = value.trim();
+  if (!subject || subject.length > INVITATION_SUBJECT_MAX_LENGTH || /[\r\n]/.test(subject)) throw new AdministrationRefusal("invalid_email_subject");
+  return subject;
+}
+
+/** The message the Administrator wrote: 1 to 5000 characters. */
+function invitationMessage(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const message = normalizeInvitationText(value);
+  if (!message || message.length > INVITATION_MESSAGE_MAX_LENGTH) throw new AdministrationRefusal("invalid_email_message");
+  return message;
+}
+
 /**
  * Invite an email to sign up, optionally as an Administrator, and email the
- * invitee their link. An email with an expired or cancelled invitation is
- * invited again with a new link. Nothing is saved or recorded if the email
- * cannot be sent.
+ * invitee their link with the subject and message the Administrator wrote.
+ * A subject or message left out is the default one. An email with an expired
+ * or cancelled invitation is invited again with a new link and the new text.
+ * Nothing is saved or recorded if the email cannot be sent.
  */
 export async function sendInvitation(
   database: Database,
-  input: { actorUserId: string; email: string; administrator: boolean },
+  input: { actorUserId: string; email: string; administrator: boolean; subject?: string; message?: string },
 ): Promise<void> {
   const email = normalizeEmail(input.email);
   if (!emailPattern.test(email) || email.length > 254) throw new AdministrationRefusal("invalid_email");
+  const emailSubject = invitationSubject(input.subject);
+  const emailMessage = invitationMessage(input.message);
   await database.transaction(async (transaction) => {
     const actor = await lockAsAdministrator(transaction, input.actorUserId);
     const [existingUser] = await transaction.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
@@ -285,16 +313,21 @@ export async function sendInvitation(
       cancelledAt: null,
       acceptedAt: null,
       acceptedUserId: null,
+      emailSubject,
+      emailMessage,
     };
     // An accepted invitation whose User was since deleted is replaced too.
     if (existing) await transaction.update(invitation).set(values).where(eq(invitation.id, existing.id));
     else await transaction.insert(invitation).values({ id: crypto.randomUUID(), email, ...values });
     await record(transaction, actor, input.administrator ? "send_administrator_invitation" : "send_invitation", { id: null, email });
-    await emailInvitation({ to: email, url: invitationUrl(token), administrator: input.administrator });
+    await emailInvitation({ email, token, administrator: input.administrator, emailSubject, emailMessage });
   });
 }
 
-/** Send an invitation again with a new link valid for 7 days. The previous link stops working. */
+/**
+ * Send an invitation again with a new link valid for 7 days and the same
+ * subject and message. The previous link stops working.
+ */
 export async function resendInvitation(database: Database, input: { actorUserId: string; invitationId: string }): Promise<void> {
   await database.transaction(async (transaction) => {
     const actor = await lockAsAdministrator(transaction, input.actorUserId);
@@ -303,7 +336,7 @@ export async function resendInvitation(database: Database, input: { actorUserId:
     const { token, tokenHash, expiresAt } = newInvitationToken(now);
     await transaction.update(invitation).set({ tokenHash, sentAt: now, expiresAt, cancelledAt: null }).where(eq(invitation.id, existing.id));
     await record(transaction, actor, "resend_invitation", { id: null, email: existing.email });
-    await emailInvitation({ to: existing.email, url: invitationUrl(token), administrator: existing.administrator });
+    await emailInvitation({ ...existing, token });
   });
 }
 
@@ -323,10 +356,24 @@ export async function cancelInvitation(database: Database, input: { actorUserId:
   });
 }
 
-/** Send the invitation email; a failure rolls the invitation back. */
-async function emailInvitation(message: Parameters<typeof sendInvitationEmail>[0]) {
+/**
+ * Send the invitation email with its stored text, or the default text for its
+ * role; a failure rolls the invitation back.
+ */
+async function emailInvitation(entry: {
+  email: string;
+  token: string;
+  administrator: boolean;
+  emailSubject: string | null;
+  emailMessage: string | null;
+}) {
   try {
-    await sendInvitationEmail(message);
+    await sendInvitationEmail({
+      to: entry.email,
+      url: invitationUrl(entry.token),
+      subject: entry.emailSubject ?? defaultInvitationSubject,
+      message: entry.emailMessage ?? defaultInvitationMessage(entry.administrator),
+    });
   } catch (error) {
     console.error("Invitation email could not be sent.", error instanceof Error ? error.message : error);
     throw new AdministrationRefusal("email_not_sent");

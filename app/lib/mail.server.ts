@@ -1,8 +1,7 @@
 import nodemailer from "nodemailer";
 
 import type { InterfaceLanguage } from "./auth-config.server";
-import { INVITATION_LIFETIME_DAYS } from "./invitations.server";
-import { registrationDisclosure } from "./registration-disclosure";
+import { INVITATION_LINK_PLACEHOLDER } from "./invitation-email";
 
 export type CapturedEmail = {
   to: string;
@@ -53,36 +52,47 @@ export async function sendAuthEmail(input: {
 }
 
 /**
- * An Administrator's invitation to sign up. The invitee's language is not
- * known yet, so the email is in French and English.
+ * An Administrator's invitation to sign up, with the subject and message the
+ * Administrator wrote. Each {lien} in the message becomes the invitation link;
+ * a message without one gets the link at the end.
  */
-export async function sendInvitationEmail(input: { to: string; url: string; administrator: boolean }): Promise<void> {
-  const days = INVITATION_LIFETIME_DAYS;
-  const parts = {
-    fr: {
-      intro: input.administrator ? "Vous êtes invité à utiliser Easy Quote en tant qu’administrateur." : "Vous êtes invité à utiliser Easy Quote.",
-      action: "Ouvrez ce lien pour créer votre compte et choisir votre mot de passe :",
-      link: "Créer mon compte",
-      expiry: `Ce lien est valable ${days} jours et ne sert qu’une fois.`,
-      ignore: "Si vous ne vous attendiez pas à cette invitation, ignorez cet e-mail.",
-    },
-    en: {
-      intro: input.administrator ? "You are invited to use Easy Quote as an Administrator." : "You are invited to use Easy Quote.",
-      action: "Open this link to create your account and choose your password:",
-      link: "Create my account",
-      expiry: `This link is valid for ${days} days and can be used once.`,
-      ignore: "If you did not expect this invitation, you can ignore this email.",
-    },
-  };
-  const text = (["fr", "en"] as const).map((language) => {
-    const part = parts[language];
-    return `${part.intro}\n\n${part.action}\n${input.url}\n\n${part.expiry}\n\n${registrationDisclosure[language]}\n\n${part.ignore}`;
-  }).join("\n\n---\n\n");
-  const html = (["fr", "en"] as const).map((language) => {
-    const part = parts[language];
-    return `<div lang="${language}"><p>${part.intro}</p><p><a href="${escapeHtml(input.url)}">${part.link}</a></p><p>${part.expiry}</p><p>${escapeHtml(registrationDisclosure[language])}</p><p>${part.ignore}</p></div>`;
-  }).join("<hr>");
-  await deliver({ to: input.to, subject: "Invitation à Easy Quote / Your invitation to Easy Quote", text, html });
+export async function sendInvitationEmail(input: { to: string; url: string; subject: string; message: string }): Promise<void> {
+  await deliver({ to: input.to, ...invitationEmailContent(input) });
+}
+
+/** The invitation email's subject, text and HTML, with the link in place. */
+export function invitationEmailContent(input: { url: string; subject: string; message: string }): Omit<CapturedEmail, "to"> {
+  const message = input.message.includes(INVITATION_LINK_PLACEHOLDER)
+    ? input.message.split(INVITATION_LINK_PLACEHOLDER).join(input.url)
+    : `${input.message}\n\n${input.url}`;
+  return { subject: input.subject, text: message, html: invitationHtml(message, input.url) };
+}
+
+/**
+ * Plain text as HTML: blank lines separate paragraphs, other line breaks are
+ * kept, a line of "---" is a rule, and the link can be clicked.
+ */
+function invitationHtml(text: string, url: string): string {
+  const link = `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`;
+  const line = (value: string) => value.split(url).map(escapeHtml).join(link);
+  const html: string[] = [];
+  for (const block of text.split(/\n[ \t]*\n/)) {
+    let paragraph: string[] = [];
+    const close = () => {
+      if (paragraph.length) html.push(`<p>${paragraph.join("<br>")}</p>`);
+      paragraph = [];
+    };
+    for (const row of block.split("\n")) {
+      if (row.trim() === "---") {
+        close();
+        html.push("<hr>");
+      } else if (row.trim()) {
+        paragraph.push(line(row));
+      }
+    }
+    close();
+  }
+  return html.join("");
 }
 
 async function deliver(message: CapturedEmail): Promise<void> {

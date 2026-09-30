@@ -28,7 +28,28 @@ test("an Administrator invites someone, resends the invitation and cancels it", 
     await page.getByRole("button", { name: "Invite" }).click();
     const dialog = page.getByRole("dialog", { name: "Invite someone" });
     await dialog.getByLabel("Email").fill(email);
-    await dialog.getByLabel("Make them an Administrator").check();
+
+    // The email text starts from the default, which follows the role until it is edited.
+    const subject = dialog.getByLabel("Subject");
+    const message = dialog.getByLabel("Message");
+    await expect(subject).toHaveValue("Invitation à Easy Quote / Your invitation to Easy Quote");
+    await expect(message).toHaveValue(/^Vous êtes invité à utiliser Easy Quote\.\n[\s\S]*\{lien\}[\s\S]*\n---\n[\s\S]*You are invited to use Easy Quote\./);
+    await expect(message).not.toHaveValue(/Administrators can read/);
+    await expect(dialog.getByText("{lien} is replaced by the invitation link. If it is missing, the link is added at the end.")).toBeVisible();
+    const role = dialog.getByLabel("Make them an Administrator");
+    await role.check();
+    await expect(message).toHaveValue(/You are invited to use Easy Quote as an Administrator\./);
+    await message.fill("Welcome aboard: {lien}");
+    await role.uncheck();
+    await expect(message).toHaveValue("Welcome aboard: {lien}");
+    await expect(dialog.getByText("Your edited message was kept as it is")).toBeVisible();
+    await role.check();
+    await dialog.getByRole("button", { name: "Restore the default text" }).click();
+    await expect(message).toHaveValue(/You are invited to use Easy Quote as an Administrator\./);
+    await expect(dialog.getByText("Your edited message was kept as it is")).toBeHidden();
+
+    await subject.fill("Join Easy Quote");
+    await message.fill("Hello,\n\nYour link: {lien}");
     await dialog.getByRole("button", { name: "Send invitation" }).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("status")).toContainText(`${email} has been emailed a link`);

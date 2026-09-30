@@ -58,6 +58,8 @@ export function refusalMessage(locale: Locale, code: RefusalCode) {
     bootstrap_administrator: t(locale, 'Cet administrateur est défini dans ADMIN_EMAILS. Il ne peut être ni bloqué ni rétrogradé ici.', 'This Administrator is set in ADMIN_EMAILS. They cannot be blocked or demoted here.'),
     last_administrator: t(locale, 'C’est le dernier administrateur nommé ici. Nommez-en un autre avant de lui retirer le rôle.', 'This is the last Administrator granted here. Grant another before removing this role.'),
     invalid_email: t(locale, 'Saisissez une adresse e-mail valide.', 'Enter a valid email address.'),
+    invalid_email_subject: t(locale, 'Saisissez un objet d’une seule ligne, de 200 caractères au plus.', 'Enter a one-line subject of at most 200 characters.'),
+    invalid_email_message: t(locale, 'Saisissez un message de 5000 caractères au plus.', 'Enter a message of at most 5,000 characters.'),
     user_exists: t(locale, 'Cette adresse appartient déjà à un utilisateur.', 'This email already belongs to a User.'),
     already_invited: t(locale, 'Cette adresse a déjà une invitation en attente. Renvoyez-la depuis la liste des utilisateurs.', 'This email already has a pending invitation. Resend it from the User list instead.'),
     invitation_not_found: t(locale, 'Cette invitation n’existe plus.', 'This invitation no longer exists.'),

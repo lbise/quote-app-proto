@@ -5,9 +5,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { authBaseUrl, normalizeEmail, registrationMode, type RegistrationMode } from "./auth-config.server";
 import type { Database } from "./db.server";
 import { invitation, user } from "./db/schema";
-
-/** How long an invitation link stays valid after it is sent. */
-export const INVITATION_LIFETIME_DAYS = 7;
+import { INVITATION_LIFETIME_DAYS } from "./invitation-email";
 
 /** A new invitation token, its stored hash, and when it expires. */
 export function newInvitationToken(now = new Date()) {
