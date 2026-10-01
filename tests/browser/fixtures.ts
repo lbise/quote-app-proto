@@ -21,14 +21,12 @@ type QuoteResponse = { ok: boolean; status: number; data: unknown };
 // The server still uses a harmless test credential and no live model calls are made.
 
 export async function setInterfaceLanguage(page: Page, locale: "en" | "fr") {
-  const response = await page.evaluate(async (value) => {
-    const result = await fetch("/language", {
-      method: "POST",
-      body: new URLSearchParams({ locale: value, returnTo: "/quotes" }),
-    });
-    return { ok: result.ok, status: result.status };
-  }, locale);
-  if (!response.ok) throw new Error(`Browser language change failed with ${response.status}.`);
+  // page.request shares the page's cookies but not its JavaScript context, so a
+  // reload of a cold dev server (dependency optimisation) cannot interrupt it.
+  const response = await page.request.post("/language", {
+    form: { locale, returnTo: "/quotes" },
+  });
+  if (!response.ok()) throw new Error(`Browser language change failed with ${response.status()}.`);
   await page.reload();
   await expect(page.locator(".qp-app")).toHaveAttribute("lang", locale);
 }
